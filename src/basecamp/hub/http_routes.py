@@ -25,6 +25,10 @@ def register_http_routes(app: FastAPI, *, store: Store, registry: Registry) -> N
     async def health() -> dict[str, Any]:
         return {"status": "ok", "protocol": PROTOCOL_VERSION}
 
+    @app.get("/sessions")
+    async def list_sessions() -> dict[str, Any]:
+        return {"sessions": await asyncio.to_thread(store.list_open_sessions)}
+
     @app.get("/runs/summary")
     async def runs_summary(root_id: str, limit: int = 5) -> dict[str, Any]:
         summary = await asyncio.to_thread(store.get_run_summary, root_id, limit=limit)

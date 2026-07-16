@@ -6,13 +6,19 @@ import re
 from pathlib import Path
 from typing import Any
 
+from basecamp.core.paths import daemon_db_path
+
 from .messages import MESSAGE_TERMINAL_DELIVERY_STATUSES
 
 
 def default_db_path() -> Path:
-    """Return the default Basecamp swarm daemon database path."""
+    """Return the default Basecamp swarm daemon database path.
 
-    return Path.home() / ".pi" / "basecamp" / "swarm" / "daemon.db"
+    Single-sourced with the ensure-daemon client via
+    :func:`basecamp.core.paths.daemon_db_path`.
+    """
+
+    return daemon_db_path()
 
 
 def default_tasks_dir() -> Path:

@@ -91,7 +91,8 @@ class AgentsWriterMixin:
                         model = excluded.model,
                         session_file = excluded.session_file,
                         repo = excluded.repo,
-                        worktree_label = excluded.worktree_label
+                        worktree_label = excluded.worktree_label,
+                        ended_at = NULL
                     """,
                     (
                         agent_id,
@@ -115,3 +116,18 @@ class AgentsWriterMixin:
                 if "agents.agent_handle" in str(error):
                     raise DuplicateAgentHandleError(next_handle) from error
                 raise
+
+    def mark_agent_ended(self, agent_id: str) -> bool:
+        """Mark a session's agent row as ended (``ended_at`` = now).
+
+        Returns whether a row existed to update. Registering the same id again
+        (session resume) reopens it — :meth:`upsert_agent` resets ``ended_at``.
+        """
+
+        now = self._now()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE agents SET ended_at = ?, last_seen_at = ? WHERE id = ?",
+                (now, now, agent_id),
+            )
+            return cursor.rowcount > 0

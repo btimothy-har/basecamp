@@ -33,3 +33,37 @@ USER_STYLES_DIR: Path = BASECAMP_CONFIG_DIR / "styles"
 
 #: User-supplied prompt fragment overrides directory.
 USER_PROMPTS_DIR: Path = BASECAMP_CONFIG_DIR / "prompts"
+
+
+# --- Hub daemon runtime paths -------------------------------------------------
+#
+# The hub daemon's runtime state lives under ``~/.pi/basecamp/swarm``. These are
+# lazy, ``home``-parameterized helpers (not import-time constants) so tests that
+# monkeypatch ``$HOME`` — and the ensure-daemon client — resolve the right paths
+# at call time. ``basecamp.hub.store.text.default_db_path`` delegates to
+# :func:`daemon_db_path`, keeping the DB location single-sourced.
+
+
+def swarm_runtime_dir(home: Path | None = None) -> Path:
+    """Return the hub daemon's runtime directory (``~/.pi/basecamp/swarm``)."""
+    return (home or Path.home()) / ".pi" / "basecamp" / "swarm"
+
+
+def daemon_socket_path(home: Path | None = None) -> Path:
+    """Return the daemon's Unix domain socket path."""
+    return swarm_runtime_dir(home) / "daemon.sock"
+
+
+def daemon_pidfile_path(home: Path | None = None) -> Path:
+    """Return the daemon's PID file path."""
+    return swarm_runtime_dir(home) / "daemon.pid"
+
+
+def daemon_spawn_lock_path(home: Path | None = None) -> Path:
+    """Return the exclusive-create spawn-lock path used to serialize daemon starts."""
+    return swarm_runtime_dir(home) / "daemon.spawn.lock"
+
+
+def daemon_db_path(home: Path | None = None) -> Path:
+    """Return the daemon's SQLite database path."""
+    return swarm_runtime_dir(home) / "daemon.db"
