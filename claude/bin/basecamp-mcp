@@ -1,0 +1,12 @@
+#!/bin/sh
+# Launch the basecamp MCP context server over stdio.
+#
+# Prefer an installed `basecamp-mcp` console script (basecamp installed as a uv
+# tool puts it on PATH); fall back to the module for source/dev environments.
+# Guard against invoking this shim recursively if the plugin bin/ is on PATH.
+self="$(command -v -- "$0" 2>/dev/null || printf '%s' "$0")"
+cli="$(command -v basecamp-mcp 2>/dev/null || true)"
+if [ -n "$cli" ] && [ "$cli" != "$self" ]; then
+  exec "$cli" "$@"
+fi
+exec python3 -m basecamp.mcp "$@"

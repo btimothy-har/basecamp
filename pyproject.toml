@@ -5,6 +5,7 @@ description = "Basecamp — project configuration and workspace management for A
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.100.0",
+    "mcp>=1.2",
     "pydantic>=2.0",
     "pydantic-ai-slim[anthropic,openai]",
     "pygments>=2.0",
@@ -17,6 +18,7 @@ dependencies = [
 
 [project.scripts]
 basecamp = "basecamp.cli:main"
+basecamp-mcp = "basecamp.mcp.server:main"
 
 [build-system]
 requires = ["hatchling"]
