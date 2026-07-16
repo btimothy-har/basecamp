@@ -126,6 +126,37 @@ def test_session_end_marks_ended(monkeypatch: pytest.MonkeyPatch) -> None:
     assert ended == ["s1"]
 
 
+@pytest.mark.parametrize("reason", ["clear", "resume"])
+def test_session_end_skips_continuation_reasons(monkeypatch: pytest.MonkeyPatch, reason: str) -> None:
+    # /clear and resume keep the same session_id running — do not mark ended.
+    ended = []
+    monkeypatch.setattr(session_mod, "end_session", ended.append)
+
+    session_mod.handle_session_end({"session_id": "s1", "reason": reason}, env={})
+
+    assert ended == []
+
+
+@pytest.mark.parametrize("reason", ["logout", "prompt_input_exit", "bypass_permissions_disabled", "other"])
+def test_session_end_marks_ended_on_termination_reasons(monkeypatch: pytest.MonkeyPatch, reason: str) -> None:
+    ended = []
+    monkeypatch.setattr(session_mod, "end_session", ended.append)
+
+    session_mod.handle_session_end({"session_id": "s1", "reason": reason}, env={})
+
+    assert ended == ["s1"]
+
+
+def test_session_end_marks_ended_when_reason_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Unknown/absent reason defaults to termination so a session never leaks open.
+    ended = []
+    monkeypatch.setattr(session_mod, "end_session", ended.append)
+
+    session_mod.handle_session_end({"session_id": "s1"}, env={})
+
+    assert ended == ["s1"]
+
+
 def test_session_end_keys_on_agent_id_when_set(monkeypatch: pytest.MonkeyPatch) -> None:
     # A daemon-spawned worker registers under BASECAMP_AGENT_ID, so it must be
     # ended under the same key — not the native session id.

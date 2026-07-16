@@ -2,8 +2,9 @@
 
 Both handlers key off the hook stdin JSON that Claude Code delivers
 (``session_id``, ``cwd``, ``transcript_path``, and — on SessionStart —
-``agent_type``). Transient Task-tool subagents are skipped: the hub tracks
-top-level sessions, while within-session fan-out is Claude Code's own concern.
+``agent_type``; on SessionEnd, ``reason``). Transient Task-tool subagents are
+skipped: the hub tracks top-level sessions, while within-session fan-out is
+Claude Code's own concern.
 """
 
 from __future__ import annotations
@@ -13,6 +14,14 @@ from collections.abc import Mapping
 from typing import Any
 
 from basecamp.hub.client import build_register_frame, end_session, register_session, resolve_node_id
+
+# SessionEnd reasons where the *same* session_id keeps running — /clear (context
+# reset) and resume (conversation reload), each paired with a SessionStart
+# (source=clear/resume) that continues the session. These must NOT mark the row
+# ended. Every other reason (logout, prompt_input_exit, bypass_permissions_disabled,
+# other) — and an absent/unknown reason — is a genuine termination and defaults to
+# ending the row, so a live session never leaks as perpetually-open.
+_CONTINUATION_END_REASONS = frozenset({"clear", "resume"})
 
 
 def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] | None = None) -> None:
@@ -39,10 +48,14 @@ def handle_session_end(payload: Mapping[str, Any], *, env: Mapping[str, str] | N
 
     Deregisters under the same key SessionStart registered — ``BASECAMP_AGENT_ID``
     when set, else the native session id — so a daemon-spawned worker's row is
-    actually closed instead of left dangling.
+    actually closed instead of left dangling. A /clear or resume (the session
+    keeps running, only its context resets) is skipped so the still-live row is
+    not spuriously marked ended.
     """
 
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
+        return
+    if payload.get("reason") in _CONTINUATION_END_REASONS:
         return
     end_session(resolve_node_id(session_id, env))
