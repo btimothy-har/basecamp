@@ -1,10 +1,11 @@
 """Claude Code lifecycle hooks (strictly fail-open).
 
-The plugin's ``hooks.json`` wires ``SessionStart`` / ``SessionEnd`` to
-``basecamp-hook session-start`` / ``session-end``. Each invocation reads the
-hook JSON from stdin, dispatches to a handler, and *always* exits 0 — a hook
-must never block or fail a Claude Code session. Any failure (daemon down,
-malformed payload, unexpected error) is swallowed and logged best-effort.
+The plugin's ``hooks.json`` wires ``SessionStart`` / ``SessionEnd`` / ``PreCompact``
+/ ``SubagentStop`` to ``basecamp-hook session-start`` / ``session-end`` /
+``pre-compact`` / ``subagent-stop``. Each invocation reads the hook JSON from stdin,
+dispatches to a handler, and *always* exits 0 — a hook must never block or fail a
+Claude Code session. Any failure (daemon down, malformed payload, unexpected error)
+is swallowed and logged best-effort.
 """
 
 from __future__ import annotations
@@ -18,11 +19,13 @@ from typing import Any
 
 from basecamp.hub.claude.paths import claude_runtime_dir
 
-from .session import handle_session_end, handle_session_start
+from .session import handle_pre_compact, handle_session_end, handle_session_start, handle_subagent_stop
 
 _HANDLERS = {
     "session-start": handle_session_start,
     "session-end": handle_session_end,
+    "pre-compact": handle_pre_compact,
+    "subagent-stop": handle_subagent_stop,
 }
 
 

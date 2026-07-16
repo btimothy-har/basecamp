@@ -68,6 +68,21 @@ class SessionsMixin:
                 (session_id, repo, worktree_label, handle, cwd, transcript_path, now, now),
             )
 
+    def get_transcript_path(self, session_id: str) -> str | None:
+        """Return the stored transcript path for a session, or ``None`` if unknown.
+
+        The ingest route falls back to this when the hook payload omits the path (a
+        SessionEnd hook carries no ``transcript_path``); the path is captured once at
+        SessionStart and is stable for the session's lifetime.
+        """
+
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT transcript_path FROM sessions WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+        return row[0] if row and row[0] else None
+
     def list_open_sessions(self) -> list[dict[str, Any]]:
         """Return live sessions (those with an open episode), most-recently-seen first.
 

@@ -117,6 +117,16 @@ def test_list_open_sessions_projects_identity_and_live_episode_facets(tmp_path: 
     }
 
 
+def test_get_transcript_path_returns_stored_path_or_none(tmp_path: Path) -> None:
+    store = SessionStore(db_path=tmp_path / "daemon.db")
+    store.upsert_session(session_id="s1", cwd="/tmp/s1", transcript_path="/transcripts/s1.jsonl")
+    store.upsert_session(session_id="s2", cwd="/tmp/s2")  # no transcript path
+
+    assert store.get_transcript_path("s1") == "/transcripts/s1.jsonl"
+    assert store.get_transcript_path("s2") is None
+    assert store.get_transcript_path("unknown") is None
+
+
 def test_store_defaults_db_path_under_the_claude_runtime(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("HOME", str(tmp_path))
 

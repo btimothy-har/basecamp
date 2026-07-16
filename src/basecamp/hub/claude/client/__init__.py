@@ -11,7 +11,7 @@ from __future__ import annotations
 from .errors import DaemonError, DaemonProtocolMismatchError, DaemonUnavailableError
 from .identity import build_register_body
 from .paths import DaemonPaths, daemon_paths
-from .sessions import RegisterOutcome, end_session, register_session
+from .sessions import RegisterOutcome, end_session, ingest_transcript, register_session
 from .spawn import ensure_daemon
 from .transport import HealthResult, health_ping, post_json
 
@@ -27,6 +27,7 @@ __all__ = [
     "end_session",
     "ensure_daemon",
     "health_ping",
+    "ingest_transcript",
     "post_json",
     "register_session",
 ]

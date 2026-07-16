@@ -20,6 +20,24 @@ def _log_path(home: Path) -> Path:
     return home / ".pi" / "basecamp" / "claude" / "hooks.log"
 
 
+@pytest.fixture(autouse=True)
+def ingest_calls(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Stub the transcript-ingest RPC so hook tests stay hermetic (no real socket).
+
+    Autouse: SessionEnd/PreCompact now fire ``ingest_transcript`` and would
+    otherwise attempt a real UDS connection. Tests that care read the recorder.
+    """
+
+    calls: list[dict[str, object]] = []
+
+    def _record(session_id: str, **kwargs: object) -> bool:
+        calls.append({"session_id": session_id, **kwargs})
+        return True
+
+    monkeypatch.setattr(session_mod, "ingest_transcript", _record)
+    return calls
+
+
 # --- main() dispatch (fail-open) -------------------------------------------------
 
 
@@ -180,3 +198,106 @@ def test_session_end_skips_missing_session_id(monkeypatch: pytest.MonkeyPatch) -
     session_mod.handle_session_end({"session_id": ""})
 
     assert ended == []
+
+
+def test_session_end_ingests_the_final_transcript_before_closing(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Ingest must run before the episode closes, with no path (daemon uses the stored
+    # one) and reason "session-end", so tail nodes are tagged with the ending episode.
+    events: list[tuple[str, str, object]] = []
+    monkeypatch.setattr(
+        session_mod,
+        "ingest_transcript",
+        lambda sid, **kwargs: events.append(("ingest", sid, kwargs.get("reason"))) or True,
+    )
+    monkeypatch.setattr(
+        session_mod, "end_session", lambda sid, *, reason=None: events.append(("end", sid, reason)) or True
+    )
+
+    session_mod.handle_session_end({"session_id": "s1", "reason": "logout"})
+
+    assert events == [("ingest", "s1", "session-end"), ("end", "s1", "logout")]
+
+
+def test_session_end_requests_a_sidecar_sweep(
+    monkeypatch: pytest.MonkeyPatch, ingest_calls: list[dict[str, object]]
+) -> None:
+    # SessionEnd is the guaranteed backstop: it sweeps every (now-complete) sidecar.
+    monkeypatch.setattr(session_mod, "end_session", lambda _sid, **_kwargs: True)
+
+    session_mod.handle_session_end({"session_id": "s1", "reason": "logout"})
+
+    assert ingest_calls == [{"session_id": "s1", "reason": "session-end", "sweep_sidecars": True}]
+
+
+# --- pre-compact handler ---------------------------------------------------------
+
+
+def test_pre_compact_ingests_with_the_payload_transcript_path(ingest_calls: list[dict[str, object]]) -> None:
+    session_mod.handle_pre_compact({"session_id": "s1", "transcript_path": "/t.jsonl"})
+
+    assert ingest_calls == [{"session_id": "s1", "transcript_path": "/t.jsonl", "reason": "pre-compact"}]
+
+
+def test_pre_compact_threads_absent_path_as_none(ingest_calls: list[dict[str, object]]) -> None:
+    # An empty/absent path is normalized to None; the daemon falls back to the stored path.
+    session_mod.handle_pre_compact({"session_id": "s1", "transcript_path": ""})
+
+    assert ingest_calls == [{"session_id": "s1", "transcript_path": None, "reason": "pre-compact"}]
+
+
+def test_pre_compact_skips_subagent(ingest_calls: list[dict[str, object]]) -> None:
+    session_mod.handle_pre_compact({"session_id": "s1", "agent_type": "subagent", "transcript_path": "/t.jsonl"})
+
+    assert ingest_calls == []
+
+
+def test_pre_compact_skips_missing_session_id(ingest_calls: list[dict[str, object]]) -> None:
+    session_mod.handle_pre_compact({"transcript_path": "/t.jsonl"})
+    session_mod.handle_pre_compact({"session_id": "", "transcript_path": "/t.jsonl"})
+
+    assert ingest_calls == []
+
+
+def test_pre_compact_is_wired_into_the_dispatcher() -> None:
+    assert hooks._HANDLERS["pre-compact"] is session_mod.handle_pre_compact
+
+
+# --- subagent-stop handler -------------------------------------------------------
+
+
+def test_subagent_stop_targets_the_completed_sidecar(ingest_calls: list[dict[str, object]]) -> None:
+    session_mod.handle_subagent_stop(
+        {
+            "session_id": "s1",
+            "transcript_path": "/main.jsonl",
+            "agent_transcript_path": "/main/subagents/agent-x.jsonl",
+            "agent_id": "x",
+        }
+    )
+
+    assert ingest_calls == [
+        {
+            "session_id": "s1",
+            "transcript_path": "/main.jsonl",
+            "agent_transcript_path": "/main/subagents/agent-x.jsonl",
+            "reason": "subagent-stop",
+        }
+    ]
+
+
+def test_subagent_stop_without_a_sidecar_path_is_noop(ingest_calls: list[dict[str, object]]) -> None:
+    # No agent_transcript_path → nothing to target; the SessionEnd sweep is the backstop.
+    session_mod.handle_subagent_stop({"session_id": "s1", "transcript_path": "/main.jsonl"})
+
+    assert ingest_calls == []
+
+
+def test_subagent_stop_skips_missing_session_id(ingest_calls: list[dict[str, object]]) -> None:
+    session_mod.handle_subagent_stop({"agent_transcript_path": "/a.jsonl"})
+    session_mod.handle_subagent_stop({"session_id": "", "agent_transcript_path": "/a.jsonl"})
+
+    assert ingest_calls == []
+
+
+def test_subagent_stop_is_wired_into_the_dispatcher() -> None:
+    assert hooks._HANDLERS["subagent-stop"] is session_mod.handle_subagent_stop

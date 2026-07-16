@@ -61,6 +61,26 @@ class EpisodesMixin:
             )
         return episode_id
 
+    def current_episode_id(self, *, session_id: str) -> str | None:
+        """Return the id of the session's open episode, or ``None`` if none is open.
+
+        Best-effort tag for transcript nodes ingested during this engagement. The
+        ingest route resolves it *before* scheduling the background parse so a node
+        first seen at SessionEnd is still tagged with the episode that just ended.
+        """
+
+        with self._connect() as connection:
+            row = connection.execute(
+                """
+                SELECT id FROM episodes
+                WHERE session_id = ? AND ended_at IS NULL
+                ORDER BY started_at DESC
+                LIMIT 1
+                """,
+                (session_id,),
+            ).fetchone()
+        return row[0] if row else None
+
     def close_episode(self, *, session_id: str, reason: str | None = None) -> bool:
         """Close the session's open episode; return whether one was closed.
 

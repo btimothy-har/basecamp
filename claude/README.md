@@ -5,9 +5,11 @@ plugin**. The plugin bundles native components (skills, hooks, commands)
 alongside a **stdio MCP server** that injects each project's related directories
 and custom context into the session.
 
-> **Status: design settled, not yet implemented.** This README is the design
-> record for the package. Nothing is built yet — it describes the intended
-> shape.
+> **Status: in build.** This README remains the design record. Tier-0/1 have
+> landed incrementally — the plugin skeleton, hook-driven session lifecycle, the
+> `sessions`/`episodes` schema, and transcript ingestion into the hub daemon
+> ([transcript-ingestion](../docs/design/transcript-ingestion.md)). The Tier-2
+> orchestration rows below are still intended shape, not yet built.
 
 ## What it is
 
@@ -23,7 +25,7 @@ Its components map to Claude Code's plugin layout:
 | --- | --- | --- |
 | MCP server | `.mcp.json` | the dynamic context server (dirs + context; later, orchestration tools) |
 | Skills | `skills/` | engineering skills + a `copilot` skill |
-| Hooks | `hooks/hooks.json` | `SessionStart`/`SessionEnd` register the session with the hub daemon; later, an optional `PreToolUse` command guard |
+| Hooks | `hooks/hooks.json` | `SessionStart`/`SessionEnd` register the session with the hub daemon; `SessionEnd`/`PreCompact`/`SubagentStop` ingest the transcript — SessionEnd sweeps every subagent sidecar, SubagentStop captures each one promptly ([transcript-ingestion](../docs/design/transcript-ingestion.md)); later, an optional `PreToolUse` command guard |
 | Commands | `commands/` | basecamp slash commands (new invocable commands are just skills) |
 | Agents | `agents/` | custom subagent personas, if any survive the native-CC cut |
 | Executables | `bin/` | thin shims (`basecamp-mcp`, `basecamp-hook`) that exec the matching console script from the guaranteed `basecamp` install |

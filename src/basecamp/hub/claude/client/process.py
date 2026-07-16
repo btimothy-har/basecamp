@@ -16,8 +16,12 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-#: Total time to wait for a signalled daemon to exit before escalating.
-DEFAULT_STOP_TIMEOUT_S = 2.0
+#: Total time to wait for a signalled daemon to exit before escalating to
+#: SIGKILL. Kept above the daemon's own shutdown drain window
+#: (:data:`..app._DRAIN_TIMEOUT_S`) so a graceful SessionEnd-ingest drain can
+#: finish before we force-kill the process (a protocol-bump respawn terminates
+#: the old daemon through this path).
+DEFAULT_STOP_TIMEOUT_S = 5.0
 #: Poll interval while waiting for exit.
 DEFAULT_POLL_S = 0.1
 

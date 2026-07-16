@@ -21,6 +21,28 @@
 					}
 				]
 			}
+		],
+		"PreCompact": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}/bin/basecamp-hook\" pre-compact",
+						"timeout": 10
+					}
+				]
+			}
+		],
+		"SubagentStop": [
+			{
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}/bin/basecamp-hook\" subagent-stop",
+						"timeout": 10
+					}
+				]
+			}
 		]
 	}
 }

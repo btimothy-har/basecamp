@@ -90,6 +90,19 @@ def test_reopen_after_close_is_live_again_under_a_new_episode(tmp_path: Path) ->
     assert total == 2
 
 
+def test_current_episode_id_tracks_the_open_episode(tmp_path: Path) -> None:
+    store = SessionStore(db_path=tmp_path / "daemon.db")
+    session_id = _session(store)
+
+    assert store.current_episode_id(session_id=session_id) is None  # no episode yet
+
+    opened = store.open_episode(session_id=session_id, source="startup")
+    assert store.current_episode_id(session_id=session_id) == opened
+
+    store.close_episode(session_id=session_id, reason="logout")
+    assert store.current_episode_id(session_id=session_id) is None  # closed → none live
+
+
 def test_open_episode_defensively_closes_a_dangling_prior_episode(tmp_path: Path) -> None:
     # A SessionStart with no paired SessionEnd (e.g. compact, or a crashed prior
     # process) must never leave two live episodes for one session.
