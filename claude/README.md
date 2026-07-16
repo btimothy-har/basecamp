@@ -23,10 +23,10 @@ Its components map to Claude Code's plugin layout:
 | --- | --- | --- |
 | MCP server | `.mcp.json` | the dynamic context server (dirs + context; later, orchestration tools) |
 | Skills | `skills/` | engineering skills + a `copilot` skill |
-| Hooks | `hooks/hooks.json` | `SessionStart` setup; optional `PreToolUse` command guard |
+| Hooks | `hooks/hooks.json` | `SessionStart`/`SessionEnd` register the session with the hub daemon; later, an optional `PreToolUse` command guard |
 | Commands | `commands/` | basecamp slash commands (new invocable commands are just skills) |
 | Agents | `agents/` | custom subagent personas, if any survive the native-CC cut |
-| Executables | `bin/` | ships `basecamp-mcp` (and `herdr`) on the Bash `PATH` |
+| Executables | `bin/` | thin shims (`basecamp-mcp`, `basecamp-hook`) that exec the matching console script from the guaranteed `basecamp` install |
 | Manifest | `.claude-plugin/plugin.json` | name/version; namespaces skills as `/basecamp:<name>` |
 
 ## The organizing principle: static vs dynamic

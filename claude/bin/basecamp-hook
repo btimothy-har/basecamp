@@ -1,12 +1,34 @@
 #!/bin/sh
 # Dispatch a Claude Code lifecycle hook event to basecamp (strictly fail-open).
 #
-# Prefer an installed `basecamp-hook` console script (basecamp installed as a uv
-# tool puts it on PATH); fall back to the module for source/dev environments.
-# Guard against invoking this shim recursively if the plugin bin/ is on PATH.
+# `uv tool install` exposes `basecamp-hook` beside `basecamp` in the same bin
+# dir, so we resolve it from that install rather than an ambient interpreter.
+# Resolution order: on PATH, then beside the `basecamp` entry point, then uv's
+# default tool bin (covers a GUI launch whose PATH lacks ~/.local/bin). Guard
+# against recursing into this shim if the plugin bin/ is itself on PATH.
 self="$(command -v -- "$0" 2>/dev/null || printf '%s' "$0")"
+
+runnable() {
+  [ -n "$1" ] && [ -x "$1" ] && [ "$1" != "$self" ]
+}
+
+# 1. Directly on PATH (terminal launch: the install's bin dir is on PATH).
 cli="$(command -v basecamp-hook 2>/dev/null || true)"
-if [ -n "$cli" ] && [ "$cli" != "$self" ]; then
-  exec "$cli" "$@"
+if runnable "$cli"; then exec "$cli" "$@"; fi
+
+# 2. Beside the `basecamp` entry point (same install, same dir).
+base="$(command -v basecamp 2>/dev/null || true)"
+if [ -n "$base" ]; then
+  sib="$(dirname -- "$base")/basecamp-hook"
+  if runnable "$sib"; then exec "$sib" "$@"; fi
 fi
-exec python3 -m basecamp.hooks "$@"
+
+# 3. uv's default tool bin locations (a GUI launch may drop these from PATH).
+for dir in "${XDG_BIN_HOME:-}" "$HOME/.local/bin"; do
+  [ -n "$dir" ] || continue
+  if runnable "$dir/basecamp-hook"; then exec "$dir/basecamp-hook" "$@"; fi
+done
+
+# Fail-open: a hook must never break a session, so exit 0 even when unresolved.
+echo "basecamp-hook: basecamp is not installed (run: uv run install.py)" >&2
+exit 0
