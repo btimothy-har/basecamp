@@ -127,7 +127,8 @@ def test_create_workstream_not_a_repo(tmp_path: Path) -> None:
 
 
 def test_create_workstream_transport_error_is_daemon_unavailable(monkeypatch, tmp_path: Path) -> None:
-    # create raises an httpx transport error (daemon died after the health probe)
+    # create raises an httpx transport error (daemon died after the health probe, or
+    # a lost response after a committed POST)
     repo = tmp_path / "repo"
     _init_repo(repo)
     stub = _StubClient(raise_create=httpx.ConnectError("boom"))
@@ -135,6 +136,8 @@ def test_create_workstream_transport_error_is_daemon_unavailable(monkeypatch, tm
     result = tool_mod.create_workstream(label="x", cwd=str(repo), env={"USER": "bt"})
     assert result["status"] == "failed"
     assert result["error"] == "daemon unavailable"  # not a raw traceback
+    # a phantom-committed record is best-effort rolled back (lost-response orphan guard)
+    assert len(stub.deleted) == 1
 
 
 def test_create_workstream_503_is_daemon_error_not_slug(monkeypatch, tmp_path: Path) -> None:

@@ -19,15 +19,15 @@ def test_skip_reason_when_not_in_herdr() -> None:
     assert herdr_skip_reason({"HERDR_ENV": "1", "HERDR_SOCKET_PATH": "/s"}) == "missing-herdr-pane-id"
 
 
-def test_skip_reason_subagent_and_headless() -> None:
-    assert herdr_skip_reason({**_FULL_ENV, "BASECAMP_AGENT_DEPTH": "1"}) == "subagent"
+def test_skip_reason_headless() -> None:
     assert herdr_skip_reason(_FULL_ENV, has_ui=False) == "headless"
 
 
 def test_skip_reason_none_when_eligible() -> None:
     assert herdr_skip_reason(_FULL_ENV) is None
-    # empty/absent depth counts as primary (0)
-    assert herdr_skip_reason({**_FULL_ENV, "BASECAMP_AGENT_DEPTH": ""}) is None
+    # BASECAMP_AGENT_DEPTH is not consulted in the Claude port (subagent exclusion
+    # isn't enforced) — a set value must not change the outcome.
+    assert herdr_skip_reason({**_FULL_ENV, "BASECAMP_AGENT_DEPTH": "1"}) is None
 
 
 def test_build_open_args_prefers_workspace() -> None:

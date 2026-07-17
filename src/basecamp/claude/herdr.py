@@ -25,21 +25,18 @@ class HerdrResult:
     args: tuple[str, ...] = field(default_factory=tuple)
 
 
-def _agent_depth(env: Mapping[str, str]) -> int:
-    raw = env.get("BASECAMP_AGENT_DEPTH")
-    if raw is None or raw.strip() == "":
-        return 0
-    try:
-        return int(float(raw))
-    except ValueError:
-        return 1
-
-
 def herdr_skip_reason(env: Mapping[str, str], *, has_ui: bool = True) -> str | None:
     """Return a skip reason if a Herdr pane cannot/should not be opened, else ``None``.
 
-    Ports ``shouldOpenWorkstreamInHerdr``: needs ``HERDR_ENV=1`` +
-    ``HERDR_SOCKET_PATH`` + ``HERDR_PANE_ID``, a primary (depth-0) session, and a UI.
+    Requires ``HERDR_ENV=1`` + ``HERDR_SOCKET_PATH`` + ``HERDR_PANE_ID`` and a UI.
+
+    The Pi predicate also excluded subagents via ``BASECAMP_AGENT_DEPTH``, but that
+    var is set only by the legacy Pi swarm launcher — nothing in the Claude port
+    sets it, and a Claude Code Task-tool subagent shares the session's ``HERDR_*``
+    env — so a depth check here would be dead code. Subagent exclusion is therefore
+    **not enforced**: if a subagent ever reaches the ``create_workstream`` tool it
+    could open a pane. Acceptable because the tool is copilot-facing staging, not a
+    subagent surface; revisit if a native subagent signal becomes available.
     """
 
     if env.get("HERDR_ENV") != "1":
@@ -48,8 +45,6 @@ def herdr_skip_reason(env: Mapping[str, str], *, has_ui: bool = True) -> str | N
         return "missing-herdr-socket-path"
     if not env.get("HERDR_PANE_ID"):
         return "missing-herdr-pane-id"
-    if _agent_depth(env) != 0:
-        return "subagent"
     if has_ui is False:
         return "headless"
     return None

@@ -140,6 +140,12 @@ def _create_record(
                 dossier_path=dossier_path,
             )
         except (client.DaemonError, httpx.HTTPError, OSError):
+            # The POST may have committed server-side before the response was lost
+            # (e.g. a timeout after the INSERT), leaving a phantom record the caller
+            # never learns the slug of. Best-effort delete it so it can't pad the
+            # prune audit forever — the id is stable across attempts. Mirrors the
+            # worktree-failure rollback in create_workstream.
+            client.delete_workstream(workstream_id)
             return _RecordResult(
                 error="daemon unavailable",
                 message="The basecamp daemon could not be reached to record the workstream.",
