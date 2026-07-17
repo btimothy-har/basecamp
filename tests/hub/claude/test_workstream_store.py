@@ -28,10 +28,11 @@ def test_create_and_get_by_id_and_slug(tmp_path: Path) -> None:
     )
     assert created["id"] == "ws_1"
     assert created["slug"] == "brave-otter-fox"
-    assert created["status"] == "open"
     assert created["label"] == "auth refactor"
     assert created["dossier_path"] == "/g/pages/work__acme__web-app__brave-otter-fox.md"
     assert "worktree_path" not in created  # the record no longer binds a worktree
+    assert "status" not in created  # no stored status — liveness is derived
+    assert created["live"] == 0  # no attached live session yet
     assert store.get_workstream("ws_1") == created
     assert store.get_workstream("brave-otter-fox") == created
     assert store.get_workstream("nope") is None
@@ -44,27 +45,36 @@ def test_slug_collision_raises_integrity_error(tmp_path: Path) -> None:
         _create(store, workstream_id="ws_2", slug="dup-slug-here")
 
 
-def test_list_filters_by_repo_and_status(tmp_path: Path) -> None:
+def test_list_filters_by_repo(tmp_path: Path) -> None:
     store = _store(tmp_path)
     _create(store, workstream_id="ws_1", slug="a-b-c", repo="acme/web")
     _create(store, workstream_id="ws_2", slug="d-e-f", repo="acme/api")
     _create(store, workstream_id="ws_3", slug="g-h-i", repo="acme/web")
-    store.set_workstream_status("ws_3", "closed")
 
     assert {w["id"] for w in store.list_workstreams()} == {"ws_1", "ws_2", "ws_3"}
     assert {w["id"] for w in store.list_workstreams(repo="acme/web")} == {"ws_1", "ws_3"}
-    assert {w["id"] for w in store.list_workstreams(status="open")} == {"ws_1", "ws_2"}
-    assert {w["id"] for w in store.list_workstreams(repo="acme/web", status="open")} == {"ws_1"}
 
 
-def test_set_status_updates_and_rejects_invalid(tmp_path: Path) -> None:
+def test_liveness_and_idle_audit_derive_from_episodes(tmp_path: Path) -> None:
     store = _store(tmp_path)
-    _create(store, workstream_id="ws_1", slug="a-b-c")
-    assert store.set_workstream_status("ws_1", "closed") is True
-    assert store.get_workstream("ws_1")["status"] == "closed"
-    assert store.set_workstream_status("nope", "open") is False
-    with pytest.raises(ValueError, match="invalid status"):
-        store.set_workstream_status("ws_1", "archived")
+    _create(store, workstream_id="ws_live", slug="a-b-c")
+    _create(store, workstream_id="ws_idle", slug="d-e-f")
+
+    # ws_live has an attached session with an open episode; ws_idle has none
+    store.upsert_session(session_id="s1", cwd="/x")
+    store.open_episode(session_id="s1")
+    store.attach_workstream_session(identifier="ws_live", session_id="s1")
+
+    assert store.get_workstream("ws_live")["live"] == 1
+    assert store.get_workstream("ws_idle")["live"] == 0
+    # the prune audit: only ws_idle (no live session)
+    assert {w["id"] for w in store.list_idle_workstreams()} == {"ws_idle"}
+    assert {w["id"] for w in store.list_workstreams(idle=False)} == {"ws_live"}
+
+    # closing s1's episode makes ws_live idle too — the SessionEnd signal, no extra write
+    store.close_episode(session_id="s1", reason="session-end")
+    assert store.get_workstream("ws_live")["live"] == 0
+    assert {w["id"] for w in store.list_idle_workstreams()} == {"ws_live", "ws_idle"}
 
 
 def test_attach_session_is_additive_and_idempotent(tmp_path: Path) -> None:
@@ -91,7 +101,6 @@ def test_attach_session_is_additive_and_idempotent(tmp_path: Path) -> None:
 def test_list_sessions_liveness_from_episodes(tmp_path: Path) -> None:
     store = _store(tmp_path)
     _create(store, workstream_id="ws_1", slug="a-b-c")
-    # s1 has a live session (registered + open episode); s2 does not
     store.upsert_session(session_id="s1", cwd="/x")
     store.open_episode(session_id="s1")
     store.attach_workstream_session(identifier="ws_1", session_id="s1")
@@ -100,7 +109,6 @@ def test_list_sessions_liveness_from_episodes(tmp_path: Path) -> None:
     live = {s["session_id"]: bool(s["live"]) for s in store.list_workstream_sessions("ws_1")}
     assert live == {"s1": True, "s2": False}
 
-    # closing s1's episode drops liveness -> the prune signal
     store.close_episode(session_id="s1", reason="session-end")
     live = {s["session_id"]: bool(s["live"]) for s in store.list_workstream_sessions("ws_1")}
     assert live == {"s1": False, "s2": False}

@@ -79,7 +79,8 @@ class WorkstreamCreateBody(BaseModel):
     constraint is surfaced as a 409 the tool retries with a fresh slug. ``repo`` is
     where it was created; ``dossier_path`` points at the external Logseq work page.
     Agents attach separately (they carry their own repo/worktree), so no worktree
-    path lives on the record.
+    path lives on the record. There is no status field — liveness is derived from
+    whether an attached session has an open episode.
     """
 
     id: str
@@ -87,12 +88,6 @@ class WorkstreamCreateBody(BaseModel):
     label: str | None = None
     repo: str | None = None
     dossier_path: str | None = None
-
-
-class WorkstreamStatusBody(BaseModel):
-    """POST /workstreams/{id}/status body — set a workstream ``open``/``closed``."""
-
-    status: str
 
 
 class WorkstreamAttachBody(BaseModel):

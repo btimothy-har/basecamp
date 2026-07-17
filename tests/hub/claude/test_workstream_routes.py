@@ -29,7 +29,7 @@ def test_create_returns_201_and_record(tmp_path: Path) -> None:
     body = resp.json()
     assert body["id"] == "ws_1"
     assert body["slug"] == "brave-otter-fox"
-    assert body["status"] == "open"
+    assert body["live"] == 0  # no attached live session yet; no stored status
 
 
 def test_duplicate_slug_returns_409(tmp_path: Path) -> None:
@@ -58,17 +58,18 @@ def test_list_filters(tmp_path: Path) -> None:
         assert {w["id"] for w in all_rows} == {"ws_1", "ws_2"}
         web = client.get("/workstreams", params={"repo": "acme/web"}).json()["workstreams"]
         assert {w["id"] for w in web} == {"ws_1"}
+        # both are idle (no attached live session) -> the prune audit lists both
+        idle = client.get("/workstreams", params={"idle": "true"}).json()["workstreams"]
+        assert {w["id"] for w in idle} == {"ws_1", "ws_2"}
+        assert client.get("/workstreams", params={"idle": "false"}).json()["workstreams"] == []
 
 
-def test_status_roundtrip_and_validation(tmp_path: Path) -> None:
+def test_get_reports_derived_live(tmp_path: Path) -> None:
     client = _build(tmp_path)
     with client:
         client.post("/workstreams", json=_create_body(id="ws_1", slug="a-b-c"))
-        ok = client.post("/workstreams/ws_1/status", json={"status": "closed"})
-        assert ok.status_code == 200 and ok.json()["updated"] is True
-        assert client.get("/workstreams/ws_1").json()["status"] == "closed"
-        assert client.post("/workstreams/ws_1/status", json={"status": "archived"}).status_code == 400
-        assert client.post("/workstreams/nope/status", json={"status": "open"}).status_code == 404
+        # a workstream with no attached live session is not live
+        assert client.get("/workstreams/ws_1").json()["live"] == 0
 
 
 def test_attach_and_list_sessions(tmp_path: Path) -> None:

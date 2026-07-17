@@ -22,7 +22,6 @@ from .workstreams import (
     get_workstream,
     list_workstream_sessions,
     list_workstreams,
-    set_workstream_status,
 )
 
 __all__ = [
@@ -49,5 +48,4 @@ __all__ = [
     "list_workstreams",
     "post_json",
     "register_session",
-    "set_workstream_status",
 ]

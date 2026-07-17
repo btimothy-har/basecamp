@@ -3,14 +3,19 @@
 A workstream is the hub's own durable coordination record — the anchor, because
 the dossier it maps to lives *outside* the hub (a ``.md`` in the shared Logseq
 graph). It carries a stable id (``ws_<uuid>``) and a readable ``slug``, a short
-``label``, its ``status``, the ``repo`` it was created in, and a ``dossier_path``
-pointing at that external work page. One workstream ↔ one dossier.
+``label``, the ``repo`` it was created in, and a ``dossier_path`` pointing at that
+external work page. One workstream ↔ one dossier.
 
 **Agents attach to the workstream, not to a worktree.** Many sessions can work a
 workstream over time or at once, each from its own repo/worktree — so portability
 and multi-worker both fall out of the attach rows, and the record stores no single
-worktree path. Liveness is derived: an attached session with an open ``episodes``
-row is live (the prune signal).
+worktree path.
+
+There is **no stored status**: a workstream is "live" exactly when one of its
+attached sessions has an open ``episodes`` row, so liveness is derived, never
+duplicated. The prune audit is the complement — workstreams with no live session
+(``list_idle_workstreams``). SessionEnd needs no workstream-specific write: closing
+the session's episode (existing behavior) is the whole signal.
 
 Schema follows the store's mixin idiom: ``CREATE TABLE IF NOT EXISTS`` with no
 declared foreign keys (``session_id``/``workstream_id`` are logical refs), so it
@@ -22,8 +27,14 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
-#: Allowed workstream statuses.
-WORKSTREAM_STATUSES = ("open", "closed")
+# The liveness of a workstream: EXISTS an attached session with an open episode.
+_LIVE_EXISTS = """
+    EXISTS(
+        SELECT 1 FROM workstream_sessions ws
+        JOIN episodes e ON e.session_id = ws.session_id AND e.ended_at IS NULL
+        WHERE ws.workstream_id = workstreams.id
+    )
+"""
 
 
 class WorkstreamsMixin:
@@ -36,7 +47,6 @@ class WorkstreamsMixin:
                 id TEXT PRIMARY KEY,
                 slug TEXT UNIQUE NOT NULL,
                 label TEXT,
-                status TEXT NOT NULL DEFAULT 'open',
                 repo TEXT,
                 dossier_path TEXT,
                 created_at TEXT NOT NULL,
@@ -47,7 +57,7 @@ class WorkstreamsMixin:
         connection.execute("CREATE INDEX IF NOT EXISTS idx_workstreams_repo ON workstreams(repo)")
         # Agent attachment: many sessions per workstream, each carrying its own
         # repo/worktree (portability + multi-worker). Additive/idempotent by
-        # (workstream_id, session_id).
+        # (workstream_id, session_id). Liveness derives from episodes, not a flag here.
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS workstream_sessions (
@@ -62,6 +72,9 @@ class WorkstreamsMixin:
         )
         connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_workstream_sessions_ws ON workstream_sessions(workstream_id)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_workstream_sessions_session ON workstream_sessions(session_id)"
         )
 
     def create_workstream(
@@ -84,20 +97,20 @@ class WorkstreamsMixin:
         with self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO workstreams (id, slug, label, status, repo, dossier_path, created_at, updated_at)
-                VALUES (?, ?, ?, 'open', ?, ?, ?, ?)
+                INSERT INTO workstreams (id, slug, label, repo, dossier_path, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (workstream_id, slug, label, repo, dossier_path, now, now),
             )
         return self.get_workstream(workstream_id) or {}
 
     def get_workstream(self, identifier: str) -> dict[str, Any] | None:
-        """Return a workstream by id **or** slug, or ``None`` if absent."""
+        """Return a workstream (with a derived ``live`` flag) by id **or** slug, or ``None``."""
 
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             row = connection.execute(
-                "SELECT * FROM workstreams WHERE id = ? OR slug = ?",
+                f"SELECT *, {_LIVE_EXISTS} AS live FROM workstreams WHERE id = ? OR slug = ?",
                 (identifier, identifier),
             ).fetchone()
         return dict(row) if row else None
@@ -106,44 +119,38 @@ class WorkstreamsMixin:
         self,
         *,
         repo: str | None = None,
-        status: str | None = None,
+        idle: bool | None = None,
     ) -> list[dict[str, Any]]:
-        """List workstreams (optionally filtered by repo and/or status), newest first."""
+        """List workstreams (each with a derived ``live`` flag), newest-active first.
+
+        ``repo`` filters by owning repo. ``idle`` filters by liveness: ``True`` →
+        only idle (no live session, the prune candidates), ``False`` → only live,
+        ``None`` → all.
+        """
 
         clauses: list[str] = []
         params: list[Any] = []
         if repo is not None:
             clauses.append("repo = ?")
             params.append(repo)
-        if status is not None:
-            clauses.append("status = ?")
-            params.append(status)
         where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
         with self._connect() as connection:
             connection.row_factory = sqlite3.Row
             rows = connection.execute(
-                f"SELECT * FROM workstreams {where} ORDER BY updated_at DESC",
+                f"SELECT *, {_LIVE_EXISTS} AS live FROM workstreams {where} ORDER BY updated_at DESC",
                 params,
             ).fetchall()
-        return [dict(row) for row in rows]
+        result = [dict(row) for row in rows]
+        if idle is True:
+            return [r for r in result if not r["live"]]
+        if idle is False:
+            return [r for r in result if r["live"]]
+        return result
 
-    def set_workstream_status(self, identifier: str, status: str) -> bool:
-        """Set a workstream's status (``open``/``closed``); return whether a row changed.
+    def list_idle_workstreams(self, *, repo: str | None = None) -> list[dict[str, Any]]:
+        """Return workstreams with no live attached session — the prune audit."""
 
-        Raises :class:`ValueError` for an unknown status so the route can reply 400
-        rather than persisting an invalid value.
-        """
-
-        if status not in WORKSTREAM_STATUSES:
-            msg = f"invalid status: {status!r}"
-            raise ValueError(msg)
-        now = self._now()
-        with self._connect() as connection:
-            cursor = connection.execute(
-                "UPDATE workstreams SET status = ?, updated_at = ? WHERE id = ? OR slug = ?",
-                (status, now, identifier, identifier),
-            )
-            return cursor.rowcount > 0
+        return self.list_workstreams(repo=repo, idle=True)
 
     def attach_workstream_session(
         self,
@@ -158,6 +165,9 @@ class WorkstreamsMixin:
         Additive and idempotent: re-attaching the same ``session_id`` refreshes its
         ``repo``/``worktree_path`` (preserving ``joined_at``) rather than duplicating.
         Resolves ``identifier`` (id or slug) to the workstream id so a slug attaches too.
+        Bumps the workstream's ``updated_at`` so recently-worked ones sort first — and
+        the workstream becomes live for free (a session with an open episode is now
+        attached), with no status to flip.
         """
 
         workstream = self.get_workstream(identifier)
@@ -175,14 +185,17 @@ class WorkstreamsMixin:
                 """,
                 (workstream["id"], session_id, repo, worktree_path, now),
             )
+            connection.execute(
+                "UPDATE workstreams SET updated_at = ? WHERE id = ?",
+                (now, workstream["id"]),
+            )
         return True
 
     def list_workstream_sessions(self, identifier: str) -> list[dict[str, Any]]:
         """Return the sessions attached to a workstream, each with its live/ended flag.
 
         Liveness is derived from ``episodes`` (an open episode ⇒ live), so this doubles
-        as the prune signal: a workstream whose attached sessions are all ended has no
-        live worker.
+        as the per-agent prune signal.
         """
 
         workstream = self.get_workstream(identifier)

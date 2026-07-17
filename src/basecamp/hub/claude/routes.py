@@ -29,7 +29,6 @@ from .contract import (
     TranscriptIngestBody,
     WorkstreamAttachBody,
     WorkstreamCreateBody,
-    WorkstreamStatusBody,
 )
 from .ingest import IngestScheduler
 from .store import SessionStore
@@ -85,6 +84,10 @@ def register_claude_routes(
         # ingest the episode's ``end_reason`` is then lost for good (the next
         # ``open_episode`` force-closes it with a NULL reason). Degrade explicitly, the
         # same way /ingest does, rather than surfacing an unhandled error.
+        #
+        # Nothing workstream-specific runs here: a workstream is live iff an attached
+        # session has an open episode, so closing this episode already makes the
+        # workstream idle (derived) with no extra write.
         try:
             ended = await asyncio.to_thread(store.close_episode, session_id=session_id, reason=body.reason)
         except sqlite3.OperationalError:
@@ -144,8 +147,8 @@ def register_claude_routes(
             raise HTTPException(status_code=503, detail="store busy") from None
 
     @app.get("/workstreams")
-    async def list_workstreams(repo: str | None = None, status: str | None = None) -> dict[str, Any]:
-        rows = await asyncio.to_thread(store.list_workstreams, repo=repo, status=status)
+    async def list_workstreams(repo: str | None = None, idle: bool | None = None) -> dict[str, Any]:  # noqa: FBT001
+        rows = await asyncio.to_thread(store.list_workstreams, repo=repo, idle=idle)
         return {"workstreams": rows}
 
     @app.get("/workstreams/{identifier}")
@@ -162,19 +165,6 @@ def register_claude_routes(
             raise HTTPException(status_code=404, detail="workstream not found")
         sessions = await asyncio.to_thread(store.list_workstream_sessions, identifier)
         return {"identifier": identifier, "sessions": sessions}
-
-    @app.post("/workstreams/{identifier}/status")
-    async def set_workstream_status(identifier: str, body: WorkstreamStatusBody) -> dict[str, Any]:
-        try:
-            changed = await asyncio.to_thread(store.set_workstream_status, identifier, body.status)
-        except ValueError:
-            raise HTTPException(status_code=400, detail=f"invalid status: {body.status!r}") from None
-        except sqlite3.OperationalError:
-            logger.warning("workstream status not updated: store busy for %s", identifier)
-            raise HTTPException(status_code=503, detail="store busy") from None
-        if not changed:
-            raise HTTPException(status_code=404, detail="workstream not found")
-        return {"identifier": identifier, "status": body.status, "updated": True}
 
     @app.post("/workstreams/{identifier}/attach")
     async def attach_workstream_session(identifier: str, body: WorkstreamAttachBody) -> dict[str, Any]:

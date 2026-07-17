@@ -72,13 +72,21 @@ def get_workstream(identifier: str, *, paths: DaemonPaths | None = None) -> dict
 def list_workstreams(
     *,
     repo: str | None = None,
-    status: str | None = None,
+    idle: bool | None = None,
     paths: DaemonPaths | None = None,
 ) -> list[dict[str, Any]]:
-    """Best-effort list workstreams; empty list if the daemon is unreachable."""
+    """Best-effort list workstreams; empty list if the daemon is unreachable.
+
+    ``idle=True`` returns only workstreams with no live attached session (the prune
+    audit); ``idle=False`` only live ones; ``None`` all.
+    """
 
     resolved = paths or daemon_paths()
-    params = {k: v for k, v in (("repo", repo), ("status", status)) if v is not None}
+    params: dict[str, Any] = {}
+    if repo is not None:
+        params["repo"] = repo
+    if idle is not None:
+        params["idle"] = "true" if idle else "false"
     try:
         code, body = get_json(str(resolved.socket), "/workstreams", params=params or None)
     except (httpx.HTTPError, OSError):
@@ -99,17 +107,6 @@ def list_workstream_sessions(identifier: str, *, paths: DaemonPaths | None = Non
     if code == 200 and isinstance(body, dict) and isinstance(body.get("sessions"), list):
         return body["sessions"]
     return []
-
-
-def set_workstream_status(identifier: str, status: str, *, paths: DaemonPaths | None = None) -> bool:
-    """Best-effort set a workstream's status; ``False`` if not updated or daemon down."""
-
-    resolved = paths or daemon_paths()
-    try:
-        code, body = post_json(str(resolved.socket), f"/workstreams/{identifier}/status", {"status": status})
-    except (httpx.HTTPError, OSError):
-        return False
-    return code == 200 and isinstance(body, dict) and bool(body.get("updated"))
 
 
 def attach_workstream_session(
