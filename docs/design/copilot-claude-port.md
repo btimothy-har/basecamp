@@ -271,6 +271,54 @@ Journals are a net-new convention; nothing in code validates that a workstream's
 
 ---
 
-## 11. In one line
+## 11. Build plan
+
+The coarse C0/C1/C2 tiers (§5) decompose into **seven dependency-ordered, independently-reviewable phases**. Build order: **C0a → C0b → C1a → C1b → C1c → C1d → C2**. C0a∥C0b overlap; within C1, C1c is buildable/testable against C1a alone (in parallel with C1b). Paths below are the concrete create/edit targets; all respect the hard file caps (.py ≤ 500, .ts ≤ 350).
+
+| Phase | Name | Depends on | Ships |
+|---|---|---|---|
+| **C0a** | Logseq resolver + MCP read resources | — | With the daemon **down**, a session reads `basecamp://memory/cockpit` + `/dossiers` |
+| **C0b** | Herdr-guarded `copilot` skill | — | `/basecamp:copilot` posture in Herdr; a "workstream" is a hand-made worktree + dossier |
+| **C1a** | Daemon workstream record | — | The daemon (v4) serves `POST/GET /workstreams…` over the UDS |
+| **C1b** | `create_workstream` provisioning | C1a | One MCP call → record + permanent worktree + Herdr pane + persisted path |
+| **C1c** | Handoff: `workstream current` CLI + start skill | C1a | Execution session pulls brief + dossier path, reads it, attaches |
+| **C1d** | Cleanup: manual close, guarded teardown | C1a, C1b | Close → status flip + worktree remove + branch delete (unmerged-guarded) |
+| **C2** | Live status escalation (optional) | C1a | Daemon forks a non-perturbing `claude -p` when the dossier read is insufficient |
+
+**After C0** (zero daemon change) you have a usable copilot: it orients, makes the choice-set legible, and curates shared memory. **After C1** the full stage → hand off → self-report → close loop works. **C2** is build-if-needed.
+
+### C0a — Logseq resolver + MCP read resources
+Port `readLogseqGraphDir` to Python and expose the cockpit + dossier index as MCP resources, re-resolved per fetch (daemon-independent). *Net-new:* `src/basecamp/mcp/logseq.py` (resolver: reuse `derive_repo_identity` for `<org>/<name>`; port `safeRepoIdentity`), renderers in `src/basecamp/mcp/render.py`, two `@mcp.resource` closures in `src/basecamp/mcp/server.py`, `tests/mcp/test_logseq.py`. *Verify:* daemon stopped → resources render the page/stub; nonexistent `graph_dir` → "unavailable" body, no crash.
+
+### C0b — Herdr-guarded `copilot` skill
+`claude/skills/copilot/SKILL.md`: frontmatter `name: copilot` + trigger description; body = the de-Pi'd copilot loop, a **Herdr entry-guard** (check `HERDR_ENV`/`HERDR_SOCKET_PATH`/`HERDR_PANE_ID`; refuse + instruct outside Herdr), the cockpit/dossier/journal conventions (point read at the C0a resources), and the §10.1 clean-worktree courtesy. *Strip:* `launch_workstream`, `pi --copilot/--workstream`, `ask_agent`/`message_agent`, `workstream_agents`, pi-swarm. *Verify:* grep for banned Pi tokens → zero; surfaces in Herdr, refuses outside.
+
+### C1a — Daemon workstream record (the irreducible core)
+Add the pointer schema to the go-forward Claude daemon. *Net-new:* `src/basecamp/hub/claude/store/workstreams.py` (`WorkstreamsMixin`: `workstreams` + `workstream_sessions`, create-if-not-exists DDL, logical refs, indexes on `slug`/`worktree_path`/`workstream_id`; methods create/get/get_by_worktree/list/attach_session/set_status/edit/delete); compose it in `store/__init__.py`; v4 bodies in `contract.py` + bump `CLAUDE_PROTOCOL_VERSION` 3→4; six routes in `routes.py` (incl. `GET /workstreams/by-worktree?path=`, slug-collision → **409**); `get_json` in `client/transport.py`; `client/workstreams.py` + `__init__` re-exports; tests under `tests/hub/claude/`. *Verify:* `curl` the UDS → `protocol: 4`, POST record → 201, dup slug → 409, `by-worktree` → the record.
+
+### C1b — `create_workstream` provisioning (the crux)
+Python provisions git worktree + Herdr pane directly (no callback into TS). *Net-new:* `worktrees_root(home)` in `src/basecamp/core/paths.py`; `src/basecamp/workspace/naming.py` (3-word slug gen, retry-on-409); `src/basecamp/workspace/worktree.py` (port `getOrCreateWorktree` + `detect_default_branch` + `copilot_worktree_target`; idempotent reuse-by-label; **also** `remove_worktree`/`delete_branch` for C1d); `src/basecamp/workspace/herdr.py` (`should_open_in_herdr` verbatim + `herdr worktree open` best-effort, tolerates missing binary); `src/basecamp/mcp/tools/workstreams.py` (`create_workstream` — **first `@mcp.tool` in the repo** — orchestrates slug→record→worktree→pane→persist; + `edit`/`list`/`set_status`); register in `server.py`; tests under `tests/workspace/` + `tests/mcp/`. *Verify:* in a Herdr pane, the two exact commands run; re-invoke → `created=False`; unset `HERDR_ENV` → pane skips, record+worktree still succeed.
+
+### C1c — Handoff: `workstream current` CLI + start skill
+*Net-new:* `src/basecamp/core/cli/workstream_group.py` (`@workstream.command("current")` — resolve cwd→worktree path, GET `by-worktree`, print brief + `dossier: <path>`; **read-only**), registered via `basecamp.add_command` in `cli.py`; `claude/skills/start-workstream/SKILL.md` (run `basecamp workstream current`, `Read` the dossier, **explicit attach** step, execution posture + §10.3 journal guidance); `tests/core/test_workstream_cli.py`. *Verify:* inside a registered worktree prints brief + dossier line; daemon-down → clean `Error:` exit 1.
+
+### C1d — Cleanup: manual close, guarded teardown
+*Edit:* `worktree.py` teardown primitives (`remove_worktree` = unlock + `worktree remove`, no `--force`; `delete_branch` = `git branch -d`, `-D` only on explicit confirm); `mcp/tools/workstreams.py` `cleanup_workstream` (reads persisted `worktree_path`/`branch`, guarded teardown, then `set_status(closed)`); a cleanup section in `claude/skills/copilot/SKILL.md`; `tests/workspace/test_worktree_teardown.py`. Git ops live in the tool/skill, **not** the daemon store. *Verify:* unmerged branch → refused + surfaced; merged → removed + deleted, status closed.
+
+### C2 — Live status escalation (optional, last)
+*Net-new:* `src/basecamp/hub/claude/fork.py` (resolve workstream→session→`transcript_path`, spawn a captured, torn-down `claude -p` continuation from the **on-disk transcript file**, non-perturbing copy); an escalation route + status tool (protocol 4→5). **Confirm the native `claude -p --resume`/`--fork` flag before building.** Build only once a real status question proves unanswerable from shared Logseq.
+
+### Cross-cutting decisions (load-bearing)
+- **Provisioning crux → Python shells out directly** to `git` + the `herdr` CLI (new `workspace/` helpers); no callback into TS. The TS is already a thin subprocess wrapper; the repo has three Python `git` precedents (`reclaim_agent_worktree`, `diff.make_git_runner`, `identity._git`).
+- **id/slug minted in the MCP tool**, not the daemon — daemon does a plain INSERT, surfaces slug-UNIQUE as `IntegrityError` → 409 → tool retries. Keeps the daemon a pure pointer store.
+- **Protocol bump 3→4 is free** — the existing health gate respawns the stale daemon; only the constant + one test change. (4→5 if C2 ships.)
+- **`workstream_path` normalized identically** at write (C1b) and read (C1c): absolute, symlink-free — `get_by_worktree` keys on an exact string.
+- **`workstream current` is read-only; attach is an explicit separate step** in the start skill (a read with a write side-effect would surprise).
+- **All record persistence targets `hub/claude/`** (the go-forward daemon); the legacy Pi swarm daemon is never extended. `WORKTREES_ROOT` is single-sourced in `core/paths.py`.
+- **Gaps resolved** in §10 (protected-checkout dropped, MCP env inheritance confirmed, journal convention pinned); deferred surfaces — record versioning (§7.1), Herdr-lock hardening (§7.4), C2 native-flag confirmation — are named, not blocking.
+
+---
+
+## 12. In one line
 
 Copilot lands on Claude Code as a **Herdr-guarded skill** whose loop stages work with one recoupled `create_workstream` (record + **permanent** worktree + Herdr pane, path persisted), hands off via a `/basecamp:start-workstream` skill that pulls **pointers, not content** from a **net-new pointer record** in the kept Claude daemon, and reads status straight from the workstream's **self-written dossier + journals** (unified by Logseq Linked References) — retiring Pi's locked mode, full-prompt replacement, WebSocket dispatch mesh, and cross-session push, while keeping exactly the one irreducible thing Claude Code can't do natively: a durable record that outlives a session and can be queried from another.
