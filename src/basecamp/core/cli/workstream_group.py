@@ -1,19 +1,23 @@
 """The ``basecamp workstream`` command group.
 
-``basecamp workstream current`` resolves which workstream owns the current
-worktree and prints its brief label + dossier **path** (pointers, not content —
-the daemon never stores the brief; the dossier file does). The ``start-workstream``
-skill inlines this call, then Reads the printed dossier path itself.
+Two ways to pick up a staged workstream, both printing pointers (not content —
+the daemon never stores the brief; the dossier file does):
 
-Hub-authoritative lookup: the cwd's worktree top-level is normalized the same way
-``create_workstream`` persisted it (absolute, symlink-free) and matched against
-the daemon's ``by-worktree`` route. Read-only — it records nothing.
+- ``current`` infers the workstream from the worktree you are in (the pane
+  copilot opened) — zero-arg convenience via the daemon's ``by-worktree`` route.
+- ``show <slug>`` resolves a named workstream from anywhere via id/slug, so a
+  workstream can be started from a different repo (cross-repo carry).
+
+Both print ``repo`` and ``worktree`` so the ``start-workstream`` skill can decide
+where to execute: in the workstream's home repo it is anchored to its provisioned
+worktree; in a different repo the brief is portable and executed in place.
 """
 
 from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Any
 
 import rich_click as click
 
@@ -29,21 +33,36 @@ def workstream() -> None:
 
 @workstream.command()
 def current() -> None:
-    """Print the workstream owning the current worktree (brief label + dossier path)."""
+    """Print the workstream owning the current worktree (infers from cwd)."""
     worktree_path = _current_worktree_path()
     if worktree_path is None:
         _fail("not inside a git worktree")
-
     record = client.get_workstream_by_worktree(worktree_path)
     if record is None:
         _fail("no workstream is registered for this worktree (is the daemon running?)")
+    _print_record(record)
 
+
+@workstream.command()
+@click.argument("identifier")
+def show(identifier: str) -> None:
+    """Print a workstream by slug or id (works from any repo or directory)."""
+    record = client.get_workstream(identifier)
+    if record is None:
+        _fail(f"no workstream found for {identifier!r} (is the daemon running?)")
+    _print_record(record)
+
+
+def _print_record(record: dict[str, Any]) -> None:
     label = record.get("label") or record.get("slug") or "(unnamed)"
-    dossier = record.get("dossier_path") or ""
     click.echo(f"label: {label}")
     click.echo(f"slug: {record.get('slug', '')}")
-    # A machine-friendly line the skill greps/Reads. Empty when no dossier is linked.
-    click.echo(f"dossier: {dossier}")
+    click.echo(f"status: {record.get('status', '')}")
+    click.echo(f"repo: {record.get('repo', '')}")
+    # `worktree` is the home worktree copilot provisioned; `dossier` is the brief
+    # page. Both are pointers the skill acts on (the brief itself is in the file).
+    click.echo(f"worktree: {record.get('worktree_path', '') or ''}")
+    click.echo(f"dossier: {record.get('dossier_path', '') or ''}")
 
 
 def _current_worktree_path() -> str | None:
