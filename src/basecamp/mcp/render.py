@@ -8,6 +8,9 @@ attributes it to the ``basecamp`` server, so the copy stays about the project.
 
 from __future__ import annotations
 
+from pathlib import Path
+
+from basecamp.mcp.logseq import MemoryAwareness
 from basecamp.mcp.resolve import ProjectAwareness
 
 # Claude Code truncates injected MCP instructions at ~2KB; stay comfortably under.
@@ -84,3 +87,81 @@ def render_context(awareness: ProjectAwareness) -> str:
         return awareness.context_text
     name = awareness.project_name or "this directory"
     return f"No standing project context is configured for {name}."
+
+
+def _memory_unavailable(memory: MemoryAwareness) -> str:
+    reason = memory.reason or "durable repo memory is unavailable"
+    return "\n".join(
+        [
+            "# Repo memory",
+            "",
+            "Durable repo memory is unavailable for this session; copilot remains usable without it.",
+            f"Reason: {reason}.",
+            f"Configured graph path: {memory.graph_dir or 'unavailable'}",
+            f"Repo identity: {memory.repo_identity or 'unavailable'}",
+            "",
+            "Continue without durable repo memory. Do not scan the Logseq graph to compensate.",
+        ]
+    )
+
+
+def render_cockpit(memory: MemoryAwareness) -> str:
+    """Render the ``basecamp://memory/cockpit`` resource body.
+
+    The repo cockpit page body if present; otherwise a seed stub telling copilot
+    where to start it. Falls back to the unavailable body when memory is not
+    resolvable (no graph dir or no repo identity).
+    """
+    if not memory.available or memory.cockpit_path is None:
+        return _memory_unavailable(memory)
+
+    try:
+        body = Path(memory.cockpit_path).read_text()
+    except OSError:
+        body = ""
+    if body.strip():
+        return body
+
+    return "\n".join(
+        [
+            f"# {memory.cockpit_name}",
+            "",
+            f"The repo cockpit for {memory.repo_identity} is not written yet.",
+            f"Seed it at `{memory.cockpit_path}` when durable repo-level context is worth keeping:",
+            "current focus, priority shifts, the active/waiting/blocked/stale/proposed/not-now",
+            "choice-set, and cross-workstream decisions.",
+            "",
+            "Read the cockpit first when durable repo context matters. Do not scan the whole graph.",
+        ]
+    )
+
+
+def render_dossier_index(memory: MemoryAwareness) -> str:
+    """Render the ``basecamp://memory/dossiers`` resource body.
+
+    A pointer index (slug + path) of the repo's work dossiers — never the
+    dossier bodies. Copilot Reads a specific dossier itself when a task calls
+    for it.
+    """
+    if not memory.available or memory.dossier_prefix is None:
+        return _memory_unavailable(memory)
+
+    lines = [f"# Work dossiers for {memory.repo_identity}", ""]
+    if not memory.dossier_paths:
+        lines += [
+            "No work dossiers exist yet.",
+            f"They are pages named `{memory.dossier_prefix}<slug>` in the shared Logseq graph.",
+        ]
+        return "\n".join(lines)
+
+    lines.append("Open only a specifically relevant dossier; do not read them all.")
+    lines.append("")
+    for path in memory.dossier_paths:
+        slug = _dossier_slug(path, memory.dossier_prefix)
+        lines.append(f"- {slug} — `{path}`")
+    return "\n".join(lines)
+
+
+def _dossier_slug(path: str, prefix: str) -> str:
+    stem = Path(path).stem
+    return stem[len(prefix) :] if stem.startswith(prefix) else stem
