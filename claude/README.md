@@ -8,8 +8,11 @@ and custom context into the session.
 > **Status: in build.** This README remains the design record. Tier-0/1 have
 > landed incrementally — the plugin skeleton, hook-driven session lifecycle, the
 > `sessions`/`episodes` schema, and transcript ingestion into the hub daemon
-> ([transcript-ingestion](../docs/design/transcript-ingestion.md)). The Tier-2
-> orchestration rows below are still intended shape, not yet built.
+> ([transcript-ingestion](../docs/design/transcript-ingestion.md)). The native
+> skill track has also landed: `sql`, `data-warehousing`, `python-development`,
+> `marimo`, `data-analysis`, `planning`, and `gather` now live under `skills/`,
+> plus a `pr` skill (the former `/create-pr` command). The Tier-2 orchestration
+> rows below are still intended shape, not yet built.
 
 ## What it is
 
@@ -67,11 +70,11 @@ performs today, so basecamp config stays the single source of truth.
 | Herdr pane launching | ❌ no analog | **MCP tool** (shell-out) or `monitors/` · Tier 2, local-only |
 | Logseq memory curation (append) | ❌ | **MCP tools** · Tier 2 |
 | BigQuery `bq_query` | ❌ | **MCP tool** (optional), or a dedicated BigQuery MCP |
-| Skills: `sql`, `data-warehousing`, `python-development`, `marimo`, `data-analysis`, `planning`, `gather`, `agents` | ✅ skills | **Native** — `skills/` (port `SKILL.md` verbatim) |
+| Skills: `sql`, `data-warehousing`, `python-development`, `marimo`, `data-analysis`, `planning`, `gather` | ✅ skills | **Native — landed** in `skills/`. `python-development`, `data-warehousing`, `marimo`, `gather` ported verbatim; `sql` (Pi `bq_query` → `bq` CLI), `data-analysis`, and `planning` (Pi `plan()`/task tools → native plan mode + todos) adapted. `agents` deferred with the Tier-2 swarm primitive. |
 | Session-mode postures (analysis / planning / work / copilot) | ⚠️ don't port as *enforced* modes | **Native** — posture skills in `skills/` |
 | Per-repo session setup (was the worktree setup hook) | ✅ hooks | **Native** — `hooks/hooks.json` → `SessionStart` |
 | `bash-reviewer` | ✅ `auto` mode; and MCP can't intercept host `Bash` | **Native hook** if wanted (`PreToolUse`); else drop |
-| basecamp slash commands | ✅ commands / skills | **Native** — `commands/` |
+| basecamp slash commands | ✅ commands / skills | **Native** — `commands/`; invocable commands land as skills (e.g. `/create-pr` → the `pr` skill, landed) |
 | Cross-repo read boundary (`Read(~/code/**)` + secret `deny`s) | ✅ settings | **External** — user settings, or `basecamp setup` |
 | `dispatch_agent` / within-session subagents | ✅ subagents + `agents/` | **Drop** |
 | `plan()` / plan mode | ✅ plan mode | **Drop** |
