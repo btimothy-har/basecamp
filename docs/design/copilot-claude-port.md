@@ -236,7 +236,8 @@ Settled in review; baked into §2–§6.
 
 - **Local-only staging/handoff.** `create_workstream`'s worktree + Herdr pane and the `start-workstream` handoff are host-local; in Claude Code for web (no tmux/host worktree lifecycle) they no-op. Records, memory (shared Logseq), and status still work. A known Tier-2 constraint — now larger, because v3 leans on Herdr by design.
 - **Herdr lock is soft.** The skill guard is a front-door check, not a wall; a determined user can bypass it. Acceptable per "don't port enforced modes"; §7.4 is the harder lever if needed.
-- **Journals are net-new.** No code writes Logseq journals today; the day-link must match the graph's date format for Linked References to resolve. Skill-supplied guidance, not code-enforced.
+- **Journals are net-new.** No code writes Logseq journals today; the day-link must match the graph's date format for Linked References to resolve. Skill-supplied guidance, not code-enforced — the convention is pinned in §10.3.
+- **MCP env / worktree base — verified.** `create_workstream` relies on the stdio MCP server inheriting the Herdr env, and on a dirty main checkout not leaking into a new worktree. Both are empirically confirmed (§10.2, §10.1) on `claude` 2.1.205 — no `${HERDR_*}` passthrough and no protected-checkout guard needed.
 - **Destructive cleanup.** Full teardown deletes a branch — the unmerged-work guard (never a silent `-D`) is load-bearing; get it right before shipping C1.
 - **Daemon protocol bump.** 3 → 4 respawns stale daemons via the health gate — the existing pattern; keep DDL additive.
 - **MCP instructions cap.** ~2KB, truncated — keep the router a pointer, never the payload.
@@ -244,6 +245,32 @@ Settled in review; baked into §2–§6.
 
 ---
 
-## 10. In one line
+## 10. Build-gap resolutions (verified)
+
+The build-phase decomposition surfaced three gaps flagged as "assumed but unverified." Each is now resolved with evidence; these are load-bearing for C1.
+
+### 10.1 `validateProtectedCheckout` → **dropped**; clean-worktree check moves to the skill
+
+Pi's `getOrCreateWorktree` refuses to `git worktree add` unless the *main checkout* is clean and on its default branch (`crud.ts:203`). The port **drops that guard**: `git worktree add -b <branch> <dir> <default-branch>` creates the new worktree at the **clean committed tip of the base branch**, so a dirty main checkout does not corrupt or leak into the new worktree.
+
+**Verified empirically:** with a modified tracked file *and* an untracked file present in a dirty main checkout, `git worktree add -b feat ../new-wt main` produced a new worktree containing **only the clean committed tip** — neither the uncommitted edit nor the untracked file carried across. (This corrects an earlier assumption that git "brings changes forward"; it does not — new worktrees branch from the committed ref, not the working tree.)
+
+The residual concern is not correctness but *lost WIP awareness*: a user with uncommitted work in the main checkout who stages a workstream leaves that work behind in main (which is fine — it stays there). So the check becomes a **copilot-skill courtesy**, not a hard gate: before `create_workstream`, the skill has copilot glance at `git status` in the current checkout and, if there is uncommitted work relevant to the new workstream, mention it — but staging is never blocked. Policy, surfaced in prose; not a git necessity.
+
+### 10.2 stdio MCP env inheritance → **confirmed: full inheritance, no `env` passthrough needed**
+
+`create_workstream` reads `HERDR_ENV` / `HERDR_SOCKET_PATH` / `HERDR_PANE_ID` / `HERDR_WORKSPACE_ID` (and the session cwd) from the MCP server's own `os.environ` to decide whether to open a pane. The open question was whether the plugin's stdio server (spawned from `.mcp.json`, no `env` block) inherits the Claude CLI's Herdr environment.
+
+**Verified empirically on `claude` 2.1.205:** a throwaway stdio MCP server launched via `--mcp-config` (no `env` block) reported **all six `HERDR_*` vars** in its own `os.environ`, and inherited the launch cwd. So on the shipped CLI, **stdio MCP servers inherit the parent's full process environment by default** — matching `basecamp/mcp/server.py`'s existing docstring ("inherits the session cwd"). No `${HERDR_*}` passthrough in `.mcp.json` is required.
+
+> Caveat (from the CLI docs, not contradicted by the test): the stdio server is **spawned once at session start and its env is frozen at that point** — it does not see later changes to the CLI's environment. For copilot this is fine: Herdr sets `HERDR_*` before `claude` launches, so they are present at spawn. But it means the `HERDR_*` the tool reads reflect the **copilot session's** pane, which is exactly the pane that should host the new worktree — correct by construction. (If a future need arises to read a *different* live env, that would require the `${VAR}` `env`-block form; not needed here.) One belt-and-suspenders option is to still list the four `HERDR_*` in the `.mcp.json` `env` block via `${VAR}` — harmless, and explicit — but the default inheritance already works, so it is optional.
+
+### 10.3 Journal date-format convention → **documented, not code-enforced (accepted)**
+
+Journals are a net-new convention; nothing in code validates that a workstream's day-link matches the graph's configured display format, and a wrong format silently breaks the Logseq Linked-References daily view. This stays **skill-supplied guidance** (per §3.2 / §9), and is accepted as such — but the guidance is now made explicit and testable-by-eye: the `start-workstream` skill will document the exact convention (block form `- DONE <what> [[<day in the graph's display format>]]`, e.g. `[[Jul 17th, 2026]]`, which Logseq stores as `journals/2026_07_17.md`), tell the session to confirm the graph's date format once from an existing journal file if unsure, and tag the dossier (`[[work__<org>__<repo>__<slug>]]`) so the timeline also stitches there. No code phase owns validation; the convention lives in the skill and this doc.
+
+---
+
+## 11. In one line
 
 Copilot lands on Claude Code as a **Herdr-guarded skill** whose loop stages work with one recoupled `create_workstream` (record + **permanent** worktree + Herdr pane, path persisted), hands off via a `/basecamp:start-workstream` skill that pulls **pointers, not content** from a **net-new pointer record** in the kept Claude daemon, and reads status straight from the workstream's **self-written dossier + journals** (unified by Logseq Linked References) — retiring Pi's locked mode, full-prompt replacement, WebSocket dispatch mesh, and cross-session push, while keeping exactly the one irreducible thing Claude Code can't do natively: a durable record that outlives a session and can be queried from another.
