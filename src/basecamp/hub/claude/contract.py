@@ -72,20 +72,20 @@ class TranscriptIngestBody(BaseModel):
 
 
 class WorkstreamCreateBody(BaseModel):
-    """POST /workstreams body — create a workstream pointer record.
+    """POST /workstreams body — create a workstream record.
 
     ``id`` (``ws_<uuid>``) and ``slug`` are minted by the MCP tool, not the daemon,
-    so the daemon stays a pure pointer store; a slug collision on the UNIQUE
-    constraint is surfaced as a 409 the tool retries with a fresh slug. The rest are
-    pointers/identity: the owning ``repo`` and the ``worktree_path`` / ``dossier_path``
-    the record points at (populated as staging provisions them).
+    so the daemon stays a pure coordination store; a slug collision on the UNIQUE
+    constraint is surfaced as a 409 the tool retries with a fresh slug. ``repo`` is
+    where it was created; ``dossier_path`` points at the external Logseq work page.
+    Agents attach separately (they carry their own repo/worktree), so no worktree
+    path lives on the record.
     """
 
     id: str
     slug: str
     label: str | None = None
     repo: str | None = None
-    worktree_path: str | None = None
     dossier_path: str | None = None
 
 
@@ -95,11 +95,14 @@ class WorkstreamStatusBody(BaseModel):
     status: str
 
 
-class WorkstreamWorktreeBody(BaseModel):
-    """POST /workstreams/{id}/worktree body — persist the provisioned worktree path.
+class WorkstreamAttachBody(BaseModel):
+    """POST /workstreams/{id}/attach body — attach a session (agent) to a workstream.
 
-    Written by ``create_workstream`` after the worktree is provisioned; the path is
-    normalized (absolute, symlink-free) so the ``by-worktree`` lookup matches.
+    Additive and idempotent by session. The attaching session carries its own
+    ``repo`` and ``worktree_path`` — this is what makes a workstream multi-worker and
+    portable across repos, with no single worktree bound to the record.
     """
 
-    worktree_path: str
+    session_id: str
+    repo: str | None = None
+    worktree_path: str | None = None

@@ -16,13 +16,13 @@ from .spawn import ensure_daemon
 from .transport import HealthResult, delete_json, get_json, health_ping, post_json
 from .workstreams import (
     WorkstreamCreateOutcome,
+    attach_workstream_session,
     create_workstream,
     delete_workstream,
     get_workstream,
-    get_workstream_by_worktree,
+    list_workstream_sessions,
     list_workstreams,
     set_workstream_status,
-    set_workstream_worktree,
 )
 
 __all__ = [
@@ -33,6 +33,7 @@ __all__ = [
     "HealthResult",
     "RegisterOutcome",
     "WorkstreamCreateOutcome",
+    "attach_workstream_session",
     "build_register_body",
     "create_workstream",
     "daemon_paths",
@@ -42,12 +43,11 @@ __all__ = [
     "ensure_daemon",
     "get_json",
     "get_workstream",
-    "get_workstream_by_worktree",
     "health_ping",
     "ingest_transcript",
+    "list_workstream_sessions",
     "list_workstreams",
     "post_json",
     "register_session",
     "set_workstream_status",
-    "set_workstream_worktree",
 ]

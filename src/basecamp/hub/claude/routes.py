@@ -27,9 +27,9 @@ from .contract import (
     SessionEndBody,
     SessionRegisterBody,
     TranscriptIngestBody,
+    WorkstreamAttachBody,
     WorkstreamCreateBody,
     WorkstreamStatusBody,
-    WorkstreamWorktreeBody,
 )
 from .ingest import IngestScheduler
 from .store import SessionStore
@@ -135,7 +135,6 @@ def register_claude_routes(
                 slug=body.slug,
                 label=body.label,
                 repo=body.repo,
-                worktree_path=body.worktree_path,
                 dossier_path=body.dossier_path,
             )
         except sqlite3.IntegrityError:
@@ -149,19 +148,20 @@ def register_claude_routes(
         rows = await asyncio.to_thread(store.list_workstreams, repo=repo, status=status)
         return {"workstreams": rows}
 
-    @app.get("/workstreams/by-worktree")
-    async def get_workstream_by_worktree(path: str) -> dict[str, Any]:
-        row = await asyncio.to_thread(store.get_workstream_by_worktree, path)
-        if row is None:
-            raise HTTPException(status_code=404, detail="no workstream for that worktree")
-        return row
-
     @app.get("/workstreams/{identifier}")
     async def get_workstream(identifier: str) -> dict[str, Any]:
         row = await asyncio.to_thread(store.get_workstream, identifier)
         if row is None:
             raise HTTPException(status_code=404, detail="workstream not found")
         return row
+
+    @app.get("/workstreams/{identifier}/sessions")
+    async def list_workstream_sessions(identifier: str) -> dict[str, Any]:
+        row = await asyncio.to_thread(store.get_workstream, identifier)
+        if row is None:
+            raise HTTPException(status_code=404, detail="workstream not found")
+        sessions = await asyncio.to_thread(store.list_workstream_sessions, identifier)
+        return {"identifier": identifier, "sessions": sessions}
 
     @app.post("/workstreams/{identifier}/status")
     async def set_workstream_status(identifier: str, body: WorkstreamStatusBody) -> dict[str, Any]:
@@ -176,16 +176,22 @@ def register_claude_routes(
             raise HTTPException(status_code=404, detail="workstream not found")
         return {"identifier": identifier, "status": body.status, "updated": True}
 
-    @app.post("/workstreams/{identifier}/worktree")
-    async def set_workstream_worktree(identifier: str, body: WorkstreamWorktreeBody) -> dict[str, Any]:
+    @app.post("/workstreams/{identifier}/attach")
+    async def attach_workstream_session(identifier: str, body: WorkstreamAttachBody) -> dict[str, Any]:
         try:
-            changed = await asyncio.to_thread(store.set_workstream_worktree, identifier, body.worktree_path)
+            attached = await asyncio.to_thread(
+                store.attach_workstream_session,
+                identifier=identifier,
+                session_id=body.session_id,
+                repo=body.repo,
+                worktree_path=body.worktree_path,
+            )
         except sqlite3.OperationalError:
-            logger.warning("workstream worktree not persisted: store busy for %s", identifier)
+            logger.warning("workstream attach not recorded: store busy for %s", identifier)
             raise HTTPException(status_code=503, detail="store busy") from None
-        if not changed:
+        if not attached:
             raise HTTPException(status_code=404, detail="workstream not found")
-        return {"identifier": identifier, "worktree_path": body.worktree_path, "updated": True}
+        return {"identifier": identifier, "session_id": body.session_id, "attached": True}
 
     @app.delete("/workstreams/{identifier}")
     async def delete_workstream(identifier: str) -> dict[str, Any]:

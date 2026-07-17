@@ -1,10 +1,11 @@
-"""Workstream-record RPCs the MCP tools and the ``workstream current`` CLI call.
+"""Workstream-record RPCs the MCP tools and the ``workstream`` CLI call.
 
 ``create_workstream`` ensures a daemon is up (spawning one if needed) then POSTs
 the record — the copilot staging path needs a live daemon, so this one may raise
-:class:`DaemonError`. The reads (``get`` / ``get_by_worktree`` / ``list``) and
-``set_status`` are best-effort: they never spawn and never raise, resolving a
-transport failure to ``None``/``False`` so a daemon-down CLI degrades cleanly.
+:class:`DaemonError`. The reads (``get`` / ``list`` / ``list_sessions``) and the
+mutations (``set_status`` / ``attach`` / ``delete``) are best-effort: they never
+spawn and never raise, resolving a transport failure to ``None``/``False``/``[]``
+so a daemon-down CLI degrades cleanly.
 """
 
 from __future__ import annotations
@@ -41,7 +42,6 @@ def create_workstream(
     slug: str,
     label: str | None = None,
     repo: str | None = None,
-    worktree_path: str | None = None,
     dossier_path: str | None = None,
     paths: DaemonPaths | None = None,
 ) -> WorkstreamCreateOutcome:
@@ -57,7 +57,6 @@ def create_workstream(
             "slug": slug,
             "label": label,
             "repo": repo,
-            "worktree_path": worktree_path,
             "dossier_path": dossier_path,
         },
     )
@@ -68,12 +67,6 @@ def get_workstream(identifier: str, *, paths: DaemonPaths | None = None) -> dict
     """Best-effort fetch a workstream by id or slug; ``None`` if absent or daemon down."""
 
     return _get(f"/workstreams/{identifier}", paths=paths)
-
-
-def get_workstream_by_worktree(worktree_path: str, *, paths: DaemonPaths | None = None) -> dict[str, Any] | None:
-    """Best-effort fetch the workstream owning ``worktree_path``; ``None`` if none or daemon down."""
-
-    return _get("/workstreams/by-worktree", params={"path": worktree_path}, paths=paths)
 
 
 def list_workstreams(
@@ -95,6 +88,19 @@ def list_workstreams(
     return []
 
 
+def list_workstream_sessions(identifier: str, *, paths: DaemonPaths | None = None) -> list[dict[str, Any]]:
+    """Best-effort list the sessions attached to a workstream; empty if none or daemon down."""
+
+    resolved = paths or daemon_paths()
+    try:
+        code, body = get_json(str(resolved.socket), f"/workstreams/{identifier}/sessions")
+    except (httpx.HTTPError, OSError):
+        return []
+    if code == 200 and isinstance(body, dict) and isinstance(body.get("sessions"), list):
+        return body["sessions"]
+    return []
+
+
 def set_workstream_status(identifier: str, status: str, *, paths: DaemonPaths | None = None) -> bool:
     """Best-effort set a workstream's status; ``False`` if not updated or daemon down."""
 
@@ -106,19 +112,26 @@ def set_workstream_status(identifier: str, status: str, *, paths: DaemonPaths | 
     return code == 200 and isinstance(body, dict) and bool(body.get("updated"))
 
 
-def set_workstream_worktree(identifier: str, worktree_path: str, *, paths: DaemonPaths | None = None) -> bool:
-    """Best-effort persist a workstream's provisioned worktree path; ``False`` on failure."""
+def attach_workstream_session(
+    identifier: str,
+    session_id: str,
+    *,
+    repo: str | None = None,
+    worktree_path: str | None = None,
+    paths: DaemonPaths | None = None,
+) -> bool:
+    """Best-effort attach a session (agent) to a workstream; ``False`` on failure or daemon down."""
 
     resolved = paths or daemon_paths()
     try:
         code, body = post_json(
             str(resolved.socket),
-            f"/workstreams/{identifier}/worktree",
-            {"worktree_path": worktree_path},
+            f"/workstreams/{identifier}/attach",
+            {"session_id": session_id, "repo": repo, "worktree_path": worktree_path},
         )
     except (httpx.HTTPError, OSError):
         return False
-    return code == 200 and isinstance(body, dict) and bool(body.get("updated"))
+    return code == 200 and isinstance(body, dict) and bool(body.get("attached"))
 
 
 def delete_workstream(identifier: str, *, paths: DaemonPaths | None = None) -> bool:

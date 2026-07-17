@@ -1,4 +1,4 @@
-"""Tests for the `basecamp workstream` CLI commands (current + show)."""
+"""Tests for the `basecamp workstream` CLI commands (current + show + attach)."""
 
 from __future__ import annotations
 
@@ -20,35 +20,33 @@ _RECORD = {
     "label": "auth refactor",
     "status": "open",
     "repo": "acme/web-app",
-    "worktree_path": "/wt/copilot/brave-otter-fox",
     "dossier_path": "/g/pages/work__acme__web-app__brave-otter-fox.md",
 }
 
 
-def test_current_prints_pointers(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(wg, "_current_worktree_path", lambda: "/wt/copilot/brave-otter-fox")
-    monkeypatch.setattr(wg.client, "get_workstream_by_worktree", lambda _p: _RECORD)
+def test_current_derives_slug_from_worktree_path(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
+    # a copilot/<slug> worktree path -> slug -> get_workstream(slug)
+    monkeypatch.setattr(wg, "_worktree_toplevel", lambda: "/home/u/.worktrees/acme/web-app/copilot/brave-otter-fox")
+    seen: list[str] = []
+
+    def _get(identifier: str) -> dict:
+        seen.append(identifier)
+        return _RECORD
+
+    monkeypatch.setattr(wg.client, "get_workstream", _get)
     result = runner.invoke(workstream, ["current"])
     assert result.exit_code == 0
+    assert seen == ["brave-otter-fox"]  # slug pulled from the path, looked up by slug
     assert "label: auth refactor" in result.output
-    assert "repo: acme/web-app" in result.output
-    assert "worktree: /wt/copilot/brave-otter-fox" in result.output
     assert "dossier: /g/pages/work__acme__web-app__brave-otter-fox.md" in result.output
 
 
-def test_current_not_in_worktree_exits_1(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(wg, "_current_worktree_path", lambda: None)
+def test_current_not_in_workstream_worktree_exits_1(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
+    # a plain repo path (no copilot/<slug> segment)
+    monkeypatch.setattr(wg, "_worktree_toplevel", lambda: "/home/u/code/some-repo")
     result = runner.invoke(workstream, ["current"])
     assert result.exit_code != 0
-    assert "not inside a git worktree" in result.output
-
-
-def test_current_no_record_exits_1(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(wg, "_current_worktree_path", lambda: "/wt/x")
-    monkeypatch.setattr(wg.client, "get_workstream_by_worktree", lambda _p: None)
-    result = runner.invoke(workstream, ["current"])
-    assert result.exit_code != 0
-    assert "no workstream is registered" in result.output
+    assert "not inside a workstream worktree" in result.output
 
 
 def test_show_by_slug_from_anywhere(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -61,9 +59,8 @@ def test_show_by_slug_from_anywhere(runner: CliRunner, monkeypatch: pytest.Monke
     monkeypatch.setattr(wg.client, "get_workstream", _get)
     result = runner.invoke(workstream, ["show", "brave-otter-fox"])
     assert result.exit_code == 0
-    assert seen == ["brave-otter-fox"]  # resolved by slug, no worktree inference
+    assert seen == ["brave-otter-fox"]
     assert "repo: acme/web-app" in result.output
-    assert "dossier: /g/pages/work__acme__web-app__brave-otter-fox.md" in result.output
 
 
 def test_show_unknown_exits_1(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -73,12 +70,35 @@ def test_show_unknown_exits_1(runner: CliRunner, monkeypatch: pytest.MonkeyPatch
     assert "no workstream found" in result.output
 
 
-def test_show_falls_back_to_slug_label(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        wg.client,
-        "get_workstream",
-        lambda _i: {"slug": "brave-otter-fox", "label": None, "repo": "acme/web-app"},
-    )
-    result = runner.invoke(workstream, ["show", "brave-otter-fox"])
+def test_attach_uses_session_id_from_env(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-123")
+    monkeypatch.setattr(wg, "repo_identity", lambda _cwd: "acme/web-app")
+    monkeypatch.setattr(wg, "_worktree_toplevel", lambda: "/wt/copilot/brave-otter-fox")
+    calls: list[tuple] = []
+
+    def _attach(identifier, session_id, *, repo=None, worktree_path=None):
+        calls.append((identifier, session_id, repo, worktree_path))
+        return True
+
+    monkeypatch.setattr(wg.client, "attach_workstream_session", _attach)
+    result = runner.invoke(workstream, ["attach", "brave-otter-fox"])
     assert result.exit_code == 0
-    assert "label: brave-otter-fox" in result.output  # falls back to slug
+    assert calls == [("brave-otter-fox", "sess-123", "acme/web-app", "/wt/copilot/brave-otter-fox")]
+    assert "attached to brave-otter-fox" in result.output
+
+
+def test_attach_without_session_id_exits_1(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID", raising=False)
+    result = runner.invoke(workstream, ["attach", "brave-otter-fox"])
+    assert result.exit_code != 0
+    assert "no CLAUDE_CODE_SESSION_ID" in result.output
+
+
+def test_attach_unknown_workstream_exits_1(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "sess-123")
+    monkeypatch.setattr(wg, "repo_identity", lambda _cwd: None)
+    monkeypatch.setattr(wg, "_worktree_toplevel", lambda: None)
+    monkeypatch.setattr(wg.client, "attach_workstream_session", lambda *_a, **_k: False)
+    result = runner.invoke(workstream, ["attach", "nope"])
+    assert result.exit_code != 0
+    assert "could not attach" in result.output

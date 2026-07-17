@@ -1,4 +1,4 @@
-"""Tests for the ``workstreams`` store mixin — the C1a pointer record."""
+"""Tests for the ``workstreams`` store mixin — records + agent attachment."""
 
 from __future__ import annotations
 
@@ -24,14 +24,14 @@ def test_create_and_get_by_id_and_slug(tmp_path: Path) -> None:
         store,
         label="auth refactor",
         repo="acme/web-app",
-        worktree_path="/wt/copilot/brave-otter-fox",
         dossier_path="/g/pages/work__acme__web-app__brave-otter-fox.md",
     )
     assert created["id"] == "ws_1"
     assert created["slug"] == "brave-otter-fox"
     assert created["status"] == "open"
     assert created["label"] == "auth refactor"
-    # fetch by id and by slug both resolve
+    assert created["dossier_path"] == "/g/pages/work__acme__web-app__brave-otter-fox.md"
+    assert "worktree_path" not in created  # the record no longer binds a worktree
     assert store.get_workstream("ws_1") == created
     assert store.get_workstream("brave-otter-fox") == created
     assert store.get_workstream("nope") is None
@@ -42,14 +42,6 @@ def test_slug_collision_raises_integrity_error(tmp_path: Path) -> None:
     _create(store, workstream_id="ws_1", slug="dup-slug-here")
     with pytest.raises(sqlite3.IntegrityError):
         _create(store, workstream_id="ws_2", slug="dup-slug-here")
-
-
-def test_get_by_worktree(tmp_path: Path) -> None:
-    store = _store(tmp_path)
-    _create(store, workstream_id="ws_1", slug="a-b-c", worktree_path="/wt/copilot/a-b-c")
-    _create(store, workstream_id="ws_2", slug="d-e-f", worktree_path="/wt/copilot/d-e-f")
-    assert store.get_workstream_by_worktree("/wt/copilot/d-e-f")["id"] == "ws_2"
-    assert store.get_workstream_by_worktree("/wt/nonexistent") is None
 
 
 def test_list_filters_by_repo_and_status(tmp_path: Path) -> None:
@@ -70,35 +62,55 @@ def test_set_status_updates_and_rejects_invalid(tmp_path: Path) -> None:
     _create(store, workstream_id="ws_1", slug="a-b-c")
     assert store.set_workstream_status("ws_1", "closed") is True
     assert store.get_workstream("ws_1")["status"] == "closed"
-    # unknown identifier -> no row changed
     assert store.set_workstream_status("nope", "open") is False
-    # invalid status -> ValueError (route maps to 400)
     with pytest.raises(ValueError, match="invalid status"):
         store.set_workstream_status("ws_1", "archived")
 
 
-def test_set_status_advances_updated_at(tmp_path: Path) -> None:
-    store = _store(tmp_path)
-    created = _create(store, workstream_id="ws_1", slug="a-b-c")
-    store.set_workstream_status("ws_1", "closed")
-    after = store.get_workstream("ws_1")
-    assert after["created_at"] == created["created_at"]  # created_at preserved
-    assert after["updated_at"] >= created["updated_at"]  # updated_at advanced
-
-
-def test_delete_removes_record(tmp_path: Path) -> None:
+def test_attach_session_is_additive_and_idempotent(tmp_path: Path) -> None:
     store = _store(tmp_path)
     _create(store, workstream_id="ws_1", slug="a-b-c")
+
+    # two different agents attach — multi-worker
+    assert store.attach_workstream_session(identifier="a-b-c", session_id="s1", repo="acme/web", worktree_path="/wt/1")
+    assert store.attach_workstream_session(identifier="ws_1", session_id="s2", repo="acme/api", worktree_path="/wt/2")
+    sessions = store.list_workstream_sessions("ws_1")
+    assert {s["session_id"] for s in sessions} == {"s1", "s2"}
+
+    # re-attaching s1 refreshes its facets, does not duplicate
+    store.attach_workstream_session(identifier="ws_1", session_id="s1", repo="acme/web2", worktree_path="/wt/1b")
+    sessions = store.list_workstream_sessions("ws_1")
+    assert len(sessions) == 2
+    s1 = next(s for s in sessions if s["session_id"] == "s1")
+    assert s1["repo"] == "acme/web2" and s1["worktree_path"] == "/wt/1b"
+
+    # attaching to an unknown workstream -> False
+    assert store.attach_workstream_session(identifier="nope", session_id="s3") is False
+
+
+def test_list_sessions_liveness_from_episodes(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    _create(store, workstream_id="ws_1", slug="a-b-c")
+    # s1 has a live session (registered + open episode); s2 does not
+    store.upsert_session(session_id="s1", cwd="/x")
+    store.open_episode(session_id="s1")
+    store.attach_workstream_session(identifier="ws_1", session_id="s1")
+    store.attach_workstream_session(identifier="ws_1", session_id="s2")
+
+    live = {s["session_id"]: bool(s["live"]) for s in store.list_workstream_sessions("ws_1")}
+    assert live == {"s1": True, "s2": False}
+
+    # closing s1's episode drops liveness -> the prune signal
+    store.close_episode(session_id="s1", reason="session-end")
+    live = {s["session_id"]: bool(s["live"]) for s in store.list_workstream_sessions("ws_1")}
+    assert live == {"s1": False, "s2": False}
+
+
+def test_delete_removes_record_and_attach_rows(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    _create(store, workstream_id="ws_1", slug="a-b-c")
+    store.attach_workstream_session(identifier="ws_1", session_id="s1")
     assert store.delete_workstream("a-b-c") is True
     assert store.get_workstream("ws_1") is None
+    assert store.list_workstream_sessions("ws_1") == []  # attach rows gone
     assert store.delete_workstream("ws_1") is False
-
-
-def test_set_worktree_persists_and_is_findable(tmp_path: Path) -> None:
-    store = _store(tmp_path)
-    _create(store, workstream_id="ws_1", slug="a-b-c")
-    assert store.set_workstream_worktree("ws_1", "/wt/copilot/a-b-c") is True
-    assert store.get_workstream("ws_1")["worktree_path"] == "/wt/copilot/a-b-c"
-    assert store.get_workstream_by_worktree("/wt/copilot/a-b-c")["id"] == "ws_1"
-    # unknown workstream -> no row changed
-    assert store.set_workstream_worktree("nope", "/x") is False

@@ -26,17 +26,12 @@ class _StubClient:
 
     def __init__(self, *, create_ok: bool = True) -> None:
         self.create_ok = create_ok
-        self.persisted: list[tuple[str, str]] = []
         self.deleted: list[str] = []
         self.DaemonError = RuntimeError
 
     def create_workstream(self, **kw):
         status = 201 if self.create_ok else 503
         return WorkstreamCreateOutcome(status=status, body=kw if self.create_ok else None)
-
-    def set_workstream_worktree(self, wid, path):
-        self.persisted.append((wid, path))
-        return True
 
     def delete_workstream(self, wid):
         self.deleted.append(wid)
@@ -73,8 +68,6 @@ def test_create_workstream_happy_path(monkeypatch, tmp_path: Path) -> None:
     assert result["worktree"]["label"] == f"copilot/{result['slug']}"
     assert result["worktree"]["branch"] == "bt/auth-refactor"
     assert Path(result["worktree"]["path"]).is_dir()
-    # the worktree path was persisted (normalized) back onto the record
-    assert stub.persisted and stub.persisted[0][1] == result["worktree"]["path"]
     # pane skipped (no Herdr env), record NOT rolled back
     assert result["pane"]["status"] == "skipped"
     assert stub.deleted == []

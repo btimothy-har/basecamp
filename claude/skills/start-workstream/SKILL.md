@@ -37,12 +37,22 @@ If it helps orient, you may also read the repo cockpit (`basecamp://logseq/cockp
 
 Compare the workstream's `repo` (from step 1) to the repository you are in now:
 
-- **Same repo (its home)** — the workstream is anchored to its provisioned `worktree`. Work there: if you are not already in it, `cd` to the printed `worktree` path (or open it) and execute in that worktree, on its branch.
-- **A different repo** — the brief is portable. Execute it **right here**, in the current repo, creating a worktree or branch as fits the work. The dossier stays the workstream's shared record no matter where you execute — keep writing to it (step 5).
+- **Same repo (its home)** — the workstream's default worktree is `copilot/<slug>` under this repo. Work there: if you are not already in it, `cd` to it (or open it) and execute on its branch.
+- **A different repo** — the brief is portable. Execute it **right here**, in the current repo, creating a worktree or branch as fits the work. The dossier stays the workstream's shared record no matter where you execute (step 5).
 
-A workstream is a brief plus a durable dossier; the provisioned worktree is copilot's default home for it, not a hard binding.
+A workstream is a brief plus a dossier; agents attach to the *workstream*, so it can have many workers across repos. The provisioned worktree is copilot's default home for it, not a hard binding.
 
-## 4. Execute the brief
+## 4. Attach this session to the workstream
+
+Register yourself as a worker on the workstream, from the worktree you will execute in:
+
+```bash
+basecamp workstream attach <slug>
+```
+
+This links your session (agent) to the workstream, carrying this repo and worktree. Many agents can attach — that is what makes a workstream multi-worker and portable; the daemon derives who is live from attached sessions. Attach from the worktree you are actually working in, so the recorded worktree is correct.
+
+## 5. Execute the brief
 
 Implement the work directly, on a branch. You own execution:
 
@@ -51,7 +61,7 @@ Implement the work directly, on a branch. You own execution:
 - Validate as the brief expects (tests, checks, review) before treating a slice as done.
 - Do not push, open a PR, or merge unless the user asks.
 
-## 5. Keep the dossier and journal current
+## 6. Keep the dossier and journal current
 
 You are the workstream's own reporter — copilot reads what you write here to keep the repo picture current, so keep it durable and legible.
 

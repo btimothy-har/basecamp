@@ -58,19 +58,18 @@ def create_workstream(
     if not created:
         return _error("slug allocation failed", "Could not allocate a unique workstream slug; try again.")
 
-    # 2. Provision the permanent worktree; roll the record back if it fails.
+    # 2. Provision a default worktree; roll the record back if it fails. Agents attach
+    #    their own repo/worktree at start, so the record stores no worktree path — this
+    #    is just the convenient first home for "shape it, start it now".
     target = worktree.copilot_worktree_target(label, slug, environ.get("USER", ""))
     try:
         result = worktree.get_or_create_worktree(root, repo, target.label, target.branch)
     except worktree.WorktreeError as exc:
         client.delete_workstream(workstream_id)
         return _error("worktree provisioning failed", str(exc))
-
-    # 3. Persist the worktree path (normalized) so `workstream current` can resolve it.
     normalized = str(Path(result.path).resolve())
-    client.set_workstream_worktree(workstream_id, normalized)
 
-    # 4. Best-effort open a Herdr pane; a failure never invalidates the staged workstream.
+    # 3. Best-effort open a Herdr pane; a failure never invalidates the staged workstream.
     pane = herdr.open_pane(
         worktree_path=result.path,
         label=result.label,

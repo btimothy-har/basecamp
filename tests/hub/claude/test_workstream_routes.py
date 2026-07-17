@@ -1,4 +1,4 @@
-"""Claude daemon workstream HTTP route tests (create / list / get / by-worktree / status)."""
+"""Claude daemon workstream HTTP route tests (create / list / get / status / attach)."""
 
 from __future__ import annotations
 
@@ -49,17 +49,6 @@ def test_get_by_id_and_slug_and_404(tmp_path: Path) -> None:
         assert client.get("/workstreams/missing").status_code == 404
 
 
-def test_by_worktree_lookup_and_404(tmp_path: Path) -> None:
-    client = _build(tmp_path)
-    with client:
-        client.post("/workstreams", json=_create_body(id="ws_1", slug="a-b-c", worktree_path="/wt/a-b-c"))
-        hit = client.get("/workstreams/by-worktree", params={"path": "/wt/a-b-c"})
-        assert hit.status_code == 200
-        assert hit.json()["id"] == "ws_1"
-        miss = client.get("/workstreams/by-worktree", params={"path": "/wt/nope"})
-        assert miss.status_code == 404
-
-
 def test_list_filters(tmp_path: Path) -> None:
     client = _build(tmp_path)
     with client:
@@ -78,30 +67,33 @@ def test_status_roundtrip_and_validation(tmp_path: Path) -> None:
         ok = client.post("/workstreams/ws_1/status", json={"status": "closed"})
         assert ok.status_code == 200 and ok.json()["updated"] is True
         assert client.get("/workstreams/ws_1").json()["status"] == "closed"
-        # invalid status -> 400
         assert client.post("/workstreams/ws_1/status", json={"status": "archived"}).status_code == 400
-        # unknown workstream -> 404
         assert client.post("/workstreams/nope/status", json={"status": "open"}).status_code == 404
 
 
-def test_persist_worktree_and_by_worktree(tmp_path: Path) -> None:
+def test_attach_and_list_sessions(tmp_path: Path) -> None:
     client = _build(tmp_path)
     with client:
         client.post("/workstreams", json=_create_body(id="ws_1", slug="a-b-c"))
-        resp = client.post("/workstreams/ws_1/worktree", json={"worktree_path": "/wt/copilot/a-b-c"})
-        assert resp.status_code == 200 and resp.json()["updated"] is True
-        # now resolvable by worktree
-        hit = client.get("/workstreams/by-worktree", params={"path": "/wt/copilot/a-b-c"})
-        assert hit.status_code == 200 and hit.json()["id"] == "ws_1"
-        # unknown workstream -> 404
-        assert client.post("/workstreams/nope/worktree", json={"worktree_path": "/x"}).status_code == 404
+        att = client.post(
+            "/workstreams/a-b-c/attach",
+            json={"session_id": "s1", "repo": "acme/web", "worktree_path": "/wt/1"},
+        )
+        assert att.status_code == 200 and att.json()["attached"] is True
+        client.post("/workstreams/ws_1/attach", json={"session_id": "s2", "repo": "acme/api"})
+        sessions = client.get("/workstreams/ws_1/sessions").json()["sessions"]
+        assert {s["session_id"] for s in sessions} == {"s1", "s2"}
+        # attaching to an unknown workstream -> 404
+        assert client.post("/workstreams/nope/attach", json={"session_id": "s3"}).status_code == 404
+        # sessions of an unknown workstream -> 404
+        assert client.get("/workstreams/nope/sessions").status_code == 404
 
 
 def test_delete_workstream(tmp_path: Path) -> None:
     client = _build(tmp_path)
     with client:
         client.post("/workstreams", json=_create_body(id="ws_1", slug="a-b-c"))
+        client.post("/workstreams/ws_1/attach", json={"session_id": "s1"})
         assert client.delete("/workstreams/ws_1").status_code == 200
         assert client.get("/workstreams/ws_1").status_code == 404
-        # deleting again -> 404
         assert client.delete("/workstreams/ws_1").status_code == 404
