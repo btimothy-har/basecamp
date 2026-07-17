@@ -29,6 +29,7 @@ from .contract import (
     TranscriptIngestBody,
     WorkstreamCreateBody,
     WorkstreamStatusBody,
+    WorkstreamWorktreeBody,
 )
 from .ingest import IngestScheduler
 from .store import SessionStore
@@ -174,3 +175,21 @@ def register_claude_routes(
         if not changed:
             raise HTTPException(status_code=404, detail="workstream not found")
         return {"identifier": identifier, "status": body.status, "updated": True}
+
+    @app.post("/workstreams/{identifier}/worktree")
+    async def set_workstream_worktree(identifier: str, body: WorkstreamWorktreeBody) -> dict[str, Any]:
+        try:
+            changed = await asyncio.to_thread(store.set_workstream_worktree, identifier, body.worktree_path)
+        except sqlite3.OperationalError:
+            logger.warning("workstream worktree not persisted: store busy for %s", identifier)
+            raise HTTPException(status_code=503, detail="store busy") from None
+        if not changed:
+            raise HTTPException(status_code=404, detail="workstream not found")
+        return {"identifier": identifier, "worktree_path": body.worktree_path, "updated": True}
+
+    @app.delete("/workstreams/{identifier}")
+    async def delete_workstream(identifier: str) -> dict[str, Any]:
+        deleted = await asyncio.to_thread(store.delete_workstream, identifier)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="workstream not found")
+        return {"identifier": identifier, "deleted": True}

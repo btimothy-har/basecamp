@@ -12,6 +12,7 @@ basecamp daemon, so project awareness works even when the daemon is down.
 from __future__ import annotations
 
 import os
+from typing import Any
 
 from basecamp.claude.logseq import resolve_logseq
 from basecamp.mcp.render import (
@@ -22,6 +23,7 @@ from basecamp.mcp.render import (
     render_dossier_index,
 )
 from basecamp.mcp.resolve import resolve_project
+from basecamp.mcp.tools.workstreams import create_workstream as run_create_workstream
 from mcp.server.fastmcp import FastMCP
 
 _SERVER_NAME = "basecamp"
@@ -68,6 +70,19 @@ def build_server(cwd: str | None = None) -> FastMCP:
     )
     def logseq_dossiers() -> str:
         return render_dossier_index(resolve_logseq(working_dir))
+
+    @mcp.tool()
+    def create_workstream(label: str, dossier_path: str | None = None) -> dict[str, Any]:
+        """Stage a workstream: create its record, a permanent worktree, and a Herdr pane.
+
+        Use when the user has shaped a piece of work and wants it staged for
+        execution. ``label`` is a short human title (e.g. "auth refactor").
+        ``dossier_path`` points at the shared-Logseq work page holding the brief.
+        Returns the minted slug/id, the worktree, and the pane status; a failed pane
+        still yields a valid record + worktree with a manual next step.
+        """
+
+        return run_create_workstream(label=label, dossier_path=dossier_path, cwd=working_dir)
 
     return mcp
 

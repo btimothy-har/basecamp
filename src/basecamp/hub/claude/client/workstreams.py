@@ -16,7 +16,7 @@ import httpx
 
 from .paths import DaemonPaths, daemon_paths
 from .spawn import ensure_daemon
-from .transport import get_json, post_json
+from .transport import delete_json, get_json, post_json
 
 
 @dataclass(frozen=True)
@@ -104,6 +104,32 @@ def set_workstream_status(identifier: str, status: str, *, paths: DaemonPaths | 
     except (httpx.HTTPError, OSError):
         return False
     return code == 200 and isinstance(body, dict) and bool(body.get("updated"))
+
+
+def set_workstream_worktree(identifier: str, worktree_path: str, *, paths: DaemonPaths | None = None) -> bool:
+    """Best-effort persist a workstream's provisioned worktree path; ``False`` on failure."""
+
+    resolved = paths or daemon_paths()
+    try:
+        code, body = post_json(
+            str(resolved.socket),
+            f"/workstreams/{identifier}/worktree",
+            {"worktree_path": worktree_path},
+        )
+    except (httpx.HTTPError, OSError):
+        return False
+    return code == 200 and isinstance(body, dict) and bool(body.get("updated"))
+
+
+def delete_workstream(identifier: str, *, paths: DaemonPaths | None = None) -> bool:
+    """Best-effort delete a workstream record (used to roll back a failed create)."""
+
+    resolved = paths or daemon_paths()
+    try:
+        code, _body = delete_json(str(resolved.socket), f"/workstreams/{identifier}")
+    except (httpx.HTTPError, OSError):
+        return False
+    return code == 200
 
 
 def _get(

@@ -32,6 +32,11 @@ def repo_identity(cwd: str) -> str | None:
     return identity or _basename(toplevel)
 
 
+def repo_root(cwd: str) -> str | None:
+    """Return the git top-level directory containing ``cwd``, or ``None`` if not a repo."""
+    return _git(cwd, "rev-parse", "--show-toplevel")
+
+
 def _parse_remote_identity(url: str) -> str | None:
     """Canonical ``<org>/<name>`` from a remote URL, else ``None`` for non-URL origins."""
     text = url.strip()

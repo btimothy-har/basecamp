@@ -150,6 +150,23 @@ class WorkstreamsMixin:
             )
             return cursor.rowcount > 0
 
+    def set_workstream_worktree(self, identifier: str, worktree_path: str) -> bool:
+        """Persist the provisioned ``worktree_path`` on a workstream; return whether a row changed.
+
+        Called by ``create_workstream`` after the worktree is provisioned (the record
+        is created first so a provisioning failure rolls back cleanly, without an
+        orphaned worktree). The path must be normalized (absolute, symlink-free) so the
+        later ``by-worktree`` lookup matches.
+        """
+
+        now = self._now()
+        with self._connect() as connection:
+            cursor = connection.execute(
+                "UPDATE workstreams SET worktree_path = ?, updated_at = ? WHERE id = ? OR slug = ?",
+                (worktree_path, now, identifier, identifier),
+            )
+            return cursor.rowcount > 0
+
     def delete_workstream(self, identifier: str) -> bool:
         """Delete a workstream record by id or slug; return whether a row was removed.
 

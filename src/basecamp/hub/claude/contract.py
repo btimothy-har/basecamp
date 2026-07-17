@@ -93,3 +93,13 @@ class WorkstreamStatusBody(BaseModel):
     """POST /workstreams/{id}/status body — set a workstream ``open``/``closed``."""
 
     status: str
+
+
+class WorkstreamWorktreeBody(BaseModel):
+    """POST /workstreams/{id}/worktree body — persist the provisioned worktree path.
+
+    Written by ``create_workstream`` after the worktree is provisioned; the path is
+    normalized (absolute, symlink-free) so the ``by-worktree`` lookup matches.
+    """
+
+    worktree_path: str

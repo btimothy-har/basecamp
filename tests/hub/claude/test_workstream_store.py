@@ -92,3 +92,13 @@ def test_delete_removes_record(tmp_path: Path) -> None:
     assert store.delete_workstream("a-b-c") is True
     assert store.get_workstream("ws_1") is None
     assert store.delete_workstream("ws_1") is False
+
+
+def test_set_worktree_persists_and_is_findable(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    _create(store, workstream_id="ws_1", slug="a-b-c")
+    assert store.set_workstream_worktree("ws_1", "/wt/copilot/a-b-c") is True
+    assert store.get_workstream("ws_1")["worktree_path"] == "/wt/copilot/a-b-c"
+    assert store.get_workstream_by_worktree("/wt/copilot/a-b-c")["id"] == "ws_1"
+    # unknown workstream -> no row changed
+    assert store.set_workstream_worktree("nope", "/x") is False
