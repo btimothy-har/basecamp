@@ -18,16 +18,22 @@ at the target path is reused (``created=False``) rather than re-added.
 
 from __future__ import annotations
 
-import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
+from basecamp.claude.gitutil import run_git
 from basecamp.claude.paths import worktrees_root
 
+# Longer than the foundation default: ``git worktree add`` does real work.
 _GIT_TIMEOUT_S = 30
 _LABEL_MAX_LENGTH = 32
 _FALLBACK_USER_PREFIX = "un"
 _FALLBACK_SLUG = "worktree"
+
+
+def _git(repo_root: str, *args: str) -> str | None:
+    """Run a git command in ``repo_root`` with the worktree timeout."""
+    return run_git(repo_root, *args, timeout=_GIT_TIMEOUT_S)
 
 
 @dataclass(frozen=True)
@@ -146,20 +152,3 @@ def _worktree_registered(repo_root: str, worktree_path: str) -> bool:
             if recorded == target:
                 return True
     return False
-
-
-def _git(repo_root: str, *args: str) -> str | None:
-    """Run ``git -C <repo_root> <args>``; return stdout on success, ``None`` on failure."""
-    try:
-        result = subprocess.run(
-            ["git", "-C", repo_root, *args],
-            capture_output=True,
-            text=True,
-            timeout=_GIT_TIMEOUT_S,
-            check=False,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return None
-    if result.returncode != 0:
-        return None
-    return result.stdout.strip()
