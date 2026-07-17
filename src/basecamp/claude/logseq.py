@@ -1,4 +1,4 @@
-"""Resolve shared-Logseq repo memory for the Claude foundation.
+"""Resolve shared-Logseq repo pages for the Claude foundation.
 
 Mirrors the (retired) Pi extension's ``pi/core/project/logseq.ts`` so the Claude
 plugin locates the repo cockpit and work dossiers identically — but is a full
@@ -6,7 +6,7 @@ parallel: it reads the graph dir from the Claude config (``~/.claude/basecamp.js
 ``logseq.graph_dir``) and derives identity via :mod:`basecamp.claude.identity`,
 with no dependency on the ``~/.pi`` config or the MCP awareness resolver.
 
-Memory lives in one shared Logseq graph. This module *locates* the pages — the
+Pages live in one shared Logseq graph. This module *locates* the pages — the
 cockpit page (whose body it reads into ``cockpit_text``) and the work-dossier
 paths — so the renderers stay pure. Dossier bodies are never read here; copilot
 Reads a specific dossier itself.
@@ -15,7 +15,7 @@ Resolution matches ``logseq.ts`` / ``host/config.ts``: the graph dir resolves
 ``~``/relative → home (never cwd) and must be an existing directory; the safe
 identity transform is ``/`` → ``__`` then non ``[A-Za-z0-9._-]`` → ``_``.
 
-Like the rest of the foundation, this has no daemon dependency — repo-memory
+Like the rest of the foundation, this has no daemon dependency — Logseq
 resolution works even when the daemon is down.
 """
 
@@ -36,8 +36,8 @@ _UNSAFE_IDENTITY_RE = re.compile(r"[^A-Za-z0-9._-]")
 
 
 @dataclass(frozen=True)
-class MemoryAwareness:
-    """Resolved shared-Logseq repo-memory locations for the session."""
+class LogseqAwareness:
+    """Resolved shared-Logseq page locations for the session."""
 
     graph_dir: str | None = None
     identity: str | None = None
@@ -104,23 +104,23 @@ def _dossier_paths(pages_dir: Path, prefix: str) -> tuple[str, ...]:
     return tuple(str(path) for path in matches)
 
 
-def resolve_memory(
+def resolve_logseq(
     cwd: str,
     *,
     home: Path | None = None,
     config: ClaudeConfig | None = None,
-) -> MemoryAwareness:
-    """Resolve shared-Logseq repo-memory locations for a working directory."""
+) -> LogseqAwareness:
+    """Resolve shared-Logseq page locations for a working directory."""
     resolved_home = home or Path.home()
     active = config or ClaudeConfig(home=resolved_home)
 
     identity = repo_identity(cwd)
     if identity is None:
-        return MemoryAwareness(reason="repo identity is unavailable")
+        return LogseqAwareness(reason="repo identity is unavailable")
 
     graph_dir = _read_graph_dir(active, resolved_home)
     if graph_dir is None:
-        return MemoryAwareness(
+        return LogseqAwareness(
             identity=identity,
             reason="Logseq graph directory is not configured or does not exist",
         )
@@ -130,7 +130,7 @@ def resolve_memory(
     cockpit_name = f"repo__{safe}"
     cockpit_path = pages_dir / f"{cockpit_name}.md"
     dossier_prefix = f"work__{safe}__"
-    return MemoryAwareness(
+    return LogseqAwareness(
         graph_dir=graph_dir,
         identity=identity,
         cockpit_name=cockpit_name,

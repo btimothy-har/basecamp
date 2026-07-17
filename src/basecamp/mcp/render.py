@@ -8,7 +8,7 @@ attributes it to the ``basecamp`` server, so the copy stays about the project.
 
 from __future__ import annotations
 
-from basecamp.claude.memory import MemoryAwareness
+from basecamp.claude.logseq import LogseqAwareness
 from basecamp.mcp.resolve import ProjectAwareness
 
 # Claude Code truncates injected MCP instructions at ~2KB; stay comfortably under.
@@ -87,41 +87,41 @@ def render_context(awareness: ProjectAwareness) -> str:
     return f"No standing project context is configured for {name}."
 
 
-def _memory_unavailable(memory: MemoryAwareness) -> str:
-    reason = memory.reason or "durable repo memory is unavailable"
+def _logseq_unavailable(logseq: LogseqAwareness) -> str:
+    reason = logseq.reason or "durable repo memory is unavailable"
     return "\n".join(
         [
-            "# Repo memory",
+            "# Repo Logseq",
             "",
-            "Durable repo memory is unavailable for this session; copilot remains usable without it.",
+            "The repo's Logseq pages are unavailable for this session; copilot remains usable without them.",
             f"Reason: {reason}.",
-            f"Configured graph path: {memory.graph_dir or 'unavailable'}",
-            f"Repo identity: {memory.identity or 'unavailable'}",
+            f"Configured graph path: {logseq.graph_dir or 'unavailable'}",
+            f"Repo identity: {logseq.identity or 'unavailable'}",
             "",
-            "Continue without durable repo memory. Do not scan the Logseq graph to compensate.",
+            "Continue without the Logseq graph. Do not scan it to compensate.",
         ]
     )
 
 
-def render_cockpit(memory: MemoryAwareness) -> str:
-    """Render the ``basecamp://memory/cockpit`` resource body.
+def render_cockpit(logseq: LogseqAwareness) -> str:
+    """Render the ``basecamp://logseq/cockpit`` resource body.
 
     Pure: the repo cockpit page body (already read into ``cockpit_text`` by the
     resolver) if present; otherwise a seed stub telling copilot where to start
-    it; otherwise the unavailable body when memory is not resolvable.
+    it; otherwise the unavailable body when the graph is not resolvable.
     """
-    if not memory.available:
-        return _memory_unavailable(memory)
+    if not logseq.available:
+        return _logseq_unavailable(logseq)
 
-    if memory.cockpit_text is not None:
-        return memory.cockpit_text
+    if logseq.cockpit_text is not None:
+        return logseq.cockpit_text
 
     return "\n".join(
         [
-            f"# {memory.cockpit_name}",
+            f"# {logseq.cockpit_name}",
             "",
-            f"The repo cockpit for {memory.identity} is not written yet.",
-            f"Seed it at `{memory.cockpit_path}` when durable repo-level context is worth keeping:",
+            f"The repo cockpit for {logseq.identity} is not written yet.",
+            f"Seed it at `{logseq.cockpit_path}` when durable repo-level context is worth keeping:",
             "current focus, priority shifts, the active/waiting/blocked/stale/proposed/not-now",
             "choice-set, and cross-workstream decisions.",
             "",
@@ -130,28 +130,28 @@ def render_cockpit(memory: MemoryAwareness) -> str:
     )
 
 
-def render_dossier_index(memory: MemoryAwareness) -> str:
-    """Render the ``basecamp://memory/dossiers`` resource body.
+def render_dossier_index(logseq: LogseqAwareness) -> str:
+    """Render the ``basecamp://logseq/dossiers`` resource body.
 
     A pointer index (slug + path) of the repo's work dossiers — never the
     dossier bodies. Copilot Reads a specific dossier itself when a task calls
     for it.
     """
-    if not memory.available or memory.dossier_prefix is None:
-        return _memory_unavailable(memory)
+    if not logseq.available or logseq.dossier_prefix is None:
+        return _logseq_unavailable(logseq)
 
-    lines = [f"# Work dossiers for {memory.identity}", ""]
-    if not memory.dossier_paths:
+    lines = [f"# Work dossiers for {logseq.identity}", ""]
+    if not logseq.dossier_paths:
         lines += [
             "No work dossiers exist yet.",
-            f"They are pages named `{memory.dossier_prefix}<slug>` in the shared Logseq graph.",
+            f"They are pages named `{logseq.dossier_prefix}<slug>` in the shared Logseq graph.",
         ]
         return "\n".join(lines)
 
     lines.append("Open only a specifically relevant dossier; do not read them all.")
     lines.append("")
-    for path in memory.dossier_paths:
-        slug = _dossier_slug(path, memory.dossier_prefix)
+    for path in logseq.dossier_paths:
+        slug = _dossier_slug(path, logseq.dossier_prefix)
         lines.append(f"- {slug} — `{path}`")
     return "\n".join(lines)
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 
-from basecamp.claude.memory import resolve_memory
+from basecamp.claude.logseq import resolve_logseq
 from basecamp.mcp.render import (
     build_instructions,
     render_cockpit,
@@ -52,22 +52,22 @@ def build_server(cwd: str | None = None) -> FastMCP:
         return render_context(resolve_project(working_dir))
 
     @mcp.resource(
-        "basecamp://memory/cockpit",
+        "basecamp://logseq/cockpit",
         name="Repo cockpit",
-        description="The repo's durable coordination cockpit page from shared Logseq memory.",
+        description="The repo's coordination cockpit page from the shared Logseq graph.",
         mime_type="text/markdown",
     )
-    def memory_cockpit() -> str:
-        return render_cockpit(resolve_memory(working_dir))
+    def logseq_cockpit() -> str:
+        return render_cockpit(resolve_logseq(working_dir))
 
     @mcp.resource(
-        "basecamp://memory/dossiers",
+        "basecamp://logseq/dossiers",
         name="Work dossiers",
-        description="A pointer index of the repo's work dossiers in shared Logseq memory.",
+        description="A pointer index of the repo's work dossiers in the shared Logseq graph.",
         mime_type="text/markdown",
     )
-    def memory_dossiers() -> str:
-        return render_dossier_index(resolve_memory(working_dir))
+    def logseq_dossiers() -> str:
+        return render_dossier_index(resolve_logseq(working_dir))
 
     return mcp
 

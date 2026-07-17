@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from basecamp.claude.memory import MemoryAwareness
+from basecamp.claude.logseq import LogseqAwareness
 from basecamp.mcp.render import (
     build_instructions,
     render_cockpit,
@@ -13,12 +13,12 @@ from basecamp.mcp.render import (
 from basecamp.mcp.resolve import ProjectAwareness
 
 
-def _available_memory(
+def _available_logseq(
     *,
     cockpit_text: str | None = None,
     dossier_paths: tuple[str, ...] = (),
-) -> MemoryAwareness:
-    return MemoryAwareness(
+) -> LogseqAwareness:
+    return LogseqAwareness(
         graph_dir="/g",
         identity="acme/web-app",
         cockpit_name="repo__acme__web-app",
@@ -77,24 +77,24 @@ def test_render_context_present_and_absent() -> None:
 
 def test_render_cockpit_uses_resolver_body_purely() -> None:
     # pure: renders cockpit_text as-is, no filesystem access
-    mem = _available_memory(cockpit_text="# acme/web-app\n\nActive: the auth refactor.\n")
+    mem = _available_logseq(cockpit_text="# acme/web-app\n\nActive: the auth refactor.\n")
     assert "auth refactor" in render_cockpit(mem)
 
 
 def test_render_cockpit_seed_stub_when_text_none() -> None:
-    body = render_cockpit(_available_memory(cockpit_text=None))
+    body = render_cockpit(_available_logseq(cockpit_text=None))
     assert "not written yet" in body
     assert "repo__acme__web-app" in body
 
 
 def test_render_cockpit_unavailable() -> None:
-    body = render_cockpit(MemoryAwareness(reason="repo identity is unavailable"))
+    body = render_cockpit(LogseqAwareness(reason="repo identity is unavailable"))
     assert "unavailable" in body.lower()
-    assert "Do not scan the Logseq graph" in body
+    assert "Do not scan it to compensate" in body
 
 
 def test_render_dossier_index_lists_pointers() -> None:
-    mem = _available_memory(
+    mem = _available_logseq(
         dossier_paths=(
             "/g/pages/work__acme__web-app__brave-otter-fox.md",
             "/g/pages/work__acme__web-app__calm-river-owl.md",
@@ -107,4 +107,4 @@ def test_render_dossier_index_lists_pointers() -> None:
 
 
 def test_render_dossier_index_empty() -> None:
-    assert "No work dossiers exist yet" in render_dossier_index(_available_memory())
+    assert "No work dossiers exist yet" in render_dossier_index(_available_logseq())

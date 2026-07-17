@@ -1,4 +1,4 @@
-"""Tests for basecamp.claude.memory — shared-Logseq repo-memory resolution.
+"""Tests for basecamp.claude.logseq — shared-Logseq page resolution.
 
 Resolution must match the (retired) Pi extension's ``pi/core/project/logseq.ts``
 (page/dir naming, graph-dir resolution, safe-identity transform). The resolver
@@ -12,7 +12,7 @@ import subprocess
 from pathlib import Path
 
 from basecamp.claude.config import ClaudeConfig
-from basecamp.claude.memory import resolve_config_path, resolve_memory, safe_identity
+from basecamp.claude.logseq import resolve_config_path, resolve_logseq, safe_identity
 from basecamp.claude.paths import config_path
 
 
@@ -50,7 +50,7 @@ def test_resolve_config_path_rules(tmp_path: Path) -> None:
     assert resolve_config_path("rel", tmp_path) == str(tmp_path / "rel")  # never cwd
 
 
-def test_resolve_memory_available_reads_cockpit_body(tmp_path: Path) -> None:
+def test_resolve_logseq_available_reads_cockpit_body(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _init_repo(repo, "https://github.com/acme/web-app.git")
     graph = _graph_with_pages(
@@ -63,7 +63,7 @@ def test_resolve_memory_available_reads_cockpit_body(tmp_path: Path) -> None:
     (graph / "pages" / "repo__acme__web-app.md").write_text("# cockpit\n\nActive: auth refactor.\n")
     config = _write_logseq_config(tmp_path, graph)
 
-    mem = resolve_memory(str(repo), home=tmp_path, config=config)
+    mem = resolve_logseq(str(repo), home=tmp_path, config=config)
 
     assert mem.available
     assert mem.identity == "acme/web-app"
@@ -77,24 +77,24 @@ def test_resolve_memory_available_reads_cockpit_body(tmp_path: Path) -> None:
     )
 
 
-def test_resolve_memory_cockpit_absent_leaves_text_none(tmp_path: Path) -> None:
+def test_resolve_logseq_cockpit_absent_leaves_text_none(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _init_repo(repo, "https://github.com/acme/web-app.git")
     graph = _graph_with_pages(tmp_path)  # no cockpit page written
     config = _write_logseq_config(tmp_path, graph)
 
-    mem = resolve_memory(str(repo), home=tmp_path, config=config)
+    mem = resolve_logseq(str(repo), home=tmp_path, config=config)
 
     assert mem.available
     assert mem.cockpit_text is None  # resolver read; renderer emits the seed stub
 
 
-def test_resolve_memory_graph_absent(tmp_path: Path) -> None:
+def test_resolve_logseq_graph_absent(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     _init_repo(repo, "https://github.com/acme/web-app.git")
     config = _write_logseq_config(tmp_path, tmp_path / "does-not-exist")
 
-    mem = resolve_memory(str(repo), home=tmp_path, config=config)
+    mem = resolve_logseq(str(repo), home=tmp_path, config=config)
 
     assert not mem.available
     assert mem.graph_dir is None
@@ -102,13 +102,13 @@ def test_resolve_memory_graph_absent(tmp_path: Path) -> None:
     assert mem.reason is not None
 
 
-def test_resolve_memory_no_repo(tmp_path: Path) -> None:
+def test_resolve_logseq_no_repo(tmp_path: Path) -> None:
     plain = tmp_path / "plain"
     plain.mkdir()
     graph = _graph_with_pages(tmp_path)
     config = _write_logseq_config(tmp_path, graph)
 
-    mem = resolve_memory(str(plain), home=tmp_path, config=config)
+    mem = resolve_logseq(str(plain), home=tmp_path, config=config)
 
     assert not mem.available
     assert mem.identity is None
