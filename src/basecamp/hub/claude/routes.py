@@ -20,9 +20,16 @@ import sqlite3
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
-from .contract import CLAUDE_PROTOCOL_VERSION, SessionEndBody, SessionRegisterBody, TranscriptIngestBody
+from .contract import (
+    CLAUDE_PROTOCOL_VERSION,
+    SessionEndBody,
+    SessionRegisterBody,
+    TranscriptIngestBody,
+    WorkstreamCreateBody,
+    WorkstreamStatusBody,
+)
 from .ingest import IngestScheduler
 from .store import SessionStore
 
@@ -113,3 +120,57 @@ def register_claude_routes(
     @app.get("/sessions")
     async def list_sessions() -> dict[str, Any]:
         return {"sessions": await asyncio.to_thread(store.list_open_sessions)}
+
+    @app.post("/workstreams", status_code=201)
+    async def create_workstream(body: WorkstreamCreateBody) -> dict[str, Any]:
+        # The MCP tool mints id + slug; a slug collision on the UNIQUE constraint is a
+        # 409 the tool retries with a fresh slug. IntegrityError is caught separately
+        # from the OperationalError store-busy degrade below — the two mean different
+        # things (duplicate vs contended write) and map to different statuses.
+        try:
+            return await asyncio.to_thread(
+                store.create_workstream,
+                workstream_id=body.id,
+                slug=body.slug,
+                label=body.label,
+                repo=body.repo,
+                worktree_path=body.worktree_path,
+                dossier_path=body.dossier_path,
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="slug or id already exists") from None
+        except sqlite3.OperationalError:
+            logger.warning("workstream not created: store busy")
+            raise HTTPException(status_code=503, detail="store busy") from None
+
+    @app.get("/workstreams")
+    async def list_workstreams(repo: str | None = None, status: str | None = None) -> dict[str, Any]:
+        rows = await asyncio.to_thread(store.list_workstreams, repo=repo, status=status)
+        return {"workstreams": rows}
+
+    @app.get("/workstreams/by-worktree")
+    async def get_workstream_by_worktree(path: str) -> dict[str, Any]:
+        row = await asyncio.to_thread(store.get_workstream_by_worktree, path)
+        if row is None:
+            raise HTTPException(status_code=404, detail="no workstream for that worktree")
+        return row
+
+    @app.get("/workstreams/{identifier}")
+    async def get_workstream(identifier: str) -> dict[str, Any]:
+        row = await asyncio.to_thread(store.get_workstream, identifier)
+        if row is None:
+            raise HTTPException(status_code=404, detail="workstream not found")
+        return row
+
+    @app.post("/workstreams/{identifier}/status")
+    async def set_workstream_status(identifier: str, body: WorkstreamStatusBody) -> dict[str, Any]:
+        try:
+            changed = await asyncio.to_thread(store.set_workstream_status, identifier, body.status)
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"invalid status: {body.status!r}") from None
+        except sqlite3.OperationalError:
+            logger.warning("workstream status not updated: store busy for %s", identifier)
+            raise HTTPException(status_code=503, detail="store busy") from None
+        if not changed:
+            raise HTTPException(status_code=404, detail="workstream not found")
+        return {"identifier": identifier, "status": body.status, "updated": True}
