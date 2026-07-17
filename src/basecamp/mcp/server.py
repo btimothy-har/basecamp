@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 
-from basecamp.mcp.logseq import resolve_memory
+from basecamp.claude.memory import resolve_memory
 from basecamp.mcp.render import (
     build_instructions,
     render_cockpit,

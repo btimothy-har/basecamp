@@ -8,9 +8,7 @@ attributes it to the ``basecamp`` server, so the copy stays about the project.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from basecamp.mcp.logseq import MemoryAwareness
+from basecamp.claude.memory import MemoryAwareness
 from basecamp.mcp.resolve import ProjectAwareness
 
 # Claude Code truncates injected MCP instructions at ~2KB; stay comfortably under.
@@ -98,7 +96,7 @@ def _memory_unavailable(memory: MemoryAwareness) -> str:
             "Durable repo memory is unavailable for this session; copilot remains usable without it.",
             f"Reason: {reason}.",
             f"Configured graph path: {memory.graph_dir or 'unavailable'}",
-            f"Repo identity: {memory.repo_identity or 'unavailable'}",
+            f"Repo identity: {memory.identity or 'unavailable'}",
             "",
             "Continue without durable repo memory. Do not scan the Logseq graph to compensate.",
         ]
@@ -108,25 +106,21 @@ def _memory_unavailable(memory: MemoryAwareness) -> str:
 def render_cockpit(memory: MemoryAwareness) -> str:
     """Render the ``basecamp://memory/cockpit`` resource body.
 
-    The repo cockpit page body if present; otherwise a seed stub telling copilot
-    where to start it. Falls back to the unavailable body when memory is not
-    resolvable (no graph dir or no repo identity).
+    Pure: the repo cockpit page body (already read into ``cockpit_text`` by the
+    resolver) if present; otherwise a seed stub telling copilot where to start
+    it; otherwise the unavailable body when memory is not resolvable.
     """
-    if not memory.available or memory.cockpit_path is None:
+    if not memory.available:
         return _memory_unavailable(memory)
 
-    try:
-        body = Path(memory.cockpit_path).read_text()
-    except OSError:
-        body = ""
-    if body.strip():
-        return body
+    if memory.cockpit_text is not None:
+        return memory.cockpit_text
 
     return "\n".join(
         [
             f"# {memory.cockpit_name}",
             "",
-            f"The repo cockpit for {memory.repo_identity} is not written yet.",
+            f"The repo cockpit for {memory.identity} is not written yet.",
             f"Seed it at `{memory.cockpit_path}` when durable repo-level context is worth keeping:",
             "current focus, priority shifts, the active/waiting/blocked/stale/proposed/not-now",
             "choice-set, and cross-workstream decisions.",
@@ -146,7 +140,7 @@ def render_dossier_index(memory: MemoryAwareness) -> str:
     if not memory.available or memory.dossier_prefix is None:
         return _memory_unavailable(memory)
 
-    lines = [f"# Work dossiers for {memory.repo_identity}", ""]
+    lines = [f"# Work dossiers for {memory.identity}", ""]
     if not memory.dossier_paths:
         lines += [
             "No work dossiers exist yet.",
@@ -163,5 +157,5 @@ def render_dossier_index(memory: MemoryAwareness) -> str:
 
 
 def _dossier_slug(path: str, prefix: str) -> str:
-    stem = Path(path).stem
+    stem = path.rsplit("/", 1)[-1].removesuffix(".md")
     return stem[len(prefix) :] if stem.startswith(prefix) else stem
