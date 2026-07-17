@@ -18,7 +18,7 @@ _RECORD = {
     "id": "ws_1",
     "slug": "brave-otter-fox",
     "label": "auth refactor",
-    "status": "open",
+    "live": 1,
     "repo": "acme/web-app",
     "dossier_path": "/g/pages/work__acme__web-app__brave-otter-fox.md",
 }

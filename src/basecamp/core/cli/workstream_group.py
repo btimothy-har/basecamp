@@ -83,7 +83,7 @@ def _print_record(record: dict[str, Any]) -> None:
     label = record.get("label") or record.get("slug") or "(unnamed)"
     click.echo(f"label: {label}")
     click.echo(f"slug: {record.get('slug', '')}")
-    click.echo(f"status: {record.get('status', '')}")
+    click.echo(f"live: {'yes' if record.get('live') else 'no'}")
     click.echo(f"repo: {record.get('repo', '')}")
     # `dossier` is the external Logseq work page (the brief); the skill Reads it.
     click.echo(f"dossier: {record.get('dossier_path', '') or ''}")
