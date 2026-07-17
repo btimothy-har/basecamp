@@ -70,22 +70,24 @@ For each meaningful workstream, capture:
 - validation expectations
 - done signal
 
-## Stage a workstream (at this tier)
+## Stage a workstream
 
 Execution-ready does not mean execution-started, and **you do not implement in this session** — you shape and hand off.
 
-At this tier a workstream is staged as two durable things you can create with ordinary tools:
+Stage in two steps, in order:
 
-- **A branch + worktree** — the place the work happens. Create a worktree for the workstream off the repo's default branch (native `git worktree` / `claude -w`), so it starts from a clean committed tip.
-- **A dossier** — a shared-Logseq page, `work__<org>__<repo>__<slug>`, holding the shaped brief: the fields above, plus decisions, blockers, and the done signal. Seed it when you shape the workstream.
+1. **Create the workstream** — call the **`create_workstream`** MCP tool with a short `label` (the human title). In one step it mints the durable workstream record in the daemon, provisions its `copilot/<slug>` worktree off the repo's default branch (a clean committed tip), and — inside Herdr — opens a pane on it. It returns the `slug`, the worktree path, and a `next_step`.
+2. **Seed the dossier** — write the shared-Logseq page `work__<org>__<repo>__<slug>` (using the returned `slug`) with the shaped brief: the fields above, plus decisions, blockers, and the done signal. This is the durable record the executing session reads and keeps current; the workstream record points at it.
 
-Hand off by pointing the user at the worktree and its dossier. The execution session is independent: once the user starts working in that worktree, you do not supervise, drive, or manage it. Come back to the cockpit and dossiers to keep the repo picture current.
-
-Before shaping a new workstream, glance at the current checkout for uncommitted work:
+Before staging, glance at the current checkout for uncommitted work:
 
 ```bash
 git status --short
 ```
+
+`create_workstream` branches from the default branch's committed tip, so a dirty checkout neither blocks staging nor carries into the new worktree — but mention any leftover changes that look relevant so the user can decide what to do with them. Never block staging on a dirty checkout.
+
+Hand off with the tool's `next_step`: the user starts Claude in the new worktree/pane and runs `/basecamp:start-workstream`, which reads the dossier and attaches as a worker. The execution session is independent — once it starts you do not supervise, drive, or manage it. Come back to the cockpit and dossiers to keep the repo picture current.
 
 Creating a worktree off the default branch leaves any uncommitted work in place — it does not carry it forward. That is fine; just mention leftover changes if they look relevant to the workstream so the user can decide what to do with them. Never block staging on a dirty checkout.
 

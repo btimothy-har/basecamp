@@ -23,7 +23,7 @@ Resolve the workstream and where its brief lives. Two entry modes:
   basecamp workstream show <slug>
   ```
 
-Either prints the workstream's `label`, `slug`, `status`, `repo`, `worktree`, and — the important one — a `dossier:` path pointing at its shared-Logseq work page. It reports pointers, not content: the brief itself is in the dossier file.
+Either prints the workstream's `label`, `slug`, `live` (whether a worker is currently attached and running), `repo`, and — the important one — a `dossier:` path pointing at its shared-Logseq work page. It reports pointers, not content: the brief itself is in the dossier file.
 
 If the command errors (not in a git worktree, no workstream registered, or an unknown slug), stop and tell the user — this worktree was not staged by copilot, the slug is wrong, or the daemon is not running. Do not guess a workstream.
 

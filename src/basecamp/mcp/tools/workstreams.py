@@ -16,8 +16,11 @@ from __future__ import annotations
 
 import os
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from basecamp.claude import herdr, worktree
 from basecamp.claude.identity import repo_identity, repo_root
@@ -51,21 +54,27 @@ def create_workstream(
 
     # 1. Mint a slug the daemon doesn't already have, then create the record.
     workstream_id = f"ws_{uuid.uuid4().hex}"
-    outcome = _create_record(workstream_id=workstream_id, label=label, repo=repo, dossier_path=dossier_path)
-    if outcome is None:
-        return _error("daemon unavailable", "The basecamp daemon could not be reached to record the workstream.")
-    slug, created = outcome
-    if not created:
-        return _error("slug allocation failed", "Could not allocate a unique workstream slug; try again.")
+    record = _create_record(workstream_id=workstream_id, label=label, repo=repo, dossier_path=dossier_path)
+    if record.error is not None:
+        return _error(record.error, record.message)
+    slug = record.slug
 
     # 2. Provision a default worktree; roll the record back if it fails. Agents attach
     #    their own repo/worktree at start, so the record stores no worktree path — this
-    #    is just the convenient first home for "shape it, start it now".
-    target = worktree.copilot_worktree_target(label, slug, environ.get("USER", ""))
+    #    is just the convenient first home for "shape it, start it now". The branch is
+    #    derived from the unique slug (not the human label) so two similarly-titled
+    #    workstreams never collide on an already-checked-out branch.
+    target = worktree.copilot_worktree_target(slug, slug, environ.get("USER", ""))
     try:
         result = worktree.get_or_create_worktree(root, repo, target.label, target.branch)
     except worktree.WorktreeError as exc:
-        client.delete_workstream(workstream_id)
+        if not client.delete_workstream(workstream_id):
+            # The stage failed but the record could not be rolled back — surface it so
+            # the caller knows an orphan (slug-consuming) record was left behind.
+            return _error(
+                "worktree provisioning failed",
+                f"{exc} (the workstream record {slug} could not be rolled back and may need manual cleanup)",
+            )
         return _error("worktree provisioning failed", str(exc))
     normalized = str(Path(result.path).resolve())
 
@@ -95,14 +104,30 @@ def create_workstream(
     }
 
 
+@dataclass(frozen=True)
+class _RecordResult:
+    """Outcome of minting the workstream record: a slug on success, else an error."""
+
+    slug: str = ""
+    error: str | None = None
+    message: str = ""
+
+
 def _create_record(
     *,
     workstream_id: str,
     label: str,
     repo: str,
     dossier_path: str | None,
-) -> tuple[str, bool] | None:
-    """Create the record, retrying on slug collision. ``None`` if the daemon is unreachable."""
+) -> _RecordResult:
+    """Create the record, retrying on slug collision.
+
+    Distinguishes the failure modes rather than collapsing them: a transport/daemon
+    error (``ensure_daemon`` raising, or ``post_json`` raising httpx/OS errors) →
+    "daemon unavailable"; a non-conflict daemon reply (e.g. 503 store-busy) → "daemon
+    error" carrying the status; genuine slug exhaustion after every attempt collided →
+    "slug allocation failed".
+    """
 
     for _ in range(_SLUG_ATTEMPTS):
         slug = generate_slug()
@@ -114,13 +139,22 @@ def _create_record(
                 repo=repo,
                 dossier_path=dossier_path,
             )
-        except client.DaemonError:
-            return None
+        except (client.DaemonError, httpx.HTTPError, OSError):
+            return _RecordResult(
+                error="daemon unavailable",
+                message="The basecamp daemon could not be reached to record the workstream.",
+            )
         if result.created:
-            return slug, True
+            return _RecordResult(slug=slug)
         if not result.slug_conflict:
-            return slug, False
-    return "", False
+            return _RecordResult(
+                error="daemon error",
+                message=f"The daemon rejected the workstream (HTTP {result.status}); try again.",
+            )
+    return _RecordResult(
+        error="slug allocation failed",
+        message="Could not allocate a unique workstream slug after several tries; try again.",
+    )
 
 
 def _next_step(pane: herdr.HerdrResult, worktree_path: str) -> str:

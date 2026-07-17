@@ -49,6 +49,17 @@ def test_current_not_in_workstream_worktree_exits_1(runner: CliRunner, monkeypat
     assert "not inside a workstream worktree" in result.output
 
 
+def test_current_slug_immune_to_copilot_earlier_in_path(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
+    # a 'copilot' username/org earlier in the path must NOT hijack the slug — only the
+    # trailing copilot/<slug> segment counts.
+    monkeypatch.setattr(wg, "_worktree_toplevel", lambda: "/Users/copilot/.worktrees/acme/web/copilot/brave-otter-fox")
+    seen: list[str] = []
+    monkeypatch.setattr(wg.client, "get_workstream", lambda i: (seen.append(i), _RECORD)[1])
+    result = runner.invoke(workstream, ["current"])
+    assert result.exit_code == 0
+    assert seen == ["brave-otter-fox"]  # the trailing slug, not '.worktrees'
+
+
 def test_show_by_slug_from_anywhere(runner: CliRunner, monkeypatch: pytest.MonkeyPatch) -> None:
     seen: list[str] = []
 

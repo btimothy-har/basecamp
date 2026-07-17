@@ -2,10 +2,11 @@
 
 ``create_workstream`` ensures a daemon is up (spawning one if needed) then POSTs
 the record — the copilot staging path needs a live daemon, so this one may raise
-:class:`DaemonError`. The reads (``get`` / ``list`` / ``list_sessions``) and the
-mutations (``set_status`` / ``attach`` / ``delete``) are best-effort: they never
-spawn and never raise, resolving a transport failure to ``None``/``False``/``[]``
-so a daemon-down CLI degrades cleanly.
+:class:`DaemonError` (and, from the underlying POST, httpx transport errors). The
+reads (``get`` / ``list`` / ``list_sessions``) and the other mutations (``attach``
+/ ``delete``) are best-effort: they never spawn and never raise, resolving a
+transport failure to ``None``/``False``/``[]`` so a daemon-down CLI degrades
+cleanly.
 """
 
 from __future__ import annotations

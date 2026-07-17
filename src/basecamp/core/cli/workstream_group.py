@@ -95,14 +95,15 @@ def _slug_from_worktree() -> str | None:
     The worktree top-level ends in ``copilot/<slug>``; the slug lives in the path
     itself, so a fresh session in that worktree resolves its workstream without any
     daemon worktree-index — and it survives the session creating other branches.
+    Matches the *trailing* ``copilot/<slug>`` specifically, so a ``copilot`` segment
+    earlier in the path (a username, org, or repo named ``copilot``) never misleads it.
     """
     top = _worktree_toplevel()
     if top is None:
         return None
     parts = Path(top).parts
-    for i in range(len(parts) - 1):
-        if parts[i] == "copilot":
-            return parts[i + 1]
+    if len(parts) >= 2 and parts[-2] == "copilot":
+        return parts[-1]
     return None
 
 
