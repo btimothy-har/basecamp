@@ -9,6 +9,7 @@ import rich_click as click
 
 from basecamp.companion.app import run_companion
 from basecamp.core.cli.config_group import config
+from basecamp.core.cli.workstream_group import workstream
 from basecamp.core.exceptions import LauncherError
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
@@ -129,6 +130,7 @@ def install() -> None:
 
 
 basecamp.add_command(config)
+basecamp.add_command(workstream)
 
 
 def main() -> None:
