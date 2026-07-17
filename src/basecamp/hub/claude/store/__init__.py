@@ -29,6 +29,7 @@ from ..paths import claude_daemon_db_path
 from .episodes import EpisodesMixin
 from .sessions import SessionsMixin
 from .transcripts import TranscriptsMixin
+from .workstreams import WorkstreamsMixin
 
 __all__ = ["SessionStore"]
 
@@ -38,8 +39,8 @@ __all__ = ["SessionStore"]
 _BUSY_TIMEOUT_MS = 5000
 
 
-class SessionStore(SessionsMixin, EpisodesMixin, TranscriptsMixin):
-    """Durable identity (``sessions``) + liveness (``episodes``) + raw transcript nodes."""
+class SessionStore(SessionsMixin, EpisodesMixin, TranscriptsMixin, WorkstreamsMixin):
+    """Durable identity (``sessions``) + liveness (``episodes``) + raw transcript nodes + workstream records."""
 
     def __init__(self, db_path: str | Path | None = None) -> None:
         self.db_path = Path(db_path).expanduser() if db_path is not None else claude_daemon_db_path()
@@ -78,3 +79,4 @@ class SessionStore(SessionsMixin, EpisodesMixin, TranscriptsMixin):
             self._init_sessions_schema(connection)
             self._init_episodes_schema(connection)
             self._init_transcripts_schema(connection)
+            self._init_workstreams_schema(connection)

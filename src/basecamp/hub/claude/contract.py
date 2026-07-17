@@ -20,8 +20,10 @@ from pydantic import BaseModel
 #: /sessions/{id}/ingest) was added; bumped to 3 when subagent-sidecar ingest added
 #: the ``sweep_sidecars``/``agent_transcript_path`` ingest modes, so a running v2
 #: daemon (which would accept the POST but silently ignore the new fields and never
-#: store subagent transcripts) is respawned to serve them.
-CLAUDE_PROTOCOL_VERSION = 3
+#: store subagent transcripts) is respawned to serve them; bumped to 4 when the
+#: workstream record surface (POST/GET /workstreams…) was added, so a running v3
+#: daemon (which has no workstreams table and would 404 those routes) is respawned.
+CLAUDE_PROTOCOL_VERSION = 4
 
 
 class SessionRegisterBody(BaseModel):
@@ -67,3 +69,35 @@ class TranscriptIngestBody(BaseModel):
     reason: str | None = None
     sweep_sidecars: bool = False
     agent_transcript_path: str | None = None
+
+
+class WorkstreamCreateBody(BaseModel):
+    """POST /workstreams body — create a workstream record.
+
+    ``id`` (``ws_<uuid>``) and ``slug`` are minted by the MCP tool, not the daemon,
+    so the daemon stays a pure coordination store; a slug collision on the UNIQUE
+    constraint is surfaced as a 409 the tool retries with a fresh slug. ``repo`` is
+    where it was created; ``dossier_path`` points at the external Logseq work page.
+    Agents attach separately (they carry their own repo/worktree), so no worktree
+    path lives on the record. There is no status field — liveness is derived from
+    whether an attached session has an open episode.
+    """
+
+    id: str
+    slug: str
+    label: str | None = None
+    repo: str | None = None
+    dossier_path: str | None = None
+
+
+class WorkstreamAttachBody(BaseModel):
+    """POST /workstreams/{id}/attach body — attach a session (agent) to a workstream.
+
+    Additive and idempotent by session. The attaching session carries its own
+    ``repo`` and ``worktree_path`` — this is what makes a workstream multi-worker and
+    portable across repos, with no single worktree bound to the record.
+    """
+
+    session_id: str
+    repo: str | None = None
+    worktree_path: str | None = None

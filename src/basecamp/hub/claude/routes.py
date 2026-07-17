@@ -20,9 +20,16 @@ import sqlite3
 from collections.abc import Callable
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
-from .contract import CLAUDE_PROTOCOL_VERSION, SessionEndBody, SessionRegisterBody, TranscriptIngestBody
+from .contract import (
+    CLAUDE_PROTOCOL_VERSION,
+    SessionEndBody,
+    SessionRegisterBody,
+    TranscriptIngestBody,
+    WorkstreamAttachBody,
+    WorkstreamCreateBody,
+)
 from .ingest import IngestScheduler
 from .store import SessionStore
 
@@ -77,6 +84,10 @@ def register_claude_routes(
         # ingest the episode's ``end_reason`` is then lost for good (the next
         # ``open_episode`` force-closes it with a NULL reason). Degrade explicitly, the
         # same way /ingest does, rather than surfacing an unhandled error.
+        #
+        # Nothing workstream-specific runs here: a workstream is live iff an attached
+        # session has an open episode, so closing this episode already makes the
+        # workstream idle (derived) with no extra write.
         try:
             ended = await asyncio.to_thread(store.close_episode, session_id=session_id, reason=body.reason)
         except sqlite3.OperationalError:
@@ -113,3 +124,68 @@ def register_claude_routes(
     @app.get("/sessions")
     async def list_sessions() -> dict[str, Any]:
         return {"sessions": await asyncio.to_thread(store.list_open_sessions)}
+
+    @app.post("/workstreams", status_code=201)
+    async def create_workstream(body: WorkstreamCreateBody) -> dict[str, Any]:
+        # The MCP tool mints id + slug; a slug collision on the UNIQUE constraint is a
+        # 409 the tool retries with a fresh slug. IntegrityError is caught separately
+        # from the OperationalError store-busy degrade below — the two mean different
+        # things (duplicate vs contended write) and map to different statuses.
+        try:
+            return await asyncio.to_thread(
+                store.create_workstream,
+                workstream_id=body.id,
+                slug=body.slug,
+                label=body.label,
+                repo=body.repo,
+                dossier_path=body.dossier_path,
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(status_code=409, detail="slug or id already exists") from None
+        except sqlite3.OperationalError:
+            logger.warning("workstream not created: store busy")
+            raise HTTPException(status_code=503, detail="store busy") from None
+
+    @app.get("/workstreams")
+    async def list_workstreams(repo: str | None = None, idle: bool | None = None) -> dict[str, Any]:  # noqa: FBT001
+        rows = await asyncio.to_thread(store.list_workstreams, repo=repo, idle=idle)
+        return {"workstreams": rows}
+
+    @app.get("/workstreams/{identifier}")
+    async def get_workstream(identifier: str) -> dict[str, Any]:
+        row = await asyncio.to_thread(store.get_workstream, identifier)
+        if row is None:
+            raise HTTPException(status_code=404, detail="workstream not found")
+        return row
+
+    @app.get("/workstreams/{identifier}/sessions")
+    async def list_workstream_sessions(identifier: str) -> dict[str, Any]:
+        row = await asyncio.to_thread(store.get_workstream, identifier)
+        if row is None:
+            raise HTTPException(status_code=404, detail="workstream not found")
+        sessions = await asyncio.to_thread(store.list_workstream_sessions, identifier)
+        return {"identifier": identifier, "sessions": sessions}
+
+    @app.post("/workstreams/{identifier}/attach")
+    async def attach_workstream_session(identifier: str, body: WorkstreamAttachBody) -> dict[str, Any]:
+        try:
+            attached = await asyncio.to_thread(
+                store.attach_workstream_session,
+                identifier=identifier,
+                session_id=body.session_id,
+                repo=body.repo,
+                worktree_path=body.worktree_path,
+            )
+        except sqlite3.OperationalError:
+            logger.warning("workstream attach not recorded: store busy for %s", identifier)
+            raise HTTPException(status_code=503, detail="store busy") from None
+        if not attached:
+            raise HTTPException(status_code=404, detail="workstream not found")
+        return {"identifier": identifier, "session_id": body.session_id, "attached": True}
+
+    @app.delete("/workstreams/{identifier}")
+    async def delete_workstream(identifier: str) -> dict[str, Any]:
+        deleted = await asyncio.to_thread(store.delete_workstream, identifier)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="workstream not found")
+        return {"identifier": identifier, "deleted": True}

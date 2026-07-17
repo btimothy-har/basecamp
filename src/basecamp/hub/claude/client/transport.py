@@ -70,3 +70,34 @@ def post_json(
         return response.status_code, response.json()
     except ValueError:
         return response.status_code, None
+
+
+def get_json(
+    socket_path: str,
+    path: str,
+    params: dict[str, Any] | None = None,
+    timeout: float = DEFAULT_POST_TIMEOUT_S,
+) -> tuple[int, Any]:
+    """GET JSON over the UDS; return ``(status_code, parsed_body_or_None)``."""
+
+    with _client(socket_path, timeout) as client:
+        response = client.get(path, params=params or None)
+    try:
+        return response.status_code, response.json()
+    except ValueError:
+        return response.status_code, None
+
+
+def delete_json(
+    socket_path: str,
+    path: str,
+    timeout: float = DEFAULT_POST_TIMEOUT_S,
+) -> tuple[int, Any]:
+    """DELETE over the UDS; return ``(status_code, parsed_body_or_None)``."""
+
+    with _client(socket_path, timeout) as client:
+        response = client.delete(path)
+    try:
+        return response.status_code, response.json()
+    except ValueError:
+        return response.status_code, None

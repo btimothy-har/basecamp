@@ -8,6 +8,7 @@ attributes it to the ``basecamp`` server, so the copy stays about the project.
 
 from __future__ import annotations
 
+from basecamp.claude.logseq import LogseqAwareness
 from basecamp.mcp.resolve import ProjectAwareness
 
 # Claude Code truncates injected MCP instructions at ~2KB; stay comfortably under.
@@ -84,3 +85,77 @@ def render_context(awareness: ProjectAwareness) -> str:
         return awareness.context_text
     name = awareness.project_name or "this directory"
     return f"No standing project context is configured for {name}."
+
+
+def _logseq_unavailable(logseq: LogseqAwareness) -> str:
+    reason = logseq.reason or "durable repo memory is unavailable"
+    return "\n".join(
+        [
+            "# Repo Logseq",
+            "",
+            "The repo's Logseq pages are unavailable for this session; copilot remains usable without them.",
+            f"Reason: {reason}.",
+            f"Configured graph path: {logseq.graph_dir or 'unavailable'}",
+            f"Repo identity: {logseq.identity or 'unavailable'}",
+            "",
+            "Continue without the Logseq graph. Do not scan it to compensate.",
+        ]
+    )
+
+
+def render_cockpit(logseq: LogseqAwareness) -> str:
+    """Render the ``basecamp://logseq/cockpit`` resource body.
+
+    Pure: the repo cockpit page body (already read into ``cockpit_text`` by the
+    resolver) if present; otherwise a seed stub telling copilot where to start
+    it; otherwise the unavailable body when the graph is not resolvable.
+    """
+    if not logseq.available:
+        return _logseq_unavailable(logseq)
+
+    if logseq.cockpit_text is not None:
+        return logseq.cockpit_text
+
+    return "\n".join(
+        [
+            f"# {logseq.cockpit_name}",
+            "",
+            f"The repo cockpit for {logseq.identity} is not written yet.",
+            f"Seed it at `{logseq.cockpit_path}` when durable repo-level context is worth keeping:",
+            "current focus, priority shifts, the active/waiting/blocked/stale/proposed/not-now",
+            "choice-set, and cross-workstream decisions.",
+            "",
+            "Read the cockpit first when durable repo context matters. Do not scan the whole graph.",
+        ]
+    )
+
+
+def render_dossier_index(logseq: LogseqAwareness) -> str:
+    """Render the ``basecamp://logseq/dossiers`` resource body.
+
+    A pointer index (slug + path) of the repo's work dossiers — never the
+    dossier bodies. Copilot Reads a specific dossier itself when a task calls
+    for it.
+    """
+    if not logseq.available or logseq.dossier_prefix is None:
+        return _logseq_unavailable(logseq)
+
+    lines = [f"# Work dossiers for {logseq.identity}", ""]
+    if not logseq.dossier_paths:
+        lines += [
+            "No work dossiers exist yet.",
+            f"They are pages named `{logseq.dossier_prefix}<slug>` in the shared Logseq graph.",
+        ]
+        return "\n".join(lines)
+
+    lines.append("Open only a specifically relevant dossier; do not read them all.")
+    lines.append("")
+    for path in logseq.dossier_paths:
+        slug = _dossier_slug(path, logseq.dossier_prefix)
+        lines.append(f"- {slug} — `{path}`")
+    return "\n".join(lines)
+
+
+def _dossier_slug(path: str, prefix: str) -> str:
+    stem = path.rsplit("/", 1)[-1].removesuffix(".md")
+    return stem[len(prefix) :] if stem.startswith(prefix) else stem
