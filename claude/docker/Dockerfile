@@ -35,27 +35,27 @@ ARG CLAUDE_CODE_VERSION=latest
 RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
 	&& claude --version
 
-# Reuse the base image's built-in non-root user (node: uid/gid 1000, home
+# Run as the base image's built-in non-root user `node` (uid/gid 1000, home
 # /home/node). Claude Code refuses bypassPermissions mode as root, and uv
-# installs tools onto the user's ~/.local/bin.
-ARG USERNAME=node
-ARG UID=1000
-ARG GID=1000
+# installs tools onto the user's ~/.local/bin. The user is fixed, not a build
+# arg: the image reuses node rather than creating one (no useradd), so there is
+# nothing to tune — hardcoding keeps every path (COPY targets, ENTRYPOINT) in
+# agreement.
 
 # basecamp source (allowlisted by .dockerignore) -> installed as a uv tool below.
 ENV BASECAMP_SRC=/opt/basecamp
-COPY --chown=${UID}:${GID} pyproject.toml uv.lock ${BASECAMP_SRC}/
-COPY --chown=${UID}:${GID} src ${BASECAMP_SRC}/src
-COPY --chown=${UID}:${GID} claude ${BASECAMP_SRC}/claude
+COPY --chown=node:node pyproject.toml uv.lock ${BASECAMP_SRC}/
+COPY --chown=node:node src ${BASECAMP_SRC}/src
+COPY --chown=node:node claude ${BASECAMP_SRC}/claude
 
 # The plugin the sandbox validates (its root holds .claude-plugin/plugin.json).
 ENV BASECAMP_PLUGIN_DIR=${BASECAMP_SRC}/claude
 
-USER ${USERNAME}
-ENV HOME=/home/${USERNAME}
+USER node
+ENV HOME=/home/node
 # uv's tool-bin dir first, so the plugin shims (basecamp-mcp / basecamp-hook)
 # and the daemon (basecamp hub) all resolve the installed basecamp.
-ENV PATH=/home/${USERNAME}/.local/bin:${PATH}
+ENV PATH=/home/node/.local/bin:${PATH}
 
 # Install basecamp: exposes `basecamp`, `basecamp-mcp`, `basecamp-hook`.
 RUN uv tool install --python 3.12 "${BASECAMP_SRC}" \
@@ -63,17 +63,17 @@ RUN uv tool install --python 3.12 "${BASECAMP_SRC}" \
 
 # Claude Code config: bypass permission prompts (throwaway sandbox, non-root) so
 # the plugin's hooks, MCP server, and Bash run without interactive gating.
-COPY --chown=${UID}:${GID} claude/docker/claude-settings.json /home/${USERNAME}/.claude/settings.json
+COPY --chown=node:node claude/docker/claude-settings.json /home/node/.claude/settings.json
 
 # Cheap-changing scripts last, so editing them doesn't bust the uv-install layer.
 # The entrypoint + inspection helper live in the user's PATH and are chmod'd as
 # the unprivileged user.
-COPY --chown=${UID}:${GID} claude/docker/entrypoint.sh /home/${USERNAME}/.local/bin/entrypoint.sh
-COPY --chown=${UID}:${GID} claude/docker/bin/bc-inspect /home/${USERNAME}/.local/bin/bc-inspect
-RUN chmod +x /home/${USERNAME}/.local/bin/entrypoint.sh /home/${USERNAME}/.local/bin/bc-inspect
+COPY --chown=node:node claude/docker/entrypoint.sh /home/node/.local/bin/entrypoint.sh
+COPY --chown=node:node claude/docker/bin/bc-inspect /home/node/.local/bin/bc-inspect
+RUN chmod +x /home/node/.local/bin/entrypoint.sh /home/node/.local/bin/bc-inspect
 
 # Interactive convenience: a bare `claude` loads the plugin under test.
-RUN cat >> /home/${USERNAME}/.bashrc <<'EOF'
+RUN cat >> /home/node/.bashrc <<'EOF'
 
 # basecamp sandbox: load the plugin under test on every interactive `claude`.
 alias claude='command claude --plugin-dir "$BASECAMP_PLUGIN_DIR"'
@@ -81,14 +81,14 @@ EOF
 
 # A realistic git repo to run sessions in (drives the transcript slug + project
 # resolution); a throwaway, unrelated to the basecamp source under /opt.
-RUN mkdir -p /home/${USERNAME}/workspace \
-	&& cd /home/${USERNAME}/workspace \
+RUN mkdir -p /home/node/workspace \
+	&& cd /home/node/workspace \
 	&& git init -q \
 	&& git config user.email dev@example.com \
 	&& git config user.name dev \
 	&& printf '# sandbox workspace\n' > README.md \
 	&& git add -A \
 	&& git commit -qm init
-WORKDIR /home/${USERNAME}/workspace
+WORKDIR /home/node/workspace
 
 ENTRYPOINT ["/home/node/.local/bin/entrypoint.sh"]
