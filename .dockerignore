@@ -1,0 +1,35 @@
+# Keep the container build context small.
+#
+# The only image (claude/docker/Dockerfile) builds the `basecamp` Python tool,
+# which needs src/, claude/, pyproject.toml, and uv.lock — nothing else. The
+# rest of the repo (the retired Pi package checkouts, virtualenvs, node_modules,
+# git history) would otherwise be tarred up and sent to the engine on every
+# build, so it is excluded here.
+
+# Virtualenvs, dependencies, VCS, caches
+.venv/
+node_modules/
+.git/
+.pytest_cache/
+.ruff_cache/
+.playwright-mcp/
+**/__pycache__/
+
+# Retired Pi extension trees (large vendored checkouts, unused by the image)
+core/
+workspace/
+pi/
+pi-ui/
+pi-git/
+pi-tasks/
+pi-swarm/
+pi-browser/
+pi-companion/
+pi-engineering/
+pi-bash-reviewer/
+
+# Docs / tests / misc not needed to build the basecamp tool
+docs/
+tests/
+migrations/
+scripts/

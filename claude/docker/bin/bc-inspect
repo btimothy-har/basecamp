@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Show what the basecamp hub daemon recorded in THIS container's isolated DB:
+# durable sessions, per-engagement episodes, and ingested transcript nodes.
+set -euo pipefail
+
+db="${HOME}/.pi/basecamp/claude/daemon.db"
+
+if [ ! -f "${db}" ]; then
+	echo "No hub DB yet at: ${db}"
+	echo "Run a 'claude' session first, then re-run bc-inspect."
+	exit 0
+fi
+
+echo "DB: ${db}"
+echo
+echo "== sessions (durable actors) =="
+sqlite3 -header -column "${db}" \
+	"SELECT session_id, repo, cwd, created_at, last_seen_at FROM sessions;"
+
+echo
+echo "== episodes (ended_at IS NULL = live) =="
+sqlite3 -header -column "${db}" \
+	"SELECT id, session_id, source, started_at, ended_at, end_reason FROM episodes;"
+
+echo
+echo "== transcript nodes (per session / type) =="
+sqlite3 -header -column "${db}" \
+	"SELECT session_id, type, COUNT(*) AS n
+	 FROM transcript_nodes
+	 GROUP BY session_id, type
+	 ORDER BY session_id, type;"
+
+echo
+echo "== workstreams =="
+sqlite3 -header -column "${db}" \
+	"SELECT id, slug, label, repo FROM workstreams;"
