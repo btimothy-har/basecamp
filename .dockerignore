@@ -1,10 +1,9 @@
 # Keep the container build context small.
 #
 # The only image (claude/docker/Dockerfile) builds the `basecamp` Python tool,
-# which needs src/, claude/, pyproject.toml, and uv.lock — nothing else. The
-# rest of the repo (the retired Pi package checkouts, virtualenvs, node_modules,
-# git history) would otherwise be tarred up and sent to the engine on every
-# build, so it is excluded here.
+# which needs src/, claude/, pyproject.toml, and uv.lock — nothing else. Anything
+# else in the working tree would otherwise be tarred up and sent to the engine on
+# every build, so it is excluded here.
 
 # Virtualenvs, dependencies, VCS, caches
 .venv/
@@ -15,10 +14,16 @@ node_modules/
 .playwright-mcp/
 **/__pycache__/
 
-# Retired Pi extension trees (large vendored checkouts, unused by the image)
+# The Pi extension (TypeScript). This is live code, but the image builds only the
+# Python tool and never COPYs it, so excluding it is purely a build-context size
+# win — not a statement that it's dead.
+pi/
+
+# Pre-rearchitecture layout leftovers. These namespace-portion dirs are gone from
+# the repo, but can linger untracked in a working tree that predates the move, so
+# they're excluded defensively to keep a stale checkout from bloating the context.
 core/
 workspace/
-pi/
 pi-ui/
 pi-git/
 pi-tasks/
