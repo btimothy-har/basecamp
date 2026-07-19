@@ -15,8 +15,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from basecamp.claude.gitutil import run_git
+from basecamp.claude.gitutil import main_worktree, run_git
 from basecamp.claude.identity import repo_identity, repo_root
+from basecamp.claude.launchcard import print_launch_card
 from basecamp.claude.paths import shipped_prompts_dir
 
 CLAUDE_COMMAND = "claude"
@@ -34,17 +35,6 @@ class LaunchPlan:
     scratch_dir: Path
     prompt: str
     prompt_path: Path
-
-
-def _main_worktree(cwd: str) -> str | None:
-    """Primary checkout path (first ``worktree`` entry of ``worktree list``)."""
-    output = run_git(cwd, "worktree", "list", "--porcelain")
-    if not output:
-        return None
-    for line in output.splitlines():
-        if line.startswith("worktree "):
-            return line.removeprefix("worktree ").strip() or None
-    return None
 
 
 def _render_environment(cwd: str) -> str:
@@ -71,7 +61,7 @@ def _render_environment(cwd: str) -> str:
     if branch:
         lines.append(f"- Current branch: {branch}")
 
-    main = _main_worktree(cwd)
+    main = main_worktree(cwd)
     if main and os.path.realpath(main) != os.path.realpath(root):
         lines.append(f"- Active worktree: {root}")
         lines.append(f"- Protected checkout: {main}")
@@ -126,7 +116,8 @@ def run_launch(extra_args: list[str], cwd: str | None = None) -> None:
         )
         raise SystemExit(1)
 
-    plan = build_launch(cwd or os.getcwd(), extra_args)
+    resolved_cwd = cwd or os.getcwd()
+    plan = build_launch(resolved_cwd, extra_args)
     plan.scratch_dir.mkdir(parents=True, exist_ok=True)
     plan.prompt_path.write_text(plan.prompt, encoding="utf-8")
     os.environ.update(plan.env)
@@ -138,6 +129,7 @@ def run_launch(extra_args: list[str], cwd: str | None = None) -> None:
         os.environ.pop("BASECAMP_REPO", None)
     os.environ.pop("BASECAMP_WORKTREE_LABEL", None)
     os.environ.pop("BASECAMP_WORKTREE_DIR", None)
+    print_launch_card(resolved_cwd, scratch_dir=plan.scratch_dir)
     os.execvp(plan.argv[0], plan.argv)  # noqa: S606  # intentional interactive process handoff
 
 

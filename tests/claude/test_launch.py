@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from basecamp.claude import launch
+from basecamp.claude import launch, launchcard
 
 
 def _init_repo(path: Path, origin: str | None = None, *, commit: bool = True) -> None:
@@ -165,3 +165,50 @@ def test_run_launch_missing_claude(monkeypatch: pytest.MonkeyPatch, tmp_path: Pa
     monkeypatch.setattr(launch.shutil, "which", lambda _cmd: None)
     with pytest.raises(SystemExit):
         launch.run_launch([], cwd=str(tmp_path))
+
+
+def test_run_launch_prints_card_before_handoff(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _patch_template(monkeypatch, tmp_path)
+    monkeypatch.setattr(launch, "SCRATCH_ROOT", tmp_path / "scratch")
+    monkeypatch.setattr(launch.shutil, "which", lambda _cmd: "/usr/bin/claude")
+    monkeypatch.setattr(launch.os, "environ", dict(os.environ))
+
+    order: list[str] = []
+    monkeypatch.setattr(launch.os, "execvp", lambda _file, _args: order.append("execvp"))
+    real_print = launch.print_launch_card
+
+    def spy(*args: object, **kwargs: object) -> None:
+        order.append("card")
+        real_print(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(launch, "print_launch_card", spy)
+
+    repo = tmp_path / "repo"
+    _init_repo(repo, "https://github.com/acme/web.git")
+    launch.run_launch([], cwd=str(repo))
+
+    assert order == ["card", "execvp"]
+    assert "basecamp" in capsys.readouterr().out
+
+
+def test_run_launch_card_failure_is_fail_open(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _patch_template(monkeypatch, tmp_path)
+    monkeypatch.setattr(launch, "SCRATCH_ROOT", tmp_path / "scratch")
+    monkeypatch.setattr(launch.shutil, "which", lambda _cmd: "/usr/bin/claude")
+    monkeypatch.setattr(launch.os, "environ", dict(os.environ))
+
+    def _boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(launchcard, "resolve_project", _boom)
+
+    handed_off: list[bool] = []
+    monkeypatch.setattr(launch.os, "execvp", lambda _file, _args: handed_off.append(True))
+
+    repo = tmp_path / "repo"
+    _init_repo(repo, "https://github.com/acme/web.git")
+    launch.run_launch([], cwd=str(repo))  # must not raise despite the broken resolver
+
+    assert handed_off == [True]

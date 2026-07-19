@@ -43,6 +43,17 @@ def run_git(cwd: str, *args: str, timeout: float = DEFAULT_GIT_TIMEOUT_S) -> str
     return result.stdout.strip() or None
 
 
+def main_worktree(cwd: str) -> str | None:
+    """Primary checkout path (first ``worktree`` entry of ``git worktree list``)."""
+    output = run_git(cwd, "worktree", "list", "--porcelain")
+    if not output:
+        return None
+    for line in output.splitlines():
+        if line.startswith("worktree "):
+            return line.removeprefix("worktree ").strip() or None
+    return None
+
+
 def parse_remote_identity(url: str) -> str | None:
     """Canonical ``<org>/<name>`` from a remote URL, else ``None`` for non-URL origins.
 
