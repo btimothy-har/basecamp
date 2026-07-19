@@ -1,7 +1,7 @@
 """PostToolUse hook: warn (never block) when a source file grows past the cap.
 
 Fires after a ``Write``/``Edit`` succeeds, so the file is already on disk. This
-reads it, counts its lines, and — for a *source* file over the cap — returns a
+reads it, counts its lines, and — for a *source* file over its cap — returns a
 non-blocking advisory (``hookSpecificOutput.additionalContext``) telling the agent
 to review it. It emits no ``decision`` field, so the tool result is untouched and
 the write stands; the cap's rationale lives in the engineering doctrine. Anything
@@ -16,8 +16,21 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-#: Universal line cap for source files. Split along responsibility seams past this.
+#: Line cap for source files whose type has no specific entry below — the general
+#: bucket. Most code (Python, TypeScript, Ruby, and the compiled languages) uses it.
 LINE_CAP = 500
+
+#: Types whose idiomatic size differs from the general bucket. SQL and HTML run
+#: long (queries, migrations, markup); shell scripts should stay short. The cap is
+#: a module-design forcing function, not a style rule.
+_LANGUAGE_CAPS: dict[str, int] = {
+    ".sql": 800,
+    ".html": 800,
+    ".htm": 800,
+    ".sh": 400,
+    ".bash": 400,
+    ".zsh": 400,
+}
 
 #: Extensions treated as source code. Data, docs, lockfiles, and config are exempt.
 _SOURCE_SUFFIXES = frozenset(
@@ -53,6 +66,8 @@ _SOURCE_SUFFIXES = frozenset(
         ".bash",
         ".zsh",
         ".sql",
+        ".html",
+        ".htm",
     }
 )
 
@@ -79,7 +94,10 @@ def handle_file_length(payload: Mapping[str, Any]) -> str | None:
     if payload.get("tool_name") not in ("Write", "Edit", "MultiEdit"):
         return None
     path = _target_path(payload)
-    if path is None or path.suffix.lower() not in _SOURCE_SUFFIXES:
+    if path is None:
+        return None
+    suffix = path.suffix.lower()
+    if suffix not in _SOURCE_SUFFIXES:
         return None
     try:
         text = path.read_text(encoding="utf-8")
@@ -89,11 +107,12 @@ def handle_file_length(payload: Mapping[str, Any]) -> str | None:
     # would over-count a file that contains them. A trailing newline adds no
     # line, matching an editor's gutter.
     lines = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
-    if lines <= LINE_CAP:
+    cap = _LANGUAGE_CAPS.get(suffix, LINE_CAP)
+    if lines <= cap:
         return None
     context = (
         f"basecamp file-length check: {path.name} is now {lines} lines, over the "
-        f"{LINE_CAP}-line cap for source files. Files past the cap should be split "
+        f"{cap}-line cap for {suffix} source files. Files past the cap should be split "
         "along responsibility seams into focused modules (see the engineering doctrine)."
     )
     return json.dumps(

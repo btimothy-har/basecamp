@@ -1,7 +1,5 @@
 # Engineering doctrine
 
-Shared standards for all basecamp coding work — the main session and every dispatched subagent alike.
-
 ## Before you change anything
 
 - **Read before modifying.** Never propose or make changes to a file you haven't read.
@@ -19,7 +17,7 @@ Priorities, in order: **readability → established patterns → simplicity.**
 
 ## File length
 
-Keep source files under **500 lines**. The cap is a module-design forcing function, not a style rule: when a file approaches it, split along responsibility seams into focused modules that each do one job. Never satisfy it by compressing style (collapsing blank lines, one-lining logic) or with `-part2`-style continuation files — if no seam is apparent, the file owns more than one responsibility and the design needs rethinking. A basecamp hook posts a non-blocking reminder when a file crosses the cap; it's a nudge to review, not a gate.
+Keep source files focused — one clear responsibility each. Most code sits under a soft cap of **500 lines**; a few file types differ — shell scripts should stay tighter (~400), while SQL and HTML run longer (~800). The cap is a module-design forcing function, not a style rule: when a file approaches it, split along responsibility seams into focused modules that each do one job. Never satisfy it by compressing style (collapsing blank lines, one-lining logic) or with `-part2`-style continuation files — if no seam is apparent, the file owns more than one responsibility and the design needs rethinking. A basecamp hook posts a non-blocking reminder when a file crosses its cap; it's a nudge to review, not a gate.
 
 ## Comments and docstrings
 
