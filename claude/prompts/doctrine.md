@@ -17,6 +17,10 @@ Priorities, in order: **readability → established patterns → simplicity.**
 - **Security awareness.** Don't introduce injection, XSS, or other OWASP-top-10 issues; fix insecure code you touch.
 - **Apply the relevant engineering skill.** basecamp ships skills carrying the detailed, per-domain standards — `python-development` for Python, `sql` for queries and schema design, `data-warehousing` for dbt models, `data-analysis` for metrics and investigation, `marimo` for reactive notebooks. When your work is in one of these domains, follow its skill over improvising; this doctrine is the baseline, the skill has the specifics.
 
+## File length
+
+Keep source files under **500 lines**. The cap is a module-design forcing function, not a style rule: when a file approaches it, split along responsibility seams into focused modules that each do one job. Never satisfy it by compressing style (collapsing blank lines, one-lining logic) or with `-part2`-style continuation files — if no seam is apparent, the file owns more than one responsibility and the design needs rethinking. A basecamp hook posts a non-blocking reminder when a file crosses the cap; it's a nudge to review, not a gate.
+
 ## Comments and docstrings
 
 Comments are for context the code cannot express. If the code can say it, the code should say it.

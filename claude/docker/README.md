@@ -68,7 +68,7 @@ You land in `~/workspace` (a throwaway git repo). Then:
 
 ```bash
 claude                 # start a session — the plugin auto-loads
-                       # (alias for: claude --plugin-dir "$BASECAMP_PLUGIN_DIR")
+                       # (enabled in ~/.claude/settings.json by `basecamp install`)
 # ...interact, then exit the session...
 
 bc-inspect             # dump sessions / episodes / transcript_nodes from the DB
@@ -94,14 +94,19 @@ sqlite3 ~/.pi/basecamp/claude/daemon.db '.tables'
 - **basecamp:** `uv tool install` from the copied `src/`, exposing `basecamp`,
   `basecamp-mcp`, and `basecamp-hook` on the `node` user's PATH — exactly what the
   plugin's `bin/` shims resolve.
-- **Plugin loading:** an interactive-shell alias adds `--plugin-dir
-  "$BASECAMP_PLUGIN_DIR"`, so the plugin's hooks, stdio MCP server, and skills
-  activate for every `claude` invocation. (Persistent alternative: an
-  `enabledPlugins` entry in `~/.claude/settings.json`.)
-- **Permissions:** `~/.claude/settings.json` sets `permissions.defaultMode:
-  "bypassPermissions"` so the throwaway sandbox never prompts. This is why the
-  container runs as the non-root `node` user — Claude Code refuses that mode as
-  root.
+- **Plugin loading:** the build runs `basecamp install`, which drives the
+  `claude` CLI (`plugin marketplace add` + `plugin install`) against this repo's
+  `claude/` directory. That writes `~/.claude/settings.json`
+  (`extraKnownMarketplaces` + `enabledPlugins`) **and** builds the
+  `~/.claude/plugins/` cache the loader actually reads — settings.json alone does
+  not load a plugin. A bare `claude` then auto-loads the plugin's hooks, stdio MCP
+  server, and skills — no `--plugin-dir`. This is the same wiring a real host
+  gets, so the sandbox is the authoritative check on registration.
+- **Permissions:** the image first seeds `~/.claude/settings.json` with
+  `permissions.defaultMode: "bypassPermissions"` (so the throwaway sandbox never
+  prompts — which is also why it runs as the non-root `node` user; Claude Code
+  refuses that mode as root). `claude plugin install` then merges its registration
+  keys into that same file, leaving the `permissions` key intact.
 
 ## Notes / caveats
 
@@ -111,5 +116,7 @@ sqlite3 ~/.pi/basecamp/claude/daemon.db '.tables'
   build time, so re-run `run.sh` (or `podman build`) to pick up edits.
 - **Pin the CLI** with `--build-arg CLAUDE_CODE_VERSION=x.y.z` if you need a
   specific `claude` version; it defaults to `latest`.
-- **This is a validation tool, not a shipped artifact** — it is not installed by
-  `basecamp install` and has no bearing on how the plugin is delivered.
+- **This is a validation tool, not a shipped artifact** — the container itself is
+  a throwaway test harness; it has no bearing on how the plugin is delivered to a
+  real host (that is `basecamp install`, which the build runs *inside* the
+  container to exercise the real registration path).

@@ -1,10 +1,7 @@
 """Runner for the Claude Code session-lifecycle hub daemon.
 
-Self-contained on purpose: the Claude section owns its own UDS-hardening server
-harness so it depends on nothing in the Pi runtime (``basecamp.hub.server`` would
-drag in the swarm app graph). The harness mirrors the Pi daemon's — tighten the
-socket to owner-only after bind, write/clean a pidfile — but over the minimal
-Claude app. At promotion this file simply becomes *the* hub server.
+Owns its own UDS-hardening server harness: tighten the socket to owner-only after
+bind, write/clean a pidfile, over the minimal Claude app.
 """
 
 from __future__ import annotations

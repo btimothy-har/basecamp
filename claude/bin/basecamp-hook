@@ -1,5 +1,5 @@
 #!/bin/sh
-# Dispatch a Claude Code lifecycle hook event to basecamp (strictly fail-open).
+# Dispatch a Claude Code hook event to basecamp (strictly fail-open).
 #
 # `uv tool install` exposes `basecamp-hook` beside `basecamp` in the same bin
 # dir, so we resolve it from that install rather than an ambient interpreter.

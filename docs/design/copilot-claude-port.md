@@ -1,6 +1,8 @@
 # Copilot on Claude Code — Port Proposal
 
-**Status:** PROPOSAL (2026-07) · **Scope:** how the basecamp *repo copilot* (the `--copilot` posture + workstreams + repo memory) lands on Claude Code, native-first · **Builds on:** [claude-code-compatibility](./claude-code-compatibility.md), [`claude/README.md`](../../claude/README.md), [transcript-ingestion](./transcript-ingestion.md), [async-agents](./async-agents.md) · **Delivery:** the `claude/` plugin + the kept Claude hub daemon
+**Status:** PROPOSAL (2026-07) · **Scope:** how the basecamp *repo copilot* (the `--copilot` posture + workstreams + repo memory) lands on Claude Code, native-first · **Builds on:** [claude-code-compatibility](./claude-code-compatibility.md), [`claude/README.md`](../../claude/README.md), [transcript-ingestion](./transcript-ingestion.md) · **Delivery:** the `claude/` plugin + the kept Claude hub daemon
+
+> **Update (2026-07, Pi deprecation complete).** The Pi swarm daemon has been **removed**, so the "two daemons" framing in §1 is historical: only the Claude hub daemon (`hub/claude/`) remains, and it now owns the workstream tables (`workstreams` + `workstream_sessions`). References to `basecamp hub --legacy` and the Pi `pi/…` surface below are the pre-deprecation Pi baseline, kept for the porting rationale. The copilot + start-workstream skills, the workstream MCP tools, and the `workstream` CLI group have landed on the Claude side.
 
 This proposal turns the "🟡 dropped / optional Tier-2" copilot row of [claude-code-compatibility](./claude-code-compatibility.md) §4 into a concrete port. It examines the full copilot surface as built on Pi, then maps each mechanism to the **most native Claude Code feature that fits**, falling to the (already-kept) hub daemon only for the irreducible cross-session coordination core. Nothing here is built yet; this is the design record to argue over before code.
 

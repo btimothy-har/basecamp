@@ -1,8 +1,0 @@
-{
-  "type": "peer_message_ack",
-  "v": 23,
-  "request_id": "msg-req-001",
-  "message_id": "msg-001",
-  "status": "accepted",
-  "error": null
-}

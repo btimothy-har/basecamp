@@ -90,3 +90,14 @@ class TestProjectConfigSchema:
 
         with pytest.raises(LauncherError):
             project_config.load_projects(cfg)
+
+    def test_load_projects_strips_retired_working_style(self, cfg: Settings) -> None:
+        # A config.json written by an older basecamp seeded `working_style`; the
+        # field is gone from the model (extra="forbid" would reject it), so load
+        # must strip it rather than raise. It is dropped, not migrated.
+        cfg._write({"projects": {"demo": {"repo_root": "src/demo", "working_style": "engineering"}}})
+
+        loaded = project_config.load_projects(cfg)
+
+        assert loaded["demo"].repo_root == "src/demo"
+        assert "working_style" not in loaded["demo"].model_dump()

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from basecamp.core.paths import swarm_runtime_dir
 from basecamp.hub.claude.paths import (
     claude_daemon_db_path,
     claude_pidfile_path,
@@ -24,10 +23,10 @@ def test_all_paths_share_the_runtime_root(tmp_path: Path) -> None:
     assert claude_daemon_db_path(home=tmp_path) == root / "daemon.db"
 
 
-def test_runtime_root_is_distinct_from_the_pi_swarm_root(tmp_path: Path) -> None:
-    # The Claude daemon must never share a socket or database with the legacy Pi
-    # swarm daemon (``~/.pi/basecamp/swarm``); it lives under a sibling ``claude`` dir.
-    assert claude_runtime_dir(home=tmp_path) != swarm_runtime_dir(tmp_path)
+def test_runtime_root_lives_under_the_basecamp_claude_dir(tmp_path: Path) -> None:
+    # The daemon's runtime lives under a dedicated ``claude`` dir beneath the
+    # basecamp root, keeping its socket/database self-contained.
+    assert claude_runtime_dir(home=tmp_path).parts[-3:] == (".pi", "basecamp", "claude")
     assert claude_daemon_db_path(home=tmp_path).name == "daemon.db"
 
 

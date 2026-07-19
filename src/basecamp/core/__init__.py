@@ -14,8 +14,6 @@ from basecamp.core.paths import (
     DEFAULT_CONFIG_PATH,
     PI_DIR,
     USER_CONTEXT_DIR,
-    USER_PROMPTS_DIR,
-    USER_STYLES_DIR,
 )
 from basecamp.core.settings import Settings, settings
 
@@ -26,8 +24,6 @@ __all__ = [
     "PI_DIR",
     "Settings",
     "USER_CONTEXT_DIR",
-    "USER_PROMPTS_DIR",
-    "USER_STYLES_DIR",
     "atomic_write_json",
     "settings",
 ]

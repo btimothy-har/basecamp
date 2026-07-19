@@ -259,7 +259,7 @@ def test_pre_compact_skips_missing_session_id(ingest_calls: list[dict[str, objec
 
 
 def test_pre_compact_is_wired_into_the_dispatcher() -> None:
-    assert hooks._HANDLERS["pre-compact"] is session_mod.handle_pre_compact
+    assert hooks._load_handler("pre-compact") is session_mod.handle_pre_compact
 
 
 # --- subagent-stop handler -------------------------------------------------------
@@ -300,4 +300,4 @@ def test_subagent_stop_skips_missing_session_id(ingest_calls: list[dict[str, obj
 
 
 def test_subagent_stop_is_wired_into_the_dispatcher() -> None:
-    assert hooks._HANDLERS["subagent-stop"] is session_mod.handle_subagent_stop
+    assert hooks._load_handler("subagent-stop") is session_mod.handle_subagent_stop

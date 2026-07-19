@@ -20,8 +20,6 @@ class TestPaths:
 
     def test_user_dirs_under_basecamp_config_dir(self) -> None:
         assert paths.USER_CONTEXT_DIR == paths.BASECAMP_CONFIG_DIR / "context"
-        assert paths.USER_STYLES_DIR == paths.BASECAMP_CONFIG_DIR / "styles"
-        assert paths.USER_PROMPTS_DIR == paths.BASECAMP_CONFIG_DIR / "prompts"
 
 
 class TestPublicApi:
@@ -33,8 +31,6 @@ class TestPublicApi:
             "PI_DIR",
             "Settings",
             "USER_CONTEXT_DIR",
-            "USER_PROMPTS_DIR",
-            "USER_STYLES_DIR",
             "atomic_write_json",
             "settings",
         }

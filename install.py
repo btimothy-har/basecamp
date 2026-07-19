@@ -7,8 +7,9 @@
 # ///
 """Bootstrap installer for basecamp.
 
-Run this once after cloning to get the `basecamp` binary on PATH.
-Subsequent reconfiguration: `basecamp install`.
+Run this once after cloning (``uv run install.py`` / ``make install``) to install
+the `basecamp` tool onto PATH and wire it into Claude Code. Subsequent
+re-runs of the wiring only: `basecamp install`.
 """
 
 import sys
@@ -16,14 +17,14 @@ from pathlib import Path
 
 REPO_DIR = Path(__file__).resolve().parent
 # basecamp is one ordinary package under src/; add it to sys.path so this
-# bootstrap can import basecamp.installer before the tool is installed.
+# bootstrap can import basecamp.install before the tool is installed.
 sys.path.insert(0, str(REPO_DIR / "src"))
 
-from basecamp.installer import run_interactive_install  # noqa: E402
+from basecamp.install import run_bootstrap  # noqa: E402
 
 
 def main() -> None:
-    run_interactive_install()
+    run_bootstrap()
 
 
 if __name__ == "__main__":
