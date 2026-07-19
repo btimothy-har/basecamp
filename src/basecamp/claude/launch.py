@@ -130,10 +130,14 @@ def run_launch(extra_args: list[str], cwd: str | None = None) -> None:
     plan.scratch_dir.mkdir(parents=True, exist_ok=True)
     plan.prompt_path.write_text(plan.prompt, encoding="utf-8")
     os.environ.update(plan.env)
+    # Clear session-identity vars a parent session may have exported so they can't
+    # mis-attribute the new session in the hub. BASECAMP_REPO is set for repo
+    # launches (cleared only when this launch is non-repo); the worktree vars are
+    # never set here (worktree provisioning is out of scope), so always clear them.
     if "BASECAMP_REPO" not in plan.env:
-        # Non-repo launch: drop any value inherited from a parent session so the
-        # hub identity derives repo from cwd instead of a stale ancestor's repo.
         os.environ.pop("BASECAMP_REPO", None)
+    os.environ.pop("BASECAMP_WORKTREE_LABEL", None)
+    os.environ.pop("BASECAMP_WORKTREE_DIR", None)
     os.execvp(plan.argv[0], plan.argv)  # noqa: S606  # intentional interactive process handoff
 
 

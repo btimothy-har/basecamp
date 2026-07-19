@@ -141,6 +141,26 @@ def test_run_launch_clears_stale_repo_outside_repo(monkeypatch: pytest.MonkeyPat
     assert "BASECAMP_REPO" not in env_copy
 
 
+def test_run_launch_clears_inherited_worktree_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _patch_template(monkeypatch, tmp_path)
+    monkeypatch.setattr(launch, "SCRATCH_ROOT", tmp_path / "scratch")
+    monkeypatch.setattr(launch.shutil, "which", lambda _cmd: "/usr/bin/claude")
+    monkeypatch.setattr(launch.os, "execvp", lambda _file, _args: None)
+
+    env_copy = dict(os.environ)
+    env_copy["BASECAMP_WORKTREE_LABEL"] = "wt-user/foo"  # leaked from a parent worktree session
+    env_copy["BASECAMP_WORKTREE_DIR"] = "/somewhere/else"
+    monkeypatch.setattr(launch.os, "environ", env_copy)
+
+    repo = tmp_path / "repo"  # even a valid repo launch must drop stale worktree vars
+    _init_repo(repo, "https://github.com/acme/web.git")
+    launch.run_launch([], cwd=str(repo))
+
+    assert "BASECAMP_WORKTREE_LABEL" not in env_copy
+    assert "BASECAMP_WORKTREE_DIR" not in env_copy
+    assert env_copy["BASECAMP_REPO"] == "acme/web"
+
+
 def test_run_launch_missing_claude(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(launch.shutil, "which", lambda _cmd: None)
     with pytest.raises(SystemExit):
