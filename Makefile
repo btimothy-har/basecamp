@@ -1,3 +1,7 @@
+# Bare `make` sets up the dev venv — never the global bootstrap (`make install`),
+# which mutates ~/.claude and ~/.pi/basecamp/config.json.
+.DEFAULT_GOAL := sync
+
 install:
 	uv run install.py
 

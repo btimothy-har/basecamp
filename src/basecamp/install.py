@@ -24,6 +24,7 @@ from typing import Final
 from basecamp.claude.paths import claude_dir, shipped_prompts_dir
 from basecamp.claude.plugin import PluginRegistrationError, register_plugin
 from basecamp.core.directories import to_home_relative
+from basecamp.core.exceptions import LauncherError
 from basecamp.core.paths import USER_CONTEXT_DIR
 from basecamp.core.projects import ProjectConfig, load_projects, save_projects
 from basecamp.core.settings import settings
@@ -57,7 +58,7 @@ def _source_dir() -> Path:
     install_dir = settings.install_dir
     if install_dir:
         return Path(install_dir)
-    return Path(__file__).resolve().parents[2]
+    return REPO_DIR
 
 
 def _upsert_managed_block(existing: str, block: str) -> str:
@@ -117,9 +118,18 @@ def _register_plugin() -> None:
     console.print("  [green]✓[/green] plugin registered [dim](basecamp@basecamp enabled)[/dim]")
 
 
-def _create_default_config() -> None:
-    """Create the workspace projects file with basecamp as a starting point."""
-    relative_path = to_home_relative(_source_dir())
+def _create_default_config() -> bool:
+    """Seed the projects file with basecamp itself as a starting point.
+
+    Returns ``True`` if seeded. A checkout outside ``$HOME`` can't be stored as a
+    home-relative ``repo_root``, so we skip the convenience default (returning
+    ``False``) rather than abort the whole install — the user can add projects from
+    the menu.
+    """
+    try:
+        relative_path = to_home_relative(_source_dir())
+    except LauncherError:
+        return False
     save_projects(
         {
             "basecamp": ProjectConfig(
@@ -128,6 +138,7 @@ def _create_default_config() -> None:
             )
         }
     )
+    return True
 
 
 def execute_install() -> None:
@@ -166,9 +177,13 @@ def execute_install() -> None:
     if existing:
         count = len(existing)
         console.print(f"  [green]✓[/green] {config_path} [dim]({count} project{'s' if count != 1 else ''})[/dim]")
-    else:
-        _create_default_config()
+    elif _create_default_config():
         console.print(f"  [green]✓[/green] Created {config_path} [dim](basecamp project)[/dim]")
+    else:
+        console.print(
+            f"  [yellow]![/yellow] {config_path} [dim](checkout outside $HOME; "
+            "add projects with `basecamp config project`)[/dim]"
+        )
     console.print()
 
     console.print("[green]✓[/green] Done. Review projects with: [bold]basecamp config project[/bold]")

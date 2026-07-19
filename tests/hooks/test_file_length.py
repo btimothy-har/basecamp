@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 from pathlib import Path
 
 import pytest
@@ -145,4 +146,18 @@ def test_dispatcher_stays_silent_under_cap(
 
 
 def test_file_length_is_wired_into_the_dispatcher() -> None:
-    assert hooks._HANDLERS["file-length"] is handle_file_length
+    assert hooks._load_handler("file-length") is handle_file_length
+
+
+def test_file_length_dispatch_does_not_import_session(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """The per-edit file-length hook must not pull in the session module (hub client)."""
+    monkeypatch.delitem(sys.modules, "basecamp.hooks.session", raising=False)
+    target = tmp_path / "small.py"
+    _write_lines(target, 5)
+    monkeypatch.setattr(
+        "sys.stdin",
+        io.StringIO(json.dumps({"tool_name": "Write", "tool_input": {"file_path": str(target)}})),
+    )
+
+    assert hooks.main(["file-length"]) == 0
+    assert "basecamp.hooks.session" not in sys.modules

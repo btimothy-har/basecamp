@@ -12,12 +12,17 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 
 PROJECTS_SECTION = "projects"
+
+#: Fields removed from ``ProjectConfig`` but tolerated on validation so a
+#: config.json written by an older basecamp (which seeded ``working_style``) still
+#: loads — ``extra="forbid"`` would otherwise reject it. Stripped, not migrated.
+_LEGACY_PROJECT_KEYS = ("working_style",)
 
 
 class ProjectConfig(BaseModel):
@@ -30,11 +35,19 @@ class ProjectConfig(BaseModel):
     description: str = ""
     context: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_legacy_keys(cls, data: Any) -> Any:
+        """Strip retired keys before ``extra="forbid"`` runs.
 
-#: Fields removed from ``ProjectConfig`` but tolerated on load so a config.json
-#: written by an older basecamp (which seeded ``working_style``) still loads —
-#: ``extra="forbid"`` would otherwise reject it. Stripped, not migrated.
-_LEGACY_PROJECT_KEYS = ("working_style",)
+        Lives on the model (not in one loader) so *every* validation path —
+        ``load_projects`` and the shared ``config set|edit`` validator alike —
+        tolerates a legacy ``working_style`` an older basecamp seeded, rather than
+        only the read path.
+        """
+        if isinstance(data, dict):
+            return {k: v for k, v in data.items() if k not in _LEGACY_PROJECT_KEYS}
+        return data
 
 
 def load_projects(config: Settings | None = None) -> dict[str, ProjectConfig]:
@@ -48,9 +61,8 @@ def load_projects(config: Settings | None = None) -> dict[str, ProjectConfig]:
         return {}
     projects: dict[str, ProjectConfig] = {}
     for name, data in raw.items():
-        record = {k: v for k, v in data.items() if k not in _LEGACY_PROJECT_KEYS} if isinstance(data, dict) else data
         try:
-            projects[name] = ProjectConfig.model_validate(record)
+            projects[name] = ProjectConfig.model_validate(data)
         except ValidationError as exc:
             detail = exc.errors()[0]["msg"] if exc.errors() else str(exc)
             msg = f"Invalid project '{name}' in config.json: {detail}"

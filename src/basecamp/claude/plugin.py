@@ -64,8 +64,19 @@ def _claude_bin() -> str:
     return claude
 
 
-def _run_plugin_command(claude: str, *args: str) -> None:
-    """Run one ``claude plugin ...`` command, raising on failure/timeout."""
+def _looks_already_registered(detail: str) -> bool:
+    """Heuristic: did a command fail only because the target already exists?"""
+    low = detail.lower()
+    return "already" in low or "exists" in low
+
+
+def _run_plugin_command(claude: str, *args: str, tolerate_existing: bool = False) -> None:
+    """Run one ``claude plugin ...`` command, raising on failure/timeout.
+
+    ``tolerate_existing`` swallows an "already registered / exists" failure so a
+    re-run stays idempotent even on older Claude Code where ``marketplace add`` is
+    not — otherwise the whole refresh (install/update) would be skipped.
+    """
     label = "claude plugin " + " ".join(args)
     try:
         result = subprocess.run(
@@ -80,6 +91,8 @@ def _run_plugin_command(claude: str, *args: str) -> None:
         raise PluginRegistrationError(msg) from exc
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
+        if tolerate_existing and _looks_already_registered(detail):
+            return
         msg = f"`{label}` exited {result.returncode}: {detail}"
         raise PluginRegistrationError(msg)
 
@@ -95,7 +108,7 @@ def register_plugin(install_dir: Path) -> None:
     """
     claude = _claude_bin()
     marketplace_source = str(plugin_dir(install_dir))
-    _run_plugin_command(claude, "marketplace", "add", marketplace_source)
+    _run_plugin_command(claude, "marketplace", "add", marketplace_source, tolerate_existing=True)
     _run_plugin_command(claude, "install", ENABLED_KEY)
     _run_plugin_command(claude, "marketplace", "update", MARKETPLACE_NAME)
     _run_plugin_command(claude, "update", ENABLED_KEY)

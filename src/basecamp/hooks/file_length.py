@@ -82,9 +82,13 @@ def handle_file_length(payload: Mapping[str, Any]) -> str | None:
     if path is None or path.suffix.lower() not in _SOURCE_SUFFIXES:
         return None
     try:
-        lines = len(path.read_text(encoding="utf-8").splitlines())
+        text = path.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
         return None
+    # Count only "\n"; str.splitlines() also breaks on \x0b \x0c \x85 and
+    # would over-count a file that contains them. A trailing newline adds no
+    # line, matching an editor's gutter.
+    lines = text.count("\n") + (1 if text and not text.endswith("\n") else 0)
     if lines <= LINE_CAP:
         return None
     context = (

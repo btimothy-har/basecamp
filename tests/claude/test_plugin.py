@@ -9,6 +9,7 @@ sandbox.
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,6 +20,7 @@ from basecamp.claude import plugin
 from basecamp.claude.plugin import (
     ENABLED_KEY,
     MARKETPLACE_NAME,
+    PLUGIN_NAME,
     PluginRegistrationError,
     plugin_dir,
     register_plugin,
@@ -63,6 +65,55 @@ def test_register_runs_expected_command_sequence(tmp_path: Path, monkeypatch: py
         [_CLAUDE, "plugin", "marketplace", "update", MARKETPLACE_NAME],
         [_CLAUDE, "plugin", "update", ENABLED_KEY],
     ]
+
+
+def test_constants_match_committed_manifests() -> None:
+    # The plugin/marketplace names are hardcoded constants; if a manifest is
+    # renamed without updating them, registration writes a stale id and the plugin
+    # silently never loads. Pin them to the committed manifests so a drift fails here.
+    manifest_dir = Path(__file__).resolve().parents[2] / "claude" / ".claude-plugin"
+    marketplace = json.loads((manifest_dir / "marketplace.json").read_text(encoding="utf-8"))
+    plugin_manifest = json.loads((manifest_dir / "plugin.json").read_text(encoding="utf-8"))
+
+    assert marketplace["name"] == MARKETPLACE_NAME
+    assert plugin_manifest["name"] == PLUGIN_NAME
+    assert [p["name"] for p in marketplace["plugins"]] == [PLUGIN_NAME]
+    assert ENABLED_KEY == f"{PLUGIN_NAME}@{MARKETPLACE_NAME}"
+
+
+def test_register_tolerates_already_registered_marketplace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # On older Claude Code `marketplace add` errors if the marketplace already
+    # exists; a re-run must still reach install + update, not skip the refresh.
+    def add_says_exists(argv: list[str]) -> SimpleNamespace:
+        if argv[1:4] == ["plugin", "marketplace", "add"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="marketplace 'basecamp' already exists")
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    calls = _record_runs(monkeypatch, result_fn=add_says_exists)
+
+    register_plugin(tmp_path)  # must not raise
+
+    assert [c[1:3] for c in calls] == [
+        ["plugin", "marketplace"],
+        ["plugin", "install"],
+        ["plugin", "marketplace"],
+        ["plugin", "update"],
+    ]
+
+
+def test_register_still_raises_on_a_real_marketplace_add_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Tolerance is narrow: a non-"exists" failure on add still aborts registration.
+    def add_fails(argv: list[str]) -> SimpleNamespace:
+        if argv[1:4] == ["plugin", "marketplace", "add"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="source path does not exist")
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    calls = _record_runs(monkeypatch, result_fn=add_fails)
+
+    with pytest.raises(PluginRegistrationError, match="does not exist"):
+        register_plugin(tmp_path)
+
+    assert [c[1:3] for c in calls] == [["plugin", "marketplace"]]  # stopped at add
 
 
 def test_register_raises_when_claude_absent(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

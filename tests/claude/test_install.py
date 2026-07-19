@@ -71,6 +71,23 @@ def test_execute_install_full(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     assert "working_style" not in projects["basecamp"].model_dump()
 
 
+def test_execute_install_skips_default_project_for_non_home_checkout(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A checkout outside $HOME can't be stored as a home-relative repo_root; the
+    # install must skip the convenience default (with a warning) rather than crash
+    # the bootstrap after the tool/plugin/doctrine steps already ran.
+    outside = tmp_path / "outside" / "checkout"  # under tmp_path, NOT under HOME (tmp_path/home)
+    test_settings = _prepare(monkeypatch, tmp_path, install_dir=outside)
+    monkeypatch.setattr(install, "register_plugin", lambda _d: None)
+
+    install.execute_install()  # must not raise
+
+    home = tmp_path / "home"
+    assert (home / ".claude" / "CLAUDE.md").exists()  # doctrine still installed
+    assert load_projects(config=test_settings) == {}  # no default project seeded
+
+
 def test_register_plugin_skipped_when_install_dir_unset(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     _prepare(monkeypatch, tmp_path, install_dir=None)
 
