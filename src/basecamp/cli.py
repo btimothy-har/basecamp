@@ -7,11 +7,12 @@ from pathlib import Path
 
 import rich_click as click
 
-from basecamp.claude.launch import run_launch
+from basecamp.companion.app import run_companion
 from basecamp.core.cli.config_group import config
-from basecamp.core.cli.workstream_group import workstream
 from basecamp.core.exceptions import LauncherError
-from basecamp.install import execute_install
+from basecamp.hub.server import run_hub
+from basecamp.installer import run_interactive_install
+from basecamp.setup import execute_setup
 from basecamp.workspace.ui import err_console
 
 click.rich_click.USE_RICH_MARKUP = True
@@ -31,32 +32,45 @@ def basecamp() -> None:
 
 
 @basecamp.command()
-def install() -> None:
-    """Wire basecamp into this machine: register the plugin, install the doctrine, seed config."""
+def setup() -> None:
+    """Set up basecamp environment (prerequisites, directories, config)."""
     try:
-        execute_install()
+        execute_setup()
     except LauncherError as e:
         _handle_error(e)
 
 
 @basecamp.group()
-def claude() -> None:
-    """Claude Code session commands."""
+def companion() -> None:
+    """Live session companion commands."""
 
 
-@claude.command(
-    "launch",
-    context_settings={"ignore_unknown_options": True},
-    add_help_option=False,
+@companion.command()
+@click.option(
+    "--snapshot",
+    "snapshot_path",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Path to the companion snapshot JSON.",
 )
-@click.argument("extra", nargs=-1, type=click.UNPROCESSED)
-def claude_launch(extra: tuple[str, ...]) -> None:
-    """Launch an interactive Claude session with the basecamp system prompt.
-
-    Extra arguments pass straight through to ``claude`` (this is the same entry
-    point as the ``bcc`` command).
-    """
-    run_launch(list(extra))
+@click.option(
+    "--cwd",
+    "cwd",
+    required=True,
+    type=click.Path(path_type=Path),
+    help="Git working directory for diffs.",
+)
+@click.option(
+    "--scratch",
+    "scratch_dir",
+    required=False,
+    default=None,
+    type=click.Path(path_type=Path),
+    help="Path to the basecamp scratch directory.",
+)
+def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
+    """Live session companion dashboard (runs in a tmux pane)."""
+    run_companion(snapshot_path, cwd, scratch_dir)
 
 
 @basecamp.command()
@@ -84,17 +98,17 @@ def claude_launch(extra: tuple[str, ...]) -> None:
     help="Optional path to write the daemon PID file.",
 )
 def hub(uds_path: Path, db_path: Path | None, pidfile_path: Path | None) -> None:
-    """Run the basecamp Claude session hub daemon."""
-    db = str(db_path) if db_path else None
-    pidfile = str(pidfile_path) if pidfile_path else None
-    # Lazy import keeps CLI startup light.
-    from basecamp.hub.claude.server import run_claude_hub  # noqa: PLC0415
+    """Run the basecamp hub daemon."""
+    run_hub(str(uds_path), str(db_path) if db_path else None, str(pidfile_path) if pidfile_path else None)
 
-    run_claude_hub(str(uds_path), db, pidfile)
+
+@basecamp.command()
+def install() -> None:
+    """Install or reconfigure basecamp components."""
+    run_interactive_install()
 
 
 basecamp.add_command(config)
-basecamp.add_command(workstream)
 
 
 def main() -> None:

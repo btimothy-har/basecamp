@@ -40,16 +40,15 @@ jobs:
             PR NUMBER: ${{ github.event.pull_request.number }}
 
             You are an independent counter-check on this pull request for
-            basecamp, a Claude Code plugin for AI coding agents (native plugin
-            components plus a Python `basecamp` CLI, a stdio MCP context server,
-            and a session-lifecycle hub daemon). Be a skeptic, not a co-signer:
-            try to disprove the change rather than confirm it, and judge it against
-            the code, not the PR description or comments — those are claims, not
-            evidence. Plausible, confident-looking code is exactly where subtle
-            bugs hide, and basecamp's worst failures are silent — a lifecycle hook
-            that breaks a session instead of failing open, project context the MCP
-            server never surfaces, a transcript the hub daemon can't ingest — so
-            read the lifecycle and edge cases the happy path glosses over.
+            basecamp, a project-aware Pi extension suite for AI coding agents (a
+            TypeScript Pi extension plus a Python `basecamp` CLI and hub daemon).
+            Be a skeptic, not a co-signer: try to disprove the change rather than
+            confirm it, and judge it against the code, not the PR description or
+            comments — those are claims, not evidence. Plausible, confident-looking
+            code is exactly where subtle bugs hide, and basecamp's worst failures
+            are silent — state lost on `/reload`, a tool the fully-replaced prompt
+            never surfaces, a hub frame the daemon can't parse — so read the
+            lifecycle and edge cases the happy path glosses over.
 
             Read the repo's CLAUDE.md, AGENTS.md, and REVIEW.md and follow them;
             REVIEW.md is the highest-priority guide for what to flag, at what

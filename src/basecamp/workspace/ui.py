@@ -20,6 +20,7 @@ def display_projects(projects: dict[str, ProjectConfig]) -> None:
     table.add_column("Description")
     table.add_column("Repo Root", style="blue")
     table.add_column("Additional Dirs", style="dim")
+    table.add_column("Working Style", style="dim")
 
     for name, project in projects.items():
         additional_dirs = "\n".join(project.additional_dirs) if project.additional_dirs else "-"
@@ -28,6 +29,7 @@ def display_projects(projects: dict[str, ProjectConfig]) -> None:
             project.description or "-",
             project.repo_root,
             additional_dirs,
+            project.working_style or "-",
         )
 
     console.print()

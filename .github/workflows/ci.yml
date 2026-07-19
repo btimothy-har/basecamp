@@ -24,6 +24,28 @@ jobs:
       run: |
         uv run ruff format --check .
 
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: 24
+        cache: npm
+
+    - name: Install Extension Dependencies
+      run: |
+        npm ci
+
+    - name: Typecheck Extension
+      run: |
+        npm run typecheck
+
+    - name: Lint Extension
+      run: |
+        npm run lint
+
     - name: Run Python Tests
       run: |
         uv run pytest
+
+    - name: Run Extension Tests
+      run: |
+        npm test

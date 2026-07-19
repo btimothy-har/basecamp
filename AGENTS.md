@@ -2,260 +2,142 @@
 
 ## What is basecamp
 
-A project-aware **Claude Code plugin** for AI coding agents, backed by a Python
-distribution. It injects each project's related directories and curated context
-into the session, ships engineering skills and a copilot workflow, drives the
-session lifecycle through fail-open hooks, and persists coordination state
-(sessions, episodes, transcripts, workstreams) in a host-global daemon.
+A project-aware Pi extension suite for AI coding agents. Configures project context, manages isolated git worktrees, and provides workflow tooling for coding sessions.
 
-basecamp standardizes on Claude Code as its single runtime (decision record:
-`docs/design/claude-code-compatibility.md`). It was previously a Pi extension;
-that TypeScript extension and its WebSocket swarm daemon / companion TUI have
-been removed. What remains is the Claude plugin (`claude/`) and the Python that
-serves it (`src/basecamp/`).
+The repo is organized by the artifacts it ships (design record: docs/design/repo-rearchitecture.md):
 
-The repo ships **two intertwined artifacts**:
-
-| Artifact | Directory | Purpose |
-|----------|-----------|---------|
-| The Claude Code plugin | `claude/` | The container Claude Code loads: plugin manifest, MCP config, hooks, prompts, skills, shims, docker |
-| The `basecamp` Python distribution | `src/basecamp/` | One src-layout package: the CLI/launcher plus the `mcp`, `hooks`, `claude`, `hub.claude`, `core`, and `workspace` subpackages the plugin's shims exec |
-
-The plugin's `bin/` shims (`basecamp-mcp`, `basecamp-hook`) exec the matching
-Python console script from the `basecamp` install, so the plugin is a thin native
-shell over the Python backend.
+| Product | Directory | Purpose |
+|---------|-----------|---------|
+| Basecamp Pi extension | `pi/` (`pi/extension.ts` + `pi/<domain>/`) | The single Pi package, registered from the repo root: all session, workspace, workflow, and agent behavior, assembled from domain modules |
+| `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, `basecamp.hub` (daemon), and `basecamp.companion` (TUI) subpackages |
 
 ## Repo Map
 
 ```
+package.json  tsconfig.json  biome.json   # THE TypeScript toolchain — repo root is the Pi package
 pyproject.toml  uv.lock  install.py  Makefile   # Python toolchain + bootstrap
-docs/  tests/  migrations/                       # design records; pytest suites (tests/<domain>/); one-shot state migration
+scripts/check-boundaries.ts                # Import-boundary lint (cross-domain via #<domain>/index.ts only)
+scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350, .py ≤ 500 (no exceptions)
 
-claude/                            # ① the Claude Code plugin
-├── .claude-plugin/plugin.json      # plugin manifest (name/version; namespaces skills as /basecamp:<name>)
-├── .mcp.json                       # registers the stdio MCP context server (→ bin/basecamp-mcp)
-├── hooks/hooks.json                # SessionStart/End · PreCompact · SubagentStop · PostToolUse → bin/basecamp-hook <event>
-├── bin/                            # POSIX-sh shims: basecamp-mcp, basecamp-hook (exec the console script from the basecamp install)
-├── prompts/                        # system-prompt.md (bcc --system-prompt, main-only) · doctrine.md (shared engineering doctrine → home CLAUDE.md)
-├── skills/                         # native skills: python-development · sql · data-warehousing · data-analysis · marimo · gather · planning · pr · copilot · start-workstream
-├── docker/                         # sandboxed plugin-lifecycle harness (Dockerfile, entrypoint, bc-inspect)
-└── README.md                       # the plugin's own design record (static-vs-dynamic homes, tier rollout)
+pi/                            # ① the Pi extension (TypeScript)
+├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
+├── core/                       # agent-mode/ (+copilot·toggle) · session/ (+state) · project/ (config·context·injection·logseq · workspace/ runtime+guards+/worktree) ·
+│                               #   git/ (worktrees/ crud·target·migrate · repo · /create-pr) · skills/ · catalog/ · model/ · ui/ (framework chrome) · escalate/ (+dialog/) · host/ (env·exec·paths·config) ·
+│                               #   hub/ (hub-daemon connector: protocol/ TS↔Python contract · connection · ensure · identity · status · report-thread) ·
+│                               #   swarm/ (the agent-dispatch primitive: agents/ = tools·catalog·launch·hub client·reporter·widget·observability·skills) · global-registry.ts
+├── system-prompt/              # before_agent_start prompt assembly: prompt.ts · context-builders.ts · defaults/ (modes·styles·environment)
+├── code-review/                # /code-review feature domain (findings·transpose·synthesis·orchestrate·command) over #core/swarm
+├── workstreams/                # durable repo-neutral workstream coordination (create·edit·launch·list·status·start·herdr) over #core/swarm
+├── companion/                  # dashboard integration (pure consumer): snapshot/, panes/, herdr/ + tmux/ adapters
+├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
+├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
+├── engineering/                # bigquery/ (bq_query tool + bq-CLI adapter, one module), skills/ + prompts/
+└── browser/                    # primary-only browser automation: pinned Playwright CLI shim + on-demand skill
 
-src/basecamp/                      # ② the basecamp Python package
-├── cli.py                          # Click entry point: install · claude launch · hub · config (group) · workstream (group)
-├── install.py                      # the installer: run_bootstrap (uv tool install + record install_dir) + execute_install (register plugin, doctrine, config)
-├── claude/                         # the `bcc` launcher + plugin registration: builds the per-session --system-prompt and execs `claude`
-│                                   #   config · gitutil · herdr · identity · launch · logseq · naming · paths · plugin · worktree
-├── hooks/                          # strictly fail-open Claude Code hooks: __init__ (dispatch) · session (lifecycle) · file_length (PostToolUse warn)
-├── mcp/                            # the stdio MCP context server: server · resolve · render · tools/workstreams
-├── hub/claude/                     # the session hub daemon (HTTP-over-UDS): server · app · routes · contract · ingest · transcript · sidecars
-│                                   #   store/ (sessions · episodes · transcripts · workstreams) · client/ (transport · sessions · workstreams · spawn · identity)
-├── core/                           # settings · paths · files · exceptions · projects · directories · model_aliases · cli/ (unified config.json plumbing + porcelain + workstream group)
-└── workspace/                      # per-repo worktree-setup `environments` config + its menus (cli/, ui)
+src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
+├── cli.py                      # Click entry point (setup, projects, environments, companion, hub)
+├── setup.py  installer.py      # environment setup + install orchestration (uv tool + npm + single pi install)
+├── core/                       # settings, paths, files, exceptions + unified config.json: validation registry (config_schema) · generic get/set/edit (config_document) · `basecamp config` CLI (plumbing + project/env/alias porcelain)
+├── workspace/                  # per-repo worktree-setup environments + menus
+├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
+└── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)
+
+docs/  tests/  migrations/     # design docs; Python tests (tests/<domain>/); one-shot state migration
 ```
 
-`basecamp` is one ordinary src-layout package under `src/basecamp/` —
-`import basecamp.<domain>` resolves to `src/basecamp/<domain>/`.
+`basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.)
 
-Console scripts (`pyproject [project.scripts]`):
-
-| Script | Target | Role |
-|--------|--------|------|
-| `basecamp` | `basecamp.cli:main` | the CLI (install, config, workstream, hub, claude launch) |
-| `bcc` | `basecamp.claude.launch:main` | launch `claude` with the basecamp system prompt (same as `basecamp claude launch`) |
-| `basecamp-mcp` | `basecamp.mcp.server:main` | the stdio MCP context server (spawned by the plugin's `.mcp.json`) |
-| `basecamp-hook` | `basecamp.hooks:main` | dispatch a Claude Code hook event (spawned by the plugin's `hooks.json`) |
+Cross-domain TypeScript imports use Node subpath imports (`#core/*` freely; other domains only via `#<domain>/index.ts`; core imports no other domain), enforced by `scripts/check-boundaries.ts` in `npm run check`.
 
 ## Architecture Decisions
 
-### Two delivery channels: the plugin and the Python backend
+### Prompt System
 
-The plugin (`claude/`) is what Claude Code loads. `basecamp install` registers it
-with Claude Code (via the `claude plugin` CLI — see below), so a bare `claude`
-auto-loads it; no `--plugin-dir`. It carries only native components plus thin
-`bin/` shims. Everything with logic lives in the Python package and is reached
-through those shims or the CLI. This keeps the plugin declarative and puts every
-testable behavior in `src/basecamp/`.
+The system prompt is fully replaced, not appended. This gives complete control over the agent's behavior but means basecamp must provide everything pi's default prompt would (environment context, tool guidance, etc.). Pi's tool definitions and skill listings are sourced dynamically via `getAllTools()`/`getCommands()` and included in the assembled prompt.
 
-### Installer surface & plugin auto-registration
+Prompts are layered (environment → working style → project context → tools/skills) so that each concern is independently overridable. Project context is assembled directly into the system prompt alongside all other layers.
 
-The installer is two layered entry points in `src/basecamp/install.py`, both keyed
-off a recorded `install_dir` (the repo checkout, in `~/.pi/basecamp/config.json`)
-so the wiring works from the non-editable installed tool:
+### Browser Automation
 
-- **`run_bootstrap`** — the chicken-and-egg step (`uv run install.py` /
-  `make install`, run from the checkout): `uv tool install` the `basecamp` snapshot
-  onto PATH, record the checkout as `install_dir`, then call `execute_install`.
-  This is the only step that may derive the repo from `Path(__file__)`.
-- **`execute_install`** (`basecamp install`) — everything re-runnable: register the
-  plugin, install the home doctrine, scaffold the `context/` dir, seed the default
-  config. All `install_dir`-based, so it is safe to re-run from the installed tool.
+`pi/browser/` exposes no custom browser tools. Primary sessions discover the Basecamp-owned `playwright-cli` skill on demand and receive one private PATH entry containing only a gated shim for the exact-pinned `@playwright/cli`; subagents receive neither, and direct shim execution rejects `BASECAMP_AGENT_DEPTH > 0`. The shim defaults to a headed persistent Playwright session using system Chrome (Brave fallback on macOS), honors `BASECAMP_BROWSER_PATH` and explicit `PLAYWRIGHT_MCP_*` overrides, blocks installation commands, and routes auto-named artifacts to the private bounded `~/.pi/basecamp/browser/playwright-output` directory. Screenshots are inspected with `read` after the CLI writes the PNG.
 
-**Plugin auto-registration** (`src/basecamp/claude/plugin.py`) shells out to the
-`claude` CLI — `plugin marketplace add <install_dir>/claude` → `plugin install
-basecamp@basecamp` → `marketplace update` → `plugin update` (all idempotent). This
-is deliberate: writing `enabledPlugins` / `extraKnownMarketplaces` into
-`~/.claude/settings.json` alone does **not** load a plugin — Claude Code's loader
-reads the `~/.claude/plugins/` cache that `plugin install` builds. The two `update`
-steps refresh that cache from source, so re-running `basecamp install` picks up
-plugin edits. Registration is **fail-soft**: a missing `claude` CLI or a failed
-command warns and skips rather than aborting the doctrine/config wiring. The
-committed `claude/.claude-plugin/marketplace.json` declares `claude/` as the
-local single-plugin marketplace that `marketplace add` reads.
+Playwright owns a fresh managed persistent profile. The retired `~/.pi/basecamp/browser/profile` and any legacy Chrome/CDP process are never migrated, modified, or terminated by Basecamp.
 
-### Prompt delivery: two channels, main vs. everywhere
+### Session Modes
 
-basecamp's prompt content lives in `claude/prompts/` and reaches sessions two ways:
+Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `work`, and `copilot`. `work` is the default — the working posture where the primary session implements directly; `analysis` and `planning` are read-only / pre-implementation postures. shift+tab (`cycleAgentMode`) rotates only the cyclable modes (`analysis`, `planning`, `work`) — copilot is excluded from the cycle. Approving an implementation plan hands off to `work` mode (the old supervisor-vs-IC/executor choice is gone); analysis plans stay in `analysis`. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers sharing one predicate (`isCopilotMode` in `pi/core/agent-mode`, paired with `PLAN_TOOL_NAME` — `plan()` is a Pi built-in, so its name is a core-owned constant beside the mode policy, not a tasks export): the tasks module's `tool_call` block (the hard guarantee) and the workspace module's copilot capabilities-index filter (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
 
-- **`bcc` builds a per-session `--system-prompt`** (`claude/prompts/system-prompt.md`
-  assembled in `basecamp.claude.launch`) — dynamic, and applies to the **main
-  session only** (Claude Code does not thread `--system-prompt` into subagents).
-- **The home doctrine** (`claude/prompts/doctrine.md`) is installed by
-  `basecamp install` into a managed block in `~/.claude/CLAUDE.md` — shared
-  engineering doctrine that reaches the main session **and every subagent**.
+### Agent Execution Posture
 
-So per-session, main-only guidance goes through the launcher's system prompt;
-durable doctrine that must reach subagents goes through the home `CLAUDE.md`.
+Dispatched agents default to **read-only** — `AgentConfig.readOnly` is fail-closed (read-only unless a persona sets `readOnly: false`): `getAgentToolAllowlist()` (`pi/core/swarm/agents/types.ts`) yields a toolset without `write`/`edit`, they launch `--read-only`, and they share the parent's worktree (seeing its live WIP). A **mutative** agent (currently only `worker`) instead gets its **own git worktree** — `agent-<runToken>/<name>`, branched from the parent worktree's HEAD and keyed per-run so re-tasks don't collide (`pi/core/swarm/agents/mutative-worktree.ts` over the `pi/core/git/worktrees/lifecycle.ts` primitives). It spawns with `cwd` = that worktree (auto-adopted via `isLinkedWorktree`), gets `write`/`edit` (`getMutativeAgentToolAllowlist()`), is confined to that worktree by the workspace guard's `allowed_dirs` rule (`pi/core/project/workspace/guards.ts`), and commits its work to a branch — the branch is the deliverable, the **primary integrates it by merge** and the worktree is torn down on finish (the branch is kept for the parent to merge, then deleted). `bash` is retained (scouts need `git log`/`gh`, reviewers need `git diff`) and is deliberately **not** a mutation sandbox — a bash write can still reach the filesystem, so toolset + worktree confinement is defense-in-depth, not a wall; the symmetric bash-reviewer `allowed_dirs` pass is the next increment. The full design is `docs/design/agent-isolation.md`. Independently, the workspace `tool_call` guard hard-blocks structured `write`/`edit` to the protected main checkout even when a subagent has no active worktree.
 
-### MCP context server: awareness via `instructions` + resources
+### Extension Modules
 
-The stdio MCP server (`basecamp.mcp`) injects project awareness natively. Claude
-Code injects an MCP server's `instructions` field into the system prompt at
-session start (~2KB, truncated), so `instructions` is a **router** (project
-identity + a pointer to the resources), never the payload; the bulk — related
-directories, curated context, Logseq memory — lands in **MCP resources**. Project
-identity and context resolve from the `projects` section of
-`~/.pi/basecamp/config.json`, the single source of truth. The MCP tools surface
-(`mcp/tools/`) is where workstream orchestration lands (`create_workstream`, …).
+All TypeScript behavior ships as one Pi extension; its entry point is `pi/extension.ts` and its package manifest is the repo-root `package.json`. `pi/extension.ts` composes the domain modules (`core`, `system-prompt`, `tasks`, `bash-reviewer`, `engineering`, `browser`, `companion`, `code-review`, `workstreams`) in a fixed order — core first — so in-extension init is deterministic and identical on `/reload`. Each domain's TS lives in `pi/<domain>/` with a `register*` default export in its `index.ts`; cross-domain imports go through `#`-subpath aliases and are boundary-checked. Framework UI (footer/header/title/mode) is not a separate domain — it lives in `pi/core/ui/` and `registerCore` registers it, alongside core's other in-session surfaces (`escalate`, `skills`, the `project` runtime — config + `workspace/` + context — and `git`'s `/create-pr`). Git worktree/repo mechanics live in `pi/core/git/` and are imported directly. The hub-daemon connector — the WebSocket transport, the wire protocol (`protocol/`), ensure-daemon, node identity, and the raw-thread reporter — lives in `pi/core/hub/` (core's adapter for the hub daemon, a peer of `git`/`host`/`model`). Every top-level session and daemon-spawned agent connects through it, and `registerCore` also registers the reporter, so "connect + report" is one core responsibility: each session ships its raw thread to the daemon at `agent_end`, and the daemon derives the analysis. The **agent-dispatch primitive** (dispatch/ask/cancel/peer tools, run reporter, active-agents widget, agent catalog) is a second core adapter, `pi/core/swarm/` (`#core/swarm`), registered by `registerCore` right after the hub connector — substrate rather than a feature, since multiple domains build on it. `pi/code-review/` (the `/code-review` command) and `pi/workstreams/` (durable coordination state) are standalone feature domains that consume the primitive via `#core/swarm`; `pi/companion/` is a pure downstream consumer of the derived analysis (dashboard integration — snapshot/panes/herdr — with no `#core/hub` dependency). The Python daemon is `src/basecamp/hub/` (its `hub/swarm/` service is the server side of the primitive; the on-disk runtime path stays `~/.pi/basecamp/swarm/`).
 
-### Hooks are strictly fail-open
+### Code Review
 
-`basecamp-hook <event>` reads the hook JSON from stdin, dispatches to a handler
-(`hooks/__init__.py` `_HANDLERS`), and **always exits 0** — a hook must never
-block or fail a session. A handler may return a string, which `main()` writes to
-stdout as the hook's JSON response; on any error the hook degrades to no output,
-never a block. The `bin/basecamp-hook` shim is itself fail-open (exits 0 with a
-stderr note when `basecamp` isn't installed).
+`/code-review` (owned by the `code-review` domain, in `pi/code-review/`, over the `#core/swarm` primitive) runs an independent third-party review of the current branch. The command dispatches six read-only reviewer agents (security, testing, docs, clarity, conventions, general) with a fixed scope-only brief, transposes each prose report into a canonical `Finding` schema via a per-report `fast`-model pass (forced `report_findings` tool, faithful extraction only), then merges findings and computes a verdict deterministically (no LLM synthesis). The primary agent triggers the command and receives the findings as the reviewee — it never authors or synthesizes the review. It is manual only. This replaces the removed `review_packet` / `code-walkthrough` surfaces and the old primary-agent `code-review` skill.
 
-Wired events (`claude/hooks/hooks.json`):
+### Model Aliases
 
-- **SessionStart** → register the session with the hub daemon (`sessions` row).
-- **SessionEnd** → ingest the final transcript (sweeping every subagent sidecar), then close the session's episode.
-- **PreCompact** → ingest the main transcript before Claude Code compacts (compaction is append-only, so this only narrows the loss window).
-- **SubagentStop** → ingest the just-finished subagent sidecar promptly.
-- **PostToolUse** (`Write|Edit`) → the non-blocking file-length warn (below).
+Model alias resolution is owned by `pi/core/model` — `model/index.ts` is the provider seam plus the native config-backed provider, `model/aliases.ts` is the read-side config IO, and `model/resolution.ts` is the string→Model plumbing (reasoning-effort, tool-choice) — backed by the `model_aliases` section of the unified `~/.pi/basecamp/config.json` (`{ "fast": "claude-haiku-4-5" }`). Pi reads the section **in-process**; Basecamp (Python) is the **sole config writer**, so the `/model-aliases` TUI persists each change by shelling out to `basecamp config alias set|remove` (the same file the CLI's flock'd `Settings` guards). The seam itself owns no config or policy; the native provider reads `model/aliases.ts`.
 
-Transcript ingestion design: `docs/design/transcript-ingestion.md`.
+### State: wiring vs. surviving
 
-### The hub daemon
+Two kinds of module state, two rules. **Wiring** (providers/registries the composition root re-establishes on every load — cwd provider, catalog, model aliases, workspace allowed-roots) is plain module state. **Surviving state** (live session data that must outlive `/reload`, which re-imports the extension with fresh module instances — session state, agent mode, invoked skills, workspace runtime, daemon WebSocket) uses `processScoped(key, init)` from `pi/core/global-registry.ts`; key strings are stable across releases. Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session. Init order is deterministic (core registers first in `extension.ts`), so later modules may assume core-owned state is initialized. See `pi/core/README.md` for the canonical pattern.
 
-A host-global, all-Python service (`basecamp hub`) speaking **HTTP over a Unix
-domain socket** (`~/.pi/basecamp/claude/daemon.sock`; no WebSocket). It persists
-coordination state in SQLite (`~/.pi/basecamp/claude/daemon.db`):
+### Environment Variable Chain
 
-- `sessions` (identity) + `episodes` (liveness) — the session lifecycle.
-- `transcript_nodes` — verbatim, uuid-keyed conversation DAG for the main thread and every subagent sidecar (ingest-and-store only; no analysis).
-- `workstreams` + `workstream_sessions` — durable, cross-session workstream coordination records.
+Session launch sets `BASECAMP_*` env vars on `process.env`. Subagents spawned via the `agent` tool inherit these automatically as child processes.
 
-The wire contract is protocol-versioned (`CLAUDE_PROTOCOL_VERSION` in
-`hub/claude/contract.py`); a bump health-gates and respawns a stale daemon. The
-store has **no `ALTER`-based migration** — tables are created once, fully-formed;
-keep DDL additive. The daemon is self-contained under `hub/claude/` (its own
-`store/`) and is spawned/ensured lazily by the client (`hub/claude/client/`).
+Relevant vars include `BASECAMP_PROJECT`, `BASECAMP_REPO`, `BASECAMP_SCRATCH_DIR`, `BASECAMP_WORKTREE_DIR`, and `BASECAMP_WORKTREE_LABEL`. For repo-backed sessions, `BASECAMP_REPO` is the canonical `<org>/<name>` repo identity (derived from the origin remote URL, falling back to the bare git basename when there is no parseable origin); for non-repo launches it falls back to the scratch-directory basename. It is never a worktree label. `BASECAMP_WORKTREE_DIR` and `BASECAMP_WORKTREE_LABEL` are the active worktree's absolute path and label, or empty strings when no worktree is active. `BASECAMP_USER_FACING` is stamped `0` by the daemon on backgrounded workers (absent ⇒ user-facing); the hub node identity derives the node's `role` — `agent` (user-facing) vs `worker` (backgrounded) — from it, and records `BASECAMP_REPO` / `BASECAMP_WORKTREE_LABEL` as first-class identity facets on the daemon `agents` row.
 
-### File-length cap → doctrine (primary) + a non-blocking warn hook
+The worktree setup hook (the per-repo `environments` `setup` command in `~/.pi/basecamp/config.json`, keyed by the canonical `<org>/<name>` repo identity and run by the `tasks` module on creation of a new execution worktree) additionally exposes `BASECAMP_REPO_ROOT` (the protected checkout path) to the setup command for the duration of that exec only; it is not part of the persistent session env chain.
 
-The line cap is a soft **500 lines** for most code, with a few per-type
-exceptions (shell ~400; SQL and HTML ~800). basecamp is Python, so its own cap is
-500. The cap is a module-design forcing function: when a file approaches it,
-split along responsibility seams into focused modules, never by compressing style
-or with `-part2` continuation files.
+### Worktree Design
 
-Enforcement is two layers, with the doctrine as the primary carrier:
+Worktrees live in `~/.worktrees/<org>/<name>/<label>/` (the per-repo root is the canonical `<org>/<name>` identity) rather than inside the repo to avoid polluting project directories. Git is the source of truth for worktree registration (`git worktree list --porcelain`); Basecamp does not maintain a parallel metadata registry. Sessions are launched with plain `pi` from a repository or subdirectory; Basecamp detects the configured repo root, recognizes a session launched inside a linked worktree as its active worktree (setting the protected root to the main checkout and populating `BASECAMP_WORKTREE_DIR`/`LABEL`, without requiring a clean/default-branch main checkout), approved implementation plans activate a worktree inside the Pi session (workstream sessions reuse the already-active worktree instead of prompting), resumed/reloaded/forked sessions restore their last active worktree when still in the same repo, and `/worktree [label]` can switch to an existing Git-registered worktree after session resume. Worktree labels are either a direct label or a two-level `namespace/name`: plan-approved worktrees use `wt-<user-prefix>/<slug>`, while copilot-dispatched workstreams (`launch_workstream`) use a generic `copilot/<slug>` label whose three-word slug is the workstream's readable id, paired with a work-derived `<user-prefix>/<slug>` (e.g. `bt/…`) branch.
 
-1. **The engineering doctrine** (`claude/prompts/doctrine.md`) states the rule
-   and its rationale, and reaches the main session **and** subagents via the home
-   `~/.claude/CLAUDE.md` block — so the agent learns the expectation before
-   writing anything.
-2. **A non-blocking PostToolUse warn hook** (`hooks/file_length.py`): after a
-   `Write`/`Edit` grows a *source* file past the cap, it emits an advisory
-   (`hookSpecificOutput.additionalContext`, no `decision` field) telling the agent
-   to review and split. The write **succeeds** — the hook never denies the tool or
-   prompts the user; it is a nudge, not a gate. Non-source files (data, lockfiles,
-   markdown, config) are exempt.
+The worktree root follows the canonical identity. Worktrees created under the legacy bare-name root (`~/.worktrees/<repo>/`) are migrated automatically: on primary (non-subagent) session start, Basecamp relocates the current repo's legacy worktrees to the `<org>/<name>` root via `git worktree move` (retrying dirty trees with `--force`, skipping locked ones). The main checkout, the session's own active worktree, and already-migrated trees are left untouched. Migration is best-effort — any per-worktree failure is skipped and never blocks session start, with a quiet notification only when something is moved or skipped. A resumed session whose previously active worktree was legacy reconnects after one `/worktree <label>`, since saved affinity still references the pre-migration identity.
 
-There is **no CI gate** on file length; enforcement is the doctrine plus the warn.
+### Workstreams
 
-### Config: Basecamp (Python) is the sole writer
+Workstreams are durable, repo-neutral internal coordination state owned by the `workstreams` domain (`pi/workstreams/`, over the `#core/swarm` primitive). Persistence is the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams`, `workstream_versions`, and `workstream_agents`, beside `agents`/`runs`) — the former JSON launch-index is gone (clean break, no migration). Identity is an internal `ws_<uuid>` id plus a globally-unique three-word readable `slug`. Content (`label`/`brief`/`constraints`) is versioned: the `workstreams` row carries the current `version` and each version is snapshotted in `workstream_versions` (append-only history). Worktrees are NOT persisted — git remains the source of truth; the `copilot/<slug>` worktree name encodes the slug.
 
-`~/.pi/basecamp/config.json` is the unified config document (projects,
-per-repo `environments`, `model_aliases`, installer metadata). Basecamp's Python
-`Settings` is the sole writer, guarded by a flock; every config change goes
-through `basecamp config …`. Consumers (the MCP server, the launcher) read it.
-User context overrides live beside it under `~/.pi/basecamp/context/`.
-The Claude launcher foundation additionally reads `~/.claude/basecamp.json`
-(`basecamp.claude.config`). (`~/.pi` is legacy naming kept for runtime state; it
-is not a Pi dependency.)
+The model is multi-agent and repo-neutral: every `pi --workstream` session appends a `workstream_agents` row (additive, concurrent, never overwrites), and "which repos touched" derives from agent rows. Record shaping and execution staging are decoupled: `create_workstream`/`edit_workstream` manage the durable record, `launch_workstream` provisions the worktree + pane for an existing workstream (and can launch it into a different repo for cross-repo coordination without a duplicate). The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) stays the user-facing durable record of priority, decisions, blockers, and done signals; the workstream points to it via `source_dossier_path`. One dossier may have many workstreams.
 
-### Worktree design
-
-Worktrees live at `~/.worktrees/<org>/<name>/<label>/` — outside the repo, keyed
-by the canonical `<org>/<name>` identity (from the origin remote, falling back to
-the git basename). Git is the source of truth (`git worktree list --porcelain`);
-basecamp keeps no parallel registry. `worktrees_root` is single-sourced in
-`basecamp.claude.paths`. Copilot-dispatched workstreams use a `copilot/<slug>`
-worktree label paired with a `bt/<slug>`-style branch.
-
-### Workstreams & copilot
-
-Workstreams are durable, repo-neutral coordination records in the hub daemon
-(`workstreams` + `workstream_sessions`). Identity is an internal `ws_<uuid>` id
-plus a globally-unique three-word `slug`; the record is a **pointer bundle**
-(brief + worktree/branch/dossier paths), never the content. Copilot is a native
-skill (`claude/skills/copilot/`) guarded to the Herdr environment; it stages work
-via `create_workstream` (record + worktree + Herdr pane), and the
-`/basecamp:start-workstream` skill hands off to an execution session that attaches
-itself and self-reports into a shared Logseq dossier. Design record and build
-plan: `docs/design/copilot-claude-port.md`.
-
-### Per-repo `environments` (worktree setup)
-
-`src/basecamp/workspace/` owns the per-repo worktree-setup `environments` config
-(a `setup` command keyed by `<org>/<name>` in `~/.pi/basecamp/config.json`), read
-by the config layer and managed via `basecamp config env …`. basecamp ships no
-default; a repo with no environment is a clean no-op.
+The `pi --workstream` flag is boolean: bare `--workstream` infers the workstream from the current `copilot/<slug>` worktree label; `--workstream=<slug|id>` resolves explicitly (the value is recovered from argv). On start — **only on a genuinely fresh session** (the `session_start` handler no-ops when the conversation already has user/assistant turns, so resume/reload/fork/compact never re-inject) — it attaches the session as an additive workstream agent and injects the latest brief. Tools are `create_workstream` (record-only: daemon record + slug, no worktree/pane), `edit_workstream` (revise content in place → new version, old version retained), `launch_workstream` (provision the `copilot/<slug>` worktree + Herdr pane for an existing workstream), `list_workstreams` (repo-neutral filtered listing; single-identifier lookup returns the joined agents view + version history), and `set_workstream_status` (open ↔ closed). Transport: protocol v22 WS frames (`create_workstream`/`attach_workstream_agent`/`update_workstream`/`revise_workstream` + acks) and HTTP GET `/workstreams` (filtered list) and `/workstreams/{id_or_slug}` (workstream + joined agents + version history).
 
 ## Development
 
-- **Python**: 3.12+, managed with `uv`. There is no Node/TypeScript toolchain.
-- **Install (dev)**: `uv run install.py` (or `make install`) does the full bootstrap — `uv tool install` the `basecamp` tool, register the plugin with Claude Code, install the home doctrine block, and seed config. Re-run just the wiring with `basecamp install`.
-- **Iterate on the CLI**: `uv run install.py` installs a **non-editable** snapshot on PATH, so for live iteration against your working tree run the CLI via `uv run basecamp <cmd>` (the `uv sync` editable dev venv) rather than re-installing after each change.
-- **Lint**: `uv run ruff check .` / `uv run ruff format --check .`; `make lint` runs both.
-- **Fix**: `make fix` runs `ruff check --fix` + `ruff format`.
-- **Ruff config** (root `pyproject.toml`): `line-length = 120`; the `select` set includes `ARG` (unused arguments fail lint). Ruff-only — no mypy/pyright.
+- **Python**: 3.12+, managed with `uv`
+- **Install (dev)**: `uv run install.py` (installs the `basecamp` tool, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
+- **Iterate on the CLI**: `uv run install.py` installs a **non-editable** snapshot of `basecamp` on PATH, so for live iteration against your working tree run the CLI via `uv run basecamp <cmd>` (the `uv sync` editable dev venv) rather than re-installing after each change
+- **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
+- **TypeScript check**: `npm run check` at the repo root (tsc whole-graph + biome + import-boundary + file-length checks); `make lint` runs it after the Python checks
+- **Fix**: `make fix` runs Python fixes plus `npm run lint:fix` / `npm run format`
 
 ### File Length Limits
 
-A soft **500-line** cap on most source files, tests included, with per-type
-exceptions (shell ~400; SQL and HTML ~800). basecamp is Python, so 500 applies
-here. It is not CI-enforced (the TypeScript lint gate that carried it is gone);
-it lives in the engineering doctrine and the non-blocking warn hook (see above),
-which resolves the cap per type via `_LANGUAGE_CAPS`. Treat it as a module-design
-forcing function — split along responsibility seams, never by compressing style
-or with `-part2` continuation files.
+Hard caps on every file, tests included: **TypeScript ≤ 350 lines, Python ≤ 500 lines**, enforced by `scripts/check-file-length.ts` in `npm run check` (and therefore `make lint` and CI).
+
+The cap is a module-design forcing function. When a file approaches it, split along responsibility seams — named modules with one job each. Never satisfy the cap by compressing style (collapsing blank lines, one-lining logic), and never with `-part2`-style continuation files: if no seam is apparent, the file owns more than one responsibility and the design needs rethinking, not the formatting.
+
+There are no per-file exceptions and no suppression mechanism. (Files that predated the rule were migrated through a shrink-only `GRANDFATHERED` ratchet, burned to zero in July 2026 and removed from the script — never reintroduce per-file exceptions.)
 
 ### Testing
 
-- **Run all**: `make test` runs `uv run pytest`.
-- **Layout**: `testpaths` is root `tests/`, one subdir per domain (`tests/claude/`, `tests/hub/claude/`, `tests/mcp/`, `tests/hooks/`, `tests/core/`, `tests/workspace/`) beside the CLI-shell tests (`tests/test_cli_*.py`). Imports resolve via the editable install (`uv sync`); no `pythonpath` stitching.
-- **Hooks stay hermetic**: hook tests stub the transcript-ingest RPC so no real socket is opened.
+- **Run all**: `make test` from repo root runs `uv run pytest` plus `npm test`.
+- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` is root `tests/`, with a subdir per domain (`tests/core/`, `tests/workspace/`, `tests/swarm/`, `tests/companion/`) beside the CLI-shell tests; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
+- **TypeScript**: `npm test` runs the Node test runner over every domain's `pi/<domain>/**/*.test.ts` (one child process per test file), plus `pi/extension.test.ts` (whole-graph load + registration under strict Node). A new domain's tests must be added to the `test` glob list in `package.json`.
+- **Tests live beside their code**: `pi/<domain>/**/tests/` (TS) and `tests/<domain>/` (Python).
 
 ## Pull Requests
 
-Open every PR **as a draft** and drive it to done in order — never skip a step or
-open one ready for review:
+Open every PR **as a draft** and drive it to done in order — never skip a step or open one ready for review:
 
 1. **Open in draft.** No PR starts ready for review.
-2. **Get CI green.** Poll the PR's checks (`.github/workflows/ci.yml` — ruff lint, ruff format, pytest) and fix whatever fails; do not proceed while CI is red.
+2. **Get CI green.** Poll the PR's checks (`.github/workflows/ci.yml`) and fix whatever fails; do not proceed while CI is red.
 3. **Mark ready once CI is green.** Flipping the PR out of draft is also what triggers `.github/workflows/claude-review.yml` (it skips drafts), so the reviewer only ever sees a green, ready PR.
 4. **Clear the review.** Poll for the Claude review, fix every issue it raises, and reply to and/or resolve every review comment before treating the PR as done.

@@ -1,0 +1,7 @@
+{
+  "type": "attach_workstream_agent_ack",
+  "v": 23,
+  "request_id": "req-attach-001",
+  "status": "attached",
+  "error": null
+}

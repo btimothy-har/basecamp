@@ -1,14 +1,14 @@
 from click.testing import CliRunner
 
 import basecamp.cli as cli
-import basecamp.hub.claude.server as claude_server
 
 
-def test_hub_boots_the_claude_daemon_by_default(monkeypatch) -> None:
+def test_hub_runs_basecamp_hub(monkeypatch) -> None:
     calls: list[tuple[str, str | None, str | None]] = []
+
     monkeypatch.setattr(
-        claude_server,
-        "run_claude_hub",
+        cli,
+        "run_hub",
         lambda uds, db, pidfile: calls.append((uds, db, pidfile)),
     )
 

@@ -112,19 +112,6 @@ def test_set_edits_a_record_despite_a_malformed_sibling(cfg: Settings) -> None:
     assert doc["projects"]["broken"] == {"repo_root": 123}  # untouched, not re-validated
 
 
-def test_set_tolerates_a_legacy_working_style_key(cfg: Settings) -> None:
-    # A config written by an older basecamp seeded projects.<name>.working_style.
-    # After that field was retired, the shared set/edit validator must still accept
-    # the record (stripping the legacy key) rather than crash on extra="forbid".
-    cfg._write({"projects": {"demo": {"repo_root": "src/demo", "working_style": "engineering"}}})
-
-    cd.set_value("projects.demo.description", "hi", config=cfg)
-
-    doc = _doc(cfg)
-    assert doc["projects"]["demo"]["description"] == "hi"
-    assert "working_style" not in doc["projects"]["demo"]  # stripped on the validated write
-
-
 @pytest.mark.parametrize("op", ["set", "unset"])
 def test_version_key_is_reserved(cfg: Settings, op: str) -> None:
     with pytest.raises(LauncherError):
