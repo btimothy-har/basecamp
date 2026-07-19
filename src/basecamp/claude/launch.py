@@ -130,6 +130,10 @@ def run_launch(extra_args: list[str], cwd: str | None = None) -> None:
     plan.scratch_dir.mkdir(parents=True, exist_ok=True)
     plan.prompt_path.write_text(plan.prompt, encoding="utf-8")
     os.environ.update(plan.env)
+    if "BASECAMP_REPO" not in plan.env:
+        # Non-repo launch: drop any value inherited from a parent session so the
+        # hub identity derives repo from cwd instead of a stale ancestor's repo.
+        os.environ.pop("BASECAMP_REPO", None)
     os.execvp(plan.argv[0], plan.argv)  # noqa: S606  # intentional interactive process handoff
 
 

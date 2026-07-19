@@ -36,6 +36,16 @@ def test_upsert_replaces_existing_block() -> None:
     assert result.count(_DOCTRINE_END) == 1
 
 
+def test_upsert_desynced_markers_preserve_user_content() -> None:
+    # Orphaned BEGIN (END manually deleted) followed by a valid block, with user
+    # content wedged between: the splice must NOT eat "notes B".
+    orphan = f"{_DOCTRINE_BEGIN}\nnotes B\n\n{_DOCTRINE_BEGIN}\nOLD\n{_DOCTRINE_END}\n"
+    new_block = f"{_DOCTRINE_BEGIN}\nNEW\n{_DOCTRINE_END}"
+    result = _upsert_managed_block(orphan, new_block)
+    assert "notes B" in result
+    assert "NEW" in result
+
+
 def _patch_source(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, body: str) -> None:
     prompts = tmp_path / "prompts"
     prompts.mkdir(parents=True, exist_ok=True)

@@ -46,10 +46,16 @@ def _source_dir() -> Path:
 
 
 def _upsert_managed_block(existing: str, block: str) -> str:
-    """Insert or replace the marked doctrine block, preserving all other content."""
+    """Insert or replace the marked doctrine block, preserving all other content.
+
+    Only splices when the markers form exactly one well-ordered pair; a desynced
+    file (orphaned or duplicated markers) falls back to append so a marker mismatch
+    can never delete user content between an orphan and an unrelated block.
+    """
     begin = existing.find(_DOCTRINE_BEGIN)
     end = existing.find(_DOCTRINE_END)
-    if begin != -1 and end != -1 and end > begin:
+    one_pair = existing.count(_DOCTRINE_BEGIN) == 1 and existing.count(_DOCTRINE_END) == 1
+    if one_pair and begin != -1 and end > begin:
         end += len(_DOCTRINE_END)
         return existing[:begin] + block + existing[end:]
     if not existing.strip():

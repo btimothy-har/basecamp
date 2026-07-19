@@ -124,6 +124,23 @@ def test_run_launch_hands_off(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     assert env_copy["BASECAMP_REPO"] == "acme/web"
 
 
+def test_run_launch_clears_stale_repo_outside_repo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _patch_template(monkeypatch, tmp_path)
+    monkeypatch.setattr(launch, "SCRATCH_ROOT", tmp_path / "scratch")
+    monkeypatch.setattr(launch.shutil, "which", lambda _cmd: "/usr/bin/claude")
+    monkeypatch.setattr(launch.os, "execvp", lambda _file, _args: None)
+
+    env_copy = dict(os.environ)
+    env_copy["BASECAMP_REPO"] = "acme/inherited"  # leaked from a parent session
+    monkeypatch.setattr(launch.os, "environ", env_copy)
+
+    plain = tmp_path / "plain-dir"
+    plain.mkdir()
+    launch.run_launch([], cwd=str(plain))
+
+    assert "BASECAMP_REPO" not in env_copy
+
+
 def test_run_launch_missing_claude(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(launch.shutil, "which", lambda _cmd: None)
     with pytest.raises(SystemExit):
