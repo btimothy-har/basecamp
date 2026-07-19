@@ -17,7 +17,6 @@ from pathlib import Path
 
 from basecamp.claude.gitutil import main_worktree, run_git
 from basecamp.claude.identity import repo_identity, repo_root
-from basecamp.claude.launchcard import print_launch_card
 from basecamp.claude.paths import shipped_prompts_dir
 
 CLAUDE_COMMAND = "claude"
@@ -93,7 +92,9 @@ def build_launch(cwd: str, extra_args: list[str]) -> LaunchPlan:
     scratch = _scratch_dir(cwd, identity)
     prompt_path = scratch / _PROMPT_FILENAME
 
-    env = {"BASECAMP_SCRATCH_DIR": str(scratch)}
+    # BASECAMP_BCC_LAUNCH marks this as a bcc-originated session; the SessionStart hook
+    # reads it to show the launch card only for bcc launches, never a bare ``claude``.
+    env = {"BASECAMP_SCRATCH_DIR": str(scratch), "BASECAMP_BCC_LAUNCH": "1"}
     if identity:
         env["BASECAMP_REPO"] = identity
 
@@ -129,7 +130,6 @@ def run_launch(extra_args: list[str], cwd: str | None = None) -> None:
         os.environ.pop("BASECAMP_REPO", None)
     os.environ.pop("BASECAMP_WORKTREE_LABEL", None)
     os.environ.pop("BASECAMP_WORKTREE_DIR", None)
-    print_launch_card(resolved_cwd, scratch_dir=plan.scratch_dir)
     os.execvp(plan.argv[0], plan.argv)  # noqa: S606  # intentional interactive process handoff
 
 

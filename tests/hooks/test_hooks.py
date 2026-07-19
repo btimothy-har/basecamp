@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 import basecamp.hooks as hooks
+from basecamp.claude import launchcard
+from basecamp.claude.launchcard import LaunchCard
 from basecamp.hooks import session as session_mod
 
 
@@ -149,6 +151,71 @@ def test_session_start_skips_missing_session_id(monkeypatch: pytest.MonkeyPatch)
     session_mod.handle_session_start({"session_id": 123}, env={})
 
     assert called == []
+
+
+def test_session_start_returns_launch_card_for_bcc_session(monkeypatch: pytest.MonkeyPatch) -> None:
+    # BASECAMP_BCC_LAUNCH marks a bcc-originated session: the handler returns the card
+    # as a JSON systemMessage (user-facing), carrying the project identity.
+    monkeypatch.setattr(session_mod, "register_session", lambda _body: None)
+    card = LaunchCard(
+        scratch_dir="/tmp/claude/acme/web", is_repo=True, projected=True, display_name="acme/web", branch="main"
+    )
+    monkeypatch.setattr(launchcard, "gather_launch_card", lambda *_a, **_k: card)
+
+    out = session_mod.handle_session_start(
+        {"session_id": "s1", "cwd": "/work", "source": "startup"},
+        env={"BASECAMP_BCC_LAUNCH": "1", "BASECAMP_SCRATCH_DIR": "/tmp/claude/acme/web"},
+    )
+
+    assert out is not None
+    assert "acme/web" in json.loads(out)["systemMessage"]
+
+
+def test_session_start_no_launch_card_without_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A bare `claude` (no bcc marker) shows nothing — the gate short-circuits before gathering.
+    monkeypatch.setattr(session_mod, "register_session", lambda _body: None)
+    gathered: list[int] = []
+    monkeypatch.setattr(launchcard, "gather_launch_card", lambda *_a, **_k: gathered.append(1))
+
+    out = session_mod.handle_session_start({"session_id": "s1", "cwd": "/work", "source": "startup"}, env={})
+
+    assert out is None
+    assert gathered == []
+
+
+def test_session_start_no_launch_card_on_compact(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A post-compaction restart must not re-spam the card, even for a bcc session.
+    monkeypatch.setattr(session_mod, "register_session", lambda _body: None)
+    gathered: list[int] = []
+    monkeypatch.setattr(launchcard, "gather_launch_card", lambda *_a, **_k: gathered.append(1))
+
+    out = session_mod.handle_session_start(
+        {"session_id": "s1", "cwd": "/work", "source": "compact"},
+        env={"BASECAMP_BCC_LAUNCH": "1"},
+    )
+
+    assert out is None
+    assert gathered == []
+
+
+def test_session_start_launch_card_is_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A card failure must never break session start: registration still happens, no output.
+    bodies = []
+    monkeypatch.setattr(session_mod, "register_session", bodies.append)
+
+    def _boom(*_a: object, **_k: object) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(launchcard, "gather_launch_card", _boom)
+
+    out = session_mod.handle_session_start(
+        {"session_id": "s1", "cwd": "/work", "source": "startup"},
+        env={"BASECAMP_BCC_LAUNCH": "1"},
+    )
+
+    assert out is None
+    assert len(bodies) == 1
+    assert bodies[0].session_id == "s1"
 
 
 def test_session_end_closes_the_current_episode(monkeypatch: pytest.MonkeyPatch) -> None:

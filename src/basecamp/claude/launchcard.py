@@ -1,14 +1,15 @@
 """The ``bcc`` launch context card.
 
-A terminal display printed just before the launcher hands off to ``claude`` (see
-:mod:`basecamp.claude.launch`). It surfaces *for the user* what basecamp wired up
-for the session — the same project awareness the MCP server injects for the model:
-repo identity, the related-directory working set, standing context, and durable
-Logseq memory.
+Surfaces *for the user* what basecamp wired up for the session — the same project
+awareness the MCP server injects for the model: repo identity, the related-directory
+working set, standing context, and durable Logseq memory.
 
-The card renders with ``rich`` (the codebase's terminal-output convention) so the
-box, colour, and TTY detection come for free. It is **strictly fail-open**: any
-error gathering or rendering the card yields no output, never a failed launch.
+The card is rendered as plain text and delivered by the ``SessionStart`` hook as a
+``systemMessage`` (see :func:`basecamp.hooks.session.handle_session_start`), so it
+lands *inside* the session where the user can read it — Claude Code's alternate-screen
+TUI wipes anything the launcher prints before handing off. Claude wraps a
+``systemMessage`` under a fixed, single-style prefix, so the text carries no box or
+colour of its own. Gathering is **strictly fail-open**: any error yields ``None``.
 """
 
 from __future__ import annotations
@@ -16,10 +17,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-
-from rich.console import Console, Group, RenderableType
-from rich.panel import Panel
-from rich.text import Text
 
 from basecamp.claude.gitutil import main_worktree, run_git
 from basecamp.claude.identity import repo_identity, repo_root
@@ -102,54 +99,30 @@ def _worktree_pair(cwd: str, root: str | None) -> tuple[str | None, str | None]:
     return None, None
 
 
-def render_launch_card(card: LaunchCard) -> RenderableType:
-    """Render a :class:`LaunchCard` into a ``rich`` renderable."""
-    panel = Panel(
-        Text(_identity_line(card)),
-        title="basecamp",
-        title_align="left",
-        border_style="cyan",
-        expand=False,
-    )
+def render_launch_card_text(card: LaunchCard) -> str:
+    """Render a :class:`LaunchCard` as plain text for the SessionStart ``systemMessage``."""
+    lines: list[str] = [f"basecamp · {_identity_line(card)}"]
 
-    lines: list[RenderableType] = []
     if card.protected_checkout:
-        lines.append(Text.assemble(("Checkout: ", "bold"), (str(card.active_worktree), "")))
-        lines.append(Text(f"          protected: {card.protected_checkout}", style="dim"))
+        lines.append(f"checkout: {card.active_worktree}")
+        lines.append(f"protected: {card.protected_checkout}")
 
     if card.projected:
-        lines.append(_related_dirs_block(card))
+        lines.extend(_related_dirs_lines(card))
         if card.context_loaded:
-            lines.append(Text.assemble(("Context: ", "bold"), ("✓ standing context loaded", "green")))
+            lines.append("context: standing context loaded")
     elif card.is_repo:
-        lines.append(Text("No basecamp project configured for this directory.", style="dim"))
-    # A non-repo directory is a valid session (general/scratch work); it shows the
-    # minimal identity + scratch card, with no git-repo notice — nothing failed.
+        lines.append("no basecamp project configured for this directory")
+    # A non-repo directory is a valid session (general/scratch work): minimal identity
+    # + scratch, with no git-repo notice — nothing failed.
 
     if card.is_repo:
         lines.append(_memory_line(card))
 
-    lines.append(Text.assemble(("Scratch: ", "bold"), (card.scratch_dir, "dim")))
-    lines += [Text(f"⚠ {warning}", style="yellow") for warning in card.warnings]
+    lines.append(f"scratch: {card.scratch_dir}")
+    lines.extend(f"⚠ {warning}" for warning in card.warnings)
 
-    return Group(panel, *lines)
-
-
-def print_launch_card(
-    cwd: str,
-    *,
-    scratch_dir: str | Path,
-    home: Path | None = None,
-    console: Console | None = None,
-) -> None:
-    """Gather, render, and print the launch card. Never raises."""
-    try:
-        card = gather_launch_card(cwd, scratch_dir=scratch_dir, home=home)
-        if card is None:
-            return
-        (console or Console()).print(render_launch_card(card))
-    except Exception:  # noqa: BLE001  # fail-open: printing a card must never break launch
-        return
+    return "\n".join(lines)
 
 
 def _identity_line(card: LaunchCard) -> str:
@@ -161,19 +134,17 @@ def _identity_line(card: LaunchCard) -> str:
     return " · ".join(parts)
 
 
-def _related_dirs_block(card: LaunchCard) -> RenderableType:
+def _related_dirs_lines(card: LaunchCard) -> list[str]:
     if not card.related_dirs:
-        return Text("Related dirs: none configured", style="dim")
-    header = Text("Related dirs:", style="bold")
-    return Group(header, *(Text(f"  {directory}", style="dim") for directory in card.related_dirs))
+        return ["related dirs: none configured"]
+    return ["related dirs:", *(f"  {directory}" for directory in card.related_dirs)]
 
 
-def _memory_line(card: LaunchCard) -> RenderableType:
+def _memory_line(card: LaunchCard) -> str:
     if not card.logseq_available:
         reason = card.logseq_reason or "durable repo memory unavailable"
-        return Text.assemble(("Memory: ", "bold"), (f"unavailable — {reason}", "dim"))
+        return f"memory: unavailable — {reason}"
     cockpit = "✓" if card.cockpit_present else "seed pending"
     count = card.dossier_count
     dossiers = f"{count} dossier{'' if count == 1 else 's'}"
-    detail = f"{card.cockpit_name} ({cockpit}) · {dossiers}"
-    return Text.assemble(("Memory: ", "bold"), (detail, ""))
+    return f"memory: {card.cockpit_name} ({cockpit}) · {dossiers}"
