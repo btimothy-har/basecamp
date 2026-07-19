@@ -7,6 +7,7 @@ from pathlib import Path
 
 import rich_click as click
 
+from basecamp.claude.launch import run_launch
 from basecamp.companion.app import run_companion
 from basecamp.core.cli.config_group import config
 from basecamp.core.cli.workstream_group import workstream
@@ -38,6 +39,26 @@ def setup() -> None:
         execute_setup()
     except LauncherError as e:
         _handle_error(e)
+
+
+@basecamp.group()
+def claude() -> None:
+    """Claude Code session commands."""
+
+
+@claude.command(
+    "launch",
+    context_settings={"ignore_unknown_options": True},
+    add_help_option=False,
+)
+@click.argument("extra", nargs=-1, type=click.UNPROCESSED)
+def claude_launch(extra: tuple[str, ...]) -> None:
+    """Launch an interactive Claude session with the basecamp system prompt.
+
+    Extra arguments pass straight through to ``claude`` (this is the same entry
+    point as the ``bcc`` command).
+    """
+    run_launch(list(extra))
 
 
 @basecamp.group()

@@ -35,3 +35,17 @@ def worktrees_root(home: Path | None = None) -> Path:
     cannot drift. ``home``-parameterized so tests can point ``$HOME`` at a temp dir.
     """
     return (home or Path.home()) / ".worktrees"
+
+
+def shipped_prompts_dir() -> Path:
+    """Directory holding the committed prompt files (``<repo>/claude/prompts``).
+
+    Single source for the launcher (``system-prompt.md``) and setup
+    (``doctrine.md``). Prefers the installer-recorded root, falling back to this
+    checkout when unset (editable/dev). Mirrors ``setup._source_dir()``.
+    """
+    from basecamp.core.settings import settings  # noqa: PLC0415  # local: avoid import cycle
+
+    install_dir = settings.install_dir
+    base = Path(install_dir) if install_dir else Path(__file__).resolve().parents[3]
+    return base / "claude" / "prompts"
