@@ -185,7 +185,7 @@ is ensured lazily and never a prerequisite for a session to run.
 - **Lint**: `make lint` (`ruff check` + `ruff format --check`).
 - **Fix**: `make fix`.
 - **Test**: `make test` (`uv run pytest`).
-- **File length**: a universal 500-line cap on source files, carried by the engineering doctrine and a non-blocking warn hook (not CI-enforced).
+- **File length**: a soft 500-line cap on most source files, with per-type exceptions (shell ~400; SQL and HTML ~800), carried by the engineering doctrine and a non-blocking warn hook (not CI-enforced).
 
 See [AGENTS.md](AGENTS.md) for the architecture and contributor guide.
 

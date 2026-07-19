@@ -58,6 +58,26 @@ def test_relative_path_is_resolved_against_cwd(tmp_path: Path) -> None:
     assert "nested.py" in _advisory(output)
 
 
+@pytest.mark.parametrize(
+    ("name", "cap"),
+    [
+        ("query.sql", 800),
+        ("page.html", 800),
+        ("deploy.sh", 400),
+        ("service.go", 500),  # unlisted type → general cap
+    ],
+)
+def test_per_type_caps(tmp_path: Path, name: str, cap: int) -> None:
+    """SQL/HTML get more room, shell less; an unlisted type falls to the general cap."""
+    target = tmp_path / name
+
+    _write_lines(target, cap)
+    assert handle_file_length({"tool_name": "Write", "tool_input": {"file_path": str(target)}}) is None
+
+    _write_lines(target, cap + 1)
+    assert handle_file_length({"tool_name": "Write", "tool_input": {"file_path": str(target)}}) is not None
+
+
 # --- under-cap / non-source / wrong tool → no warning ----------------------------
 
 

@@ -165,11 +165,11 @@ keep DDL additive. The daemon is self-contained under `hub/claude/` (its own
 
 ### File-length cap → doctrine (primary) + a non-blocking warn hook
 
-Every source file stays under **500 lines** (universal — the former split of
-`.ts ≤ 350 / .py ≤ 500` collapses to one number now that only Python remains).
-The cap is a module-design forcing function: when a file approaches it, split
-along responsibility seams into focused modules, never by compressing style or
-with `-part2` continuation files.
+The line cap is a soft **500 lines** for most code, with a few per-type
+exceptions (shell ~400; SQL and HTML ~800). basecamp is Python, so its own cap is
+500. The cap is a module-design forcing function: when a file approaches it,
+split along responsibility seams into focused modules, never by compressing style
+or with `-part2` continuation files.
 
 Enforcement is two layers, with the doctrine as the primary carrier:
 
@@ -236,11 +236,13 @@ default; a repo with no environment is a clean no-op.
 
 ### File Length Limits
 
-A universal **500-line** cap on every source file, tests included. It is not
-CI-enforced (the TypeScript lint gate that carried it is gone); it lives in the
-engineering doctrine and the non-blocking warn hook (see above). Treat it as a
-module-design forcing function — split along responsibility seams, never by
-compressing style or with `-part2` continuation files.
+A soft **500-line** cap on most source files, tests included, with per-type
+exceptions (shell ~400; SQL and HTML ~800). basecamp is Python, so 500 applies
+here. It is not CI-enforced (the TypeScript lint gate that carried it is gone);
+it lives in the engineering doctrine and the non-blocking warn hook (see above),
+which resolves the cap per type via `_LANGUAGE_CAPS`. Treat it as a module-design
+forcing function — split along responsibility seams, never by compressing style
+or with `-part2` continuation files.
 
 ### Testing
 
