@@ -8,30 +8,21 @@ is tested by forcing a resolver to raise.
 
 from __future__ import annotations
 
-import io
 import subprocess
 from pathlib import Path
 
 import pytest
-from rich.console import Console
 
 from basecamp.claude import launchcard
 from basecamp.claude.launchcard import (
     LaunchCard,
     gather_launch_card,
-    print_launch_card,
-    render_launch_card,
+    render_launch_card_text,
 )
 
 
-def _plain(renderable: object) -> str:
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-    console.print(renderable)
-    return console.file.getvalue()  # type: ignore[attr-defined]
-
-
 def _render(card: LaunchCard) -> str:
-    return _plain(render_launch_card(card))
+    return render_launch_card_text(card)
 
 
 def _init_repo(path: Path, origin: str | None = None) -> None:
@@ -65,9 +56,9 @@ def test_render_projected_card_shows_full_context() -> None:
 
     assert "basecamp" in out
     assert "acme/web" in out and "main" in out
-    assert "Related dirs:" in out
+    assert "related dirs:" in out
     assert "/src/acme/shared" in out and "/src/acme/proto" in out
-    assert "✓ standing context loaded" in out
+    assert "context: standing context loaded" in out
     assert "repo__acme__web" in out and "3 dossiers" in out
     assert "/tmp/claude/acme/web" in out
 
@@ -87,7 +78,7 @@ def test_render_missing_context_surfaces_warning() -> None:
     out = _render(card)
 
     assert "⚠ standing context not configured" in out
-    assert "✓ standing context loaded" not in out
+    assert "context: standing context loaded" not in out
 
 
 def test_render_unprojected_repo() -> None:
@@ -95,8 +86,8 @@ def test_render_unprojected_repo() -> None:
 
     out = _render(card)
 
-    assert "No basecamp project configured for this directory." in out
-    assert "Related dirs:" not in out
+    assert "no basecamp project configured for this directory" in out
+    assert "related dirs:" not in out
 
 
 def test_render_non_repo_is_minimal() -> None:
@@ -106,8 +97,8 @@ def test_render_non_repo_is_minimal() -> None:
 
     assert "tmp" in out  # identity still shown
     assert "/tmp/claude/session" in out  # scratch still shown
-    assert "Not a git repository." not in out  # a non-repo session is valid, not an error
-    assert "Memory:" not in out
+    assert "no basecamp project configured" not in out  # a non-repo session is valid, not an error
+    assert "memory:" not in out
     assert "⚠" not in out
 
 
@@ -140,7 +131,7 @@ def test_render_logseq_unavailable_shows_reason() -> None:
 
     out = _render(card)
 
-    assert "Memory: unavailable — graph not configured" in out
+    assert "memory: unavailable — graph not configured" in out
 
 
 def test_gather_in_repo_reports_identity_and_branch(tmp_path: Path) -> None:
@@ -178,28 +169,3 @@ def test_gather_is_fail_open(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     monkeypatch.setattr(launchcard, "resolve_project", _boom)
 
     assert gather_launch_card(str(repo), scratch_dir="/tmp/x", home=tmp_path) is None
-
-
-def test_print_launch_card_writes_to_console(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    _init_repo(repo, "https://github.com/acme/web.git")
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-
-    print_launch_card(str(repo), scratch_dir="/tmp/claude/acme/web", home=tmp_path, console=console)
-
-    assert "basecamp" in console.file.getvalue()  # type: ignore[attr-defined]
-
-
-def test_print_launch_card_swallows_gather_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    _init_repo(repo)
-
-    def _boom(*_args: object, **_kwargs: object) -> None:
-        raise RuntimeError("boom")
-
-    monkeypatch.setattr(launchcard, "resolve_project", _boom)
-    console = Console(file=io.StringIO(), width=100, no_color=True)
-
-    print_launch_card(str(repo), scratch_dir="/tmp/x", home=tmp_path, console=console)
-
-    assert console.file.getvalue() == ""  # type: ignore[attr-defined]

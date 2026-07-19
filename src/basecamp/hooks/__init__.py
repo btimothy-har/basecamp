@@ -6,8 +6,9 @@ The plugin's ``hooks.json`` wires the session lifecycle — ``SessionStart`` /
 ``Write``/``Edit``/``MultiEdit`` file-length warn → ``basecamp-hook file-length``.
 Each invocation reads the hook JSON from stdin, dispatches to a handler, and *always*
 exits 0 — a hook must never block or fail a Claude Code session. A handler may return
-a string, which is written to stdout as the hook's JSON response (the file-length warn
-uses this for its non-blocking advisory); the lifecycle handlers return ``None`` and
+a string, which is written to stdout as the hook's JSON response: the file-length warn
+uses it for its non-blocking advisory, and ``SessionStart`` uses it to deliver the bcc
+launch card as a ``systemMessage``; the other lifecycle handlers return ``None`` and
 stay silent. Any failure (daemon down, malformed payload, unexpected error) is
 swallowed and logged best-effort, so a broken hook degrades to no output rather than a
 block.

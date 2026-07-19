@@ -22,11 +22,20 @@ engagement without any special-casing, and the durable session row is never ende
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Mapping
 from typing import Any
 
-from basecamp.hub.claude.client import build_register_body, end_session, ingest_transcript, register_session
+import httpx
+
+from basecamp.hub.claude.client import (
+    DaemonError,
+    build_register_body,
+    end_session,
+    ingest_transcript,
+    register_session,
+)
 
 
 def _str_field(payload: Mapping[str, Any], key: str) -> str | None:
@@ -41,14 +50,19 @@ def _str_field(payload: Mapping[str, Any], key: str) -> str | None:
     return value if isinstance(value, str) and value else None
 
 
-def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] | None = None) -> None:
-    """Register a top-level session and open a fresh episode for it."""
+def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] | None = None) -> str | None:
+    """Register a top-level session, then return the bcc launch card as a systemMessage.
+
+    Registration is best-effort; the launch card is returned only for bcc-launched
+    sessions (see :func:`_launch_card_message`) and is user-facing only — the model's
+    project awareness comes from the MCP context server, not this message.
+    """
 
     if payload.get("agent_type") == "subagent":
-        return
+        return None
     session_id = payload.get("session_id")
     if not isinstance(session_id, str) or not session_id:
-        return
+        return None
     cwd = _str_field(payload, "cwd")
     transcript = _str_field(payload, "transcript_path")
     source = _str_field(payload, "source")
@@ -59,7 +73,39 @@ def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] |
         source=source,
         env=env,
     )
-    register_session(body)
+    # register_session spawns the daemon and awaits health, so it *may* raise on a
+    # daemon outage (unlike best-effort end_session/ingest_transcript). Swallow that
+    # here so an unrelated hub failure can't suppress the user's launch card, which is
+    # independent of daemon health.
+    try:
+        register_session(body)
+    except (DaemonError, httpx.HTTPError, OSError):
+        pass
+    return _launch_card_message(cwd or os.getcwd(), source, env if env is not None else os.environ)
+
+
+def _launch_card_message(cwd: str, source: str | None, env: Mapping[str, str]) -> str | None:
+    """Return the launch card as a SessionStart ``systemMessage`` JSON, or ``None``.
+
+    Shown only for bcc-launched sessions (``BASECAMP_BCC_LAUNCH``), and never on a
+    post-compaction restart (``source == "compact"``) — startup/resume/clear still
+    show it. Fail-open: any error yields ``None`` so a card never breaks session start.
+    """
+
+    if env.get("BASECAMP_BCC_LAUNCH") != "1" or source == "compact":
+        return None
+    try:
+        from basecamp.claude.launchcard import (  # noqa: PLC0415  # lazy: defer the repo/logseq resolvers
+            gather_launch_card,
+            render_launch_card_text,
+        )
+
+        card = gather_launch_card(cwd, scratch_dir=env.get("BASECAMP_SCRATCH_DIR", ""))
+        if card is None:
+            return None
+        return json.dumps({"systemMessage": render_launch_card_text(card)})
+    except Exception:  # noqa: BLE001  # fail-open: a card must never break session start
+        return None
 
 
 def handle_session_end(payload: Mapping[str, Any]) -> None:
