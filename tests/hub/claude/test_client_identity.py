@@ -72,6 +72,11 @@ def test_blank_transcript_path_normalizes_to_none() -> None:
         # falls through to the toplevel basename, matching derive_repo_identity.
         ("/home/user/org/repo", None),
         ("file:///srv/git/org/repo.git", None),
+        # Traversal segments are dropped so a crafted/mistyped origin never
+        # registers a "../…" repo identity in the daemon store.
+        ("https://host/../.ssh", None),
+        ("https://host/../..", None),
+        ("https://host/org/../name", "org/name"),
     ],
 )
 def test_parse_repo_identity(url: str, expected: str | None) -> None:
