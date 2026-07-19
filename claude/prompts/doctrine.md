@@ -15,6 +15,7 @@ Priorities, in order: **readability → established patterns → simplicity.**
 - Follow the conventions already in the file and the codebase.
 - **Strong typing** on function signatures, data structures, and public interfaces. Types are documentation and safety, not overhead.
 - **Security awareness.** Don't introduce injection, XSS, or other OWASP-top-10 issues; fix insecure code you touch.
+- **Apply the relevant engineering skill.** basecamp ships skills carrying the detailed, per-domain standards — `python-development` for Python, `sql` for queries and schema design, `data-warehousing` for dbt models, `data-analysis` for metrics and investigation, `marimo` for reactive notebooks. When your work is in one of these domains, follow its skill over improvising; this doctrine is the baseline, the skill has the specifics.
 
 ## Comments and docstrings
 
@@ -56,8 +57,6 @@ Python 3.12+ with the `uv` package manager. Run scripts with `uv run` (`uv run s
 # dependencies = ["httpx", "pandas"]
 # ///
 ```
-
-Apply the `python-development` skill for the full conventions.
 
 ## No time estimates
 
