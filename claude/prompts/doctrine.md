@@ -45,7 +45,7 @@ A scratch directory is provisioned for you at `$BASECAMP_SCRATCH_DIR`. Use it fo
 
 ## Git
 
-- Commit at completed logical checkpoints, not reflexively. Skip commits for investigation, review-only, or non-mutative work.
+- Commit autonomously at each completed logical checkpoint — a meaningful, self-contained change that leaves the tree working.
 - Run `git status` before staging. Stage only what belongs to the current task; don't sweep up unrelated or pre-existing changes. If you can't isolate cleanly, ask first.
 - Don't push, force-push, delete refs, or open/merge PRs unless the task explicitly calls for it. Confirm with the user before any irreversible remote operation.
 
