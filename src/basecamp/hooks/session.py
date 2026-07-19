@@ -27,7 +27,15 @@ import os
 from collections.abc import Mapping
 from typing import Any
 
-from basecamp.hub.claude.client import build_register_body, end_session, ingest_transcript, register_session
+import httpx
+
+from basecamp.hub.claude.client import (
+    DaemonError,
+    build_register_body,
+    end_session,
+    ingest_transcript,
+    register_session,
+)
 
 
 def _str_field(payload: Mapping[str, Any], key: str) -> str | None:
@@ -45,7 +53,7 @@ def _str_field(payload: Mapping[str, Any], key: str) -> str | None:
 def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] | None = None) -> str | None:
     """Register a top-level session, then return the bcc launch card as a systemMessage.
 
-    Registration is unconditional; the launch card is returned only for bcc-launched
+    Registration is best-effort; the launch card is returned only for bcc-launched
     sessions (see :func:`_launch_card_message`) and is user-facing only — the model's
     project awareness comes from the MCP context server, not this message.
     """
@@ -65,7 +73,14 @@ def handle_session_start(payload: Mapping[str, Any], *, env: Mapping[str, str] |
         source=source,
         env=env,
     )
-    register_session(body)
+    # register_session spawns the daemon and awaits health, so it *may* raise on a
+    # daemon outage (unlike best-effort end_session/ingest_transcript). Swallow that
+    # here so an unrelated hub failure can't suppress the user's launch card, which is
+    # independent of daemon health.
+    try:
+        register_session(body)
+    except (DaemonError, httpx.HTTPError, OSError):
+        pass
     return _launch_card_message(cwd or os.getcwd(), source, env if env is not None else os.environ)
 
 

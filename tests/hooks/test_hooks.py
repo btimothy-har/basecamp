@@ -198,6 +198,27 @@ def test_session_start_no_launch_card_on_compact(monkeypatch: pytest.MonkeyPatch
     assert gathered == []
 
 
+def test_session_start_card_survives_registration_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A daemon spawn/health failure (register_session raising) must not suppress the
+    # card — registration is best-effort, the card is independent of daemon health.
+    def _boom(_body: object) -> None:
+        raise session_mod.DaemonError
+
+    monkeypatch.setattr(session_mod, "register_session", _boom)
+    card = LaunchCard(
+        scratch_dir="/tmp/claude/acme/web", is_repo=True, projected=True, display_name="acme/web", branch="main"
+    )
+    monkeypatch.setattr(launchcard, "gather_launch_card", lambda *_a, **_k: card)
+
+    out = session_mod.handle_session_start(
+        {"session_id": "s1", "cwd": "/work", "source": "startup"},
+        env={"BASECAMP_BCC_LAUNCH": "1"},
+    )
+
+    assert out is not None
+    assert "acme/web" in json.loads(out)["systemMessage"]
+
+
 def test_session_start_launch_card_is_fail_open(monkeypatch: pytest.MonkeyPatch) -> None:
     # A card failure must never break session start: registration still happens, no output.
     bodies = []
