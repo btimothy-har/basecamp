@@ -59,7 +59,10 @@ def parse_remote_identity(url: str) -> str | None:
             return None
         path = match.group("path")
     path = path.removesuffix(".git").strip("/")
-    parts = [segment for segment in path.split("/") if segment]
+    # Drop empty and traversal segments: the identity is used as a filesystem path
+    # component (scratch dir) downstream, so a crafted origin like ".../../.ssh"
+    # must never yield a "../…" identity that escapes its parent.
+    parts = [segment for segment in path.split("/") if segment and segment not in (".", "..")]
     if len(parts) < 2:
         return None
     return "/".join(parts[-2:])
