@@ -12,17 +12,12 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 
 PROJECTS_SECTION = "projects"
-
-#: Fields removed from ``ProjectConfig`` but tolerated on validation so a
-#: config.json written by an older basecamp (which seeded ``working_style``) still
-#: loads — ``extra="forbid"`` would otherwise reject it. Stripped, not migrated.
-_LEGACY_PROJECT_KEYS = ("working_style",)
 
 
 class ProjectConfig(BaseModel):
@@ -33,21 +28,8 @@ class ProjectConfig(BaseModel):
     repo_root: str
     additional_dirs: list[str] = Field(default_factory=list)
     description: str = ""
+    working_style: str | None = None
     context: str | None = None
-
-    @model_validator(mode="before")
-    @classmethod
-    def _drop_legacy_keys(cls, data: Any) -> Any:
-        """Strip retired keys before ``extra="forbid"`` runs.
-
-        Lives on the model (not in one loader) so *every* validation path —
-        ``load_projects`` and the shared ``config set|edit`` validator alike —
-        tolerates a legacy ``working_style`` an older basecamp seeded, rather than
-        only the read path.
-        """
-        if isinstance(data, dict):
-            return {k: v for k, v in data.items() if k not in _LEGACY_PROJECT_KEYS}
-        return data
 
 
 def load_projects(config: Settings | None = None) -> dict[str, ProjectConfig]:

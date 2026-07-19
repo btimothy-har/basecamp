@@ -9,10 +9,10 @@ def test_top_level_commands_match_new_shape() -> None:
     commands = cli.basecamp.commands
 
     assert "config" in commands
+    assert "companion" in commands
+    assert "setup" in commands
     assert "install" in commands
     assert "hub" in commands
-    # `setup` was renamed to `install` (single installer command).
-    assert "setup" not in commands
     # projects/environments moved under `config` (hard cut).
     assert "projects" not in commands
     assert "environments" not in commands
@@ -23,6 +23,11 @@ def test_config_subcommands_match_new_shape() -> None:
 
     for name in ("project", "env", "alias", "show", "get", "set", "unset", "edit"):
         assert name in commands, name
+
+
+def test_companion_subcommands_match_new_shape() -> None:
+    assert "dashboard" in cli.companion.commands
+    assert "analyze" not in cli.companion.commands  # analysis runs in the daemon
 
 
 def test_config_env_subcommands_delegate(monkeypatch) -> None:
@@ -64,6 +69,32 @@ def test_bare_config_sections_open_menus(monkeypatch) -> None:
     assert runner.invoke(config, ["project"]).exit_code == 0
     assert runner.invoke(config, ["env"]).exit_code == 0
     assert calls == ["project", "env"]
+
+
+def test_companion_dashboard_delegates(monkeypatch) -> None:
+    calls: list[tuple[str, str, str | None]] = []
+    monkeypatch.setattr(
+        cli,
+        "run_companion",
+        lambda snapshot, cwd, scratch: calls.append((str(snapshot), str(cwd), str(scratch) if scratch else None)),
+    )
+
+    result = CliRunner().invoke(
+        cli.basecamp,
+        [
+            "companion",
+            "dashboard",
+            "--snapshot",
+            "/tmp/snapshot.json",
+            "--cwd",
+            "/tmp/worktree",
+            "--scratch",
+            "/tmp/scratch",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert calls == [("/tmp/snapshot.json", "/tmp/worktree", "/tmp/scratch")]
 
 
 def test_old_top_level_routes_are_absent() -> None:

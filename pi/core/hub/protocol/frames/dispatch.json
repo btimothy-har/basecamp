@@ -1,0 +1,25 @@
+{
+  "type": "dispatch",
+  "v": 23,
+  "run_id": "run-001",
+  "agent_id": "00000000-0000-4000-8000-000000000042",
+  "agent_handle": "mossy-otter-a1b2c3",
+  "agent_type": "scout",
+  "model": "claude-sonnet-4-5",
+  "spec": {
+    "argv": [
+      "pi",
+      "--mode",
+      "json",
+      "-p"
+    ],
+    "env": {
+      "BASECAMP_AGENT_ID": "00000000-0000-4000-8000-000000000042",
+      "BASECAMP_DAEMON_UDS": "/Users/example/.pi/basecamp/swarm/daemon.sock"
+    },
+    "cwd": "/Users/example/repo",
+    "resume_path": "/Users/example/.pi/basecamp/swarm/agents/00000000-0000-4000-8000-000000000042/session/00000000-0000-4000-8000-000000000042.jsonl",
+    "fork_from": null,
+    "task": "Summarize test failures and propose a fix."
+  }
+}
