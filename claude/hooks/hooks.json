@@ -43,6 +43,18 @@
 					}
 				]
 			}
+		],
+		"PostToolUse": [
+			{
+				"matcher": "Write|Edit",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}/bin/basecamp-hook\" file-length",
+						"timeout": 10
+					}
+				]
+			}
 		]
 	}
 }

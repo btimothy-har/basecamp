@@ -8,12 +8,10 @@ from pathlib import Path
 import rich_click as click
 
 from basecamp.claude.launch import run_launch
-from basecamp.companion.app import run_companion
 from basecamp.core.cli.config_group import config
 from basecamp.core.cli.workstream_group import workstream
 from basecamp.core.exceptions import LauncherError
-from basecamp.installer import run_interactive_install
-from basecamp.setup import execute_setup
+from basecamp.install import execute_install
 from basecamp.workspace.ui import err_console
 
 click.rich_click.USE_RICH_MARKUP = True
@@ -33,10 +31,10 @@ def basecamp() -> None:
 
 
 @basecamp.command()
-def setup() -> None:
-    """Set up basecamp environment (prerequisites, directories, config)."""
+def install() -> None:
+    """Wire basecamp into this machine: register the plugin, install the doctrine, seed config."""
     try:
-        execute_setup()
+        execute_install()
     except LauncherError as e:
         _handle_error(e)
 
@@ -59,39 +57,6 @@ def claude_launch(extra: tuple[str, ...]) -> None:
     point as the ``bcc`` command).
     """
     run_launch(list(extra))
-
-
-@basecamp.group()
-def companion() -> None:
-    """Live session companion commands."""
-
-
-@companion.command()
-@click.option(
-    "--snapshot",
-    "snapshot_path",
-    required=True,
-    type=click.Path(path_type=Path),
-    help="Path to the companion snapshot JSON.",
-)
-@click.option(
-    "--cwd",
-    "cwd",
-    required=True,
-    type=click.Path(path_type=Path),
-    help="Git working directory for diffs.",
-)
-@click.option(
-    "--scratch",
-    "scratch_dir",
-    required=False,
-    default=None,
-    type=click.Path(path_type=Path),
-    help="Path to the basecamp scratch directory.",
-)
-def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
-    """Live session companion dashboard (runs in a tmux pane)."""
-    run_companion(snapshot_path, cwd, scratch_dir)
 
 
 @basecamp.command()
@@ -118,36 +83,14 @@ def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
     type=click.Path(path_type=Path),
     help="Optional path to write the daemon PID file.",
 )
-@click.option(
-    "--legacy",
-    is_flag=True,
-    help="Run the legacy Pi swarm daemon instead of the Claude session hub.",
-)
-def hub(uds_path: Path, db_path: Path | None, pidfile_path: Path | None, *, legacy: bool) -> None:
-    """Run the basecamp hub daemon (the Claude session hub by default).
-
-    Imports are deferred so the default Claude daemon never pulls in the Pi swarm
-    service graph (``basecamp.hub.server``) just to start.
-    """
+def hub(uds_path: Path, db_path: Path | None, pidfile_path: Path | None) -> None:
+    """Run the basecamp Claude session hub daemon."""
     db = str(db_path) if db_path else None
     pidfile = str(pidfile_path) if pidfile_path else None
-    if legacy:
-        # Lazy: importing the Pi server pulls in the whole swarm service graph.
-        from basecamp.hub.server import run_hub  # noqa: PLC0415
-
-        run_hub(str(uds_path), db, pidfile)
-        return
-
-    # Lazy for symmetry (and so the default path stays swarm-free by construction).
+    # Lazy import keeps CLI startup light.
     from basecamp.hub.claude.server import run_claude_hub  # noqa: PLC0415
 
     run_claude_hub(str(uds_path), db, pidfile)
-
-
-@basecamp.command()
-def install() -> None:
-    """Install or reconfigure basecamp components."""
-    run_interactive_install()
 
 
 basecamp.add_command(config)

@@ -10,7 +10,6 @@ from click.testing import CliRunner
 
 import basecamp.core.cli.config_document as config_document
 import basecamp.core.cli.config_group as config_group
-import basecamp.core.cli.project as cli_project
 import basecamp.core.model_aliases as model_aliases
 import basecamp.core.projects as projects
 import basecamp.workspace.environments as environments
@@ -23,11 +22,11 @@ def cfg(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Settings:
     """Redirect every module's `settings` singleton at a temp config.json.
 
     Must cover every module whose code path a `config` subcommand reaches —
-    including the project porcelain's writers (projects / cli.project) — so a
+    including the project porcelain's writer (basecamp.core.projects) — so a
     test can never touch the developer's real ~/.pi/basecamp/config.json.
     """
     settings = Settings(tmp_path / "config.json")
-    for module in (config_document, config_group, model_aliases, environments, projects, cli_project):
+    for module in (config_document, config_group, model_aliases, environments, projects):
         monkeypatch.setattr(module, "settings", settings)
     return settings
 
@@ -93,7 +92,6 @@ def test_alias_rename(cfg: Settings) -> None:
 
 
 def test_fixture_redirects_project_writer_modules(cfg: Settings) -> None:
-    # The project porcelain writes via these modules; if the fixture didn't
-    # redirect them a `config project` test would mutate the real config.
+    # The project porcelain writes via basecamp.core.projects; if the fixture
+    # didn't redirect it a `config project` test would mutate the real config.
     assert projects.settings.path == cfg.path
-    assert cli_project.settings.path == cfg.path  # untouched by the env write

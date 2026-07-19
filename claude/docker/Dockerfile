@@ -43,7 +43,10 @@ RUN npm install -g "@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}" \
 # agreement.
 
 # basecamp source (allowlisted by .dockerignore) -> installed as a uv tool below.
-ENV BASECAMP_SRC=/opt/basecamp
+# Kept UNDER $HOME (/home/node) to mirror a real checkout: `basecamp install`
+# seeds a default project whose repo_root is stored $HOME-relative, so an
+# install_dir outside $HOME would abort seeding. This is where a real host clones.
+ENV BASECAMP_SRC=/home/node/src/basecamp
 COPY --chown=node:node pyproject.toml uv.lock ${BASECAMP_SRC}/
 COPY --chown=node:node src ${BASECAMP_SRC}/src
 COPY --chown=node:node claude ${BASECAMP_SRC}/claude
@@ -61,9 +64,20 @@ ENV PATH=/home/node/.local/bin:${PATH}
 RUN uv tool install --python 3.12 "${BASECAMP_SRC}" \
 	&& basecamp --help >/dev/null
 
-# Claude Code config: bypass permission prompts (throwaway sandbox, non-root) so
-# the plugin's hooks, MCP server, and Bash run without interactive gating.
+# Claude Code config: seed a settings.json that bypasses permission prompts
+# (throwaway sandbox, non-root) so the plugin's hooks, MCP server, and Bash run
+# without interactive gating. `basecamp install` (below) leaves this key intact.
 COPY --chown=node:node claude/docker/claude-settings.json /home/node/.claude/settings.json
+
+# Wire the plugin exactly as a real host does: record this checkout as install_dir,
+# then `basecamp install` drives the `claude` CLI (plugin marketplace add + plugin
+# install) to register + enable the plugin, installs the home doctrine, scaffolds
+# the context dir, and seeds the default config. `plugin install` writes
+# ~/.claude/settings.json AND builds the ~/.claude/plugins cache the loader reads
+# (settings.json alone does not load a plugin), so a bare `claude` then auto-loads
+# it — no --plugin-dir. This is the authoritative check on registration.
+RUN basecamp config set install_dir "${BASECAMP_SRC}" \
+	&& basecamp install
 
 # Cheap-changing scripts last, so editing them doesn't bust the uv-install layer.
 # The entrypoint + inspection helper live in the user's PATH and are chmod'd as
@@ -72,12 +86,8 @@ COPY --chown=node:node claude/docker/entrypoint.sh /home/node/.local/bin/entrypo
 COPY --chown=node:node claude/docker/bin/bc-inspect /home/node/.local/bin/bc-inspect
 RUN chmod +x /home/node/.local/bin/entrypoint.sh /home/node/.local/bin/bc-inspect
 
-# Interactive convenience: a bare `claude` loads the plugin under test.
-RUN cat >> /home/node/.bashrc <<'EOF'
-
-# basecamp sandbox: load the plugin under test on every interactive `claude`.
-alias claude='command claude --plugin-dir "$BASECAMP_PLUGIN_DIR"'
-EOF
+# No plugin alias needed: `basecamp install` (above) enabled the plugin in
+# ~/.claude/settings.json, so a bare `claude` auto-loads it.
 
 # A realistic git repo to run sessions in (drives the transcript slug + project
 # resolution); a throwaway, unrelated to the basecamp source under /opt.

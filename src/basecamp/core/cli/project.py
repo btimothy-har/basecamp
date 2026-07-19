@@ -7,9 +7,8 @@ from pathlib import Path
 import questionary
 
 from basecamp.core.directories import to_home_relative
-from basecamp.core.paths import USER_CONTEXT_DIR, USER_STYLES_DIR
+from basecamp.core.paths import USER_CONTEXT_DIR
 from basecamp.core.projects import ProjectConfig, load_projects, save_projects
-from basecamp.core.settings import settings
 from basecamp.workspace.ui import console, display_projects
 
 
@@ -17,20 +16,6 @@ def _to_relative(path_str: str) -> str:
     """Convert an absolute path to home-relative for storage."""
     expanded = Path(path_str).expanduser().resolve()
     return to_home_relative(expanded)
-
-
-def _available_styles() -> list[str]:
-    """Scan extension + user dirs for available working styles."""
-    styles: set[str] = set()
-    install_dir = settings.install_dir
-    if install_dir:
-        script_dir = Path(install_dir)
-        style_dir = script_dir / "pi" / "system-prompt" / "defaults" / "styles"
-        if style_dir.exists():
-            styles.update(path.stem for path in style_dir.glob("*.md"))
-    if USER_STYLES_DIR.exists():
-        styles.update(path.stem for path in USER_STYLES_DIR.glob("*.md"))
-    return sorted(styles)
 
 
 def _available_contexts() -> list[str]:
@@ -94,17 +79,6 @@ def _prompt_project_fields(
             return None
         additional_dirs.append(_to_relative(extra))
 
-    style_choices = ["none", *_available_styles()]
-    working_style = questionary.select(
-        "Working style:",
-        choices=style_choices,
-        default="none",
-    ).ask()
-    if working_style is None:
-        return None
-    if working_style == "none":
-        working_style = None
-
     description = questionary.text(
         "Description (optional):",
     ).ask()
@@ -131,7 +105,6 @@ def _prompt_project_fields(
         repo_root=repo_root,
         additional_dirs=additional_dirs,
         description=description.strip(),
-        working_style=working_style,
         context=context,
     )
     return name, project
@@ -200,18 +173,6 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
             return None
         additional_dirs.append(_to_relative(extra))
 
-    style_choices = ["none", *_available_styles()]
-    style_default = existing.working_style if existing.working_style else "none"
-    working_style = questionary.select(
-        "Working style:",
-        choices=style_choices,
-        default=style_default,
-    ).ask()
-    if working_style is None:
-        return None
-    if working_style == "none":
-        working_style = None
-
     description = questionary.text(
         "Description (optional):",
         default=existing.description,
@@ -240,7 +201,6 @@ def _prompt_edit_fields(existing: ProjectConfig) -> ProjectConfig | None:
         repo_root=repo_root,
         additional_dirs=additional_dirs,
         description=description.strip(),
-        working_style=working_style,
         context=context,
     )
 

@@ -36,5 +36,6 @@ echo "ANTHROPIC_CUSTOM_HEADERS: $([ -n "${ANTHROPIC_CUSTOM_HEADERS:-}" ] && echo
 echo "claude                : $(command claude --version 2>/dev/null || echo unavailable)"
 echo "──────────────────────────────────────────────────────────────────────"
 
-# Interactive shell; sources ~/.bashrc so the `claude` plugin alias is active.
+# Interactive shell. The plugin is enabled in ~/.claude/settings.json, so a bare
+# `claude` auto-loads it — no alias needed.
 exec bash

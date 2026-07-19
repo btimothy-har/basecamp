@@ -28,8 +28,13 @@ class ProjectConfig(BaseModel):
     repo_root: str
     additional_dirs: list[str] = Field(default_factory=list)
     description: str = ""
-    working_style: str | None = None
     context: str | None = None
+
+
+#: Fields removed from ``ProjectConfig`` but tolerated on load so a config.json
+#: written by an older basecamp (which seeded ``working_style``) still loads —
+#: ``extra="forbid"`` would otherwise reject it. Stripped, not migrated.
+_LEGACY_PROJECT_KEYS = ("working_style",)
 
 
 def load_projects(config: Settings | None = None) -> dict[str, ProjectConfig]:
@@ -43,8 +48,9 @@ def load_projects(config: Settings | None = None) -> dict[str, ProjectConfig]:
         return {}
     projects: dict[str, ProjectConfig] = {}
     for name, data in raw.items():
+        record = {k: v for k, v in data.items() if k not in _LEGACY_PROJECT_KEYS} if isinstance(data, dict) else data
         try:
-            projects[name] = ProjectConfig.model_validate(data)
+            projects[name] = ProjectConfig.model_validate(record)
         except ValidationError as exc:
             detail = exc.errors()[0]["msg"] if exc.errors() else str(exc)
             msg = f"Invalid project '{name}' in config.json: {detail}"

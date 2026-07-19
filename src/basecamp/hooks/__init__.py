@@ -1,11 +1,15 @@
-"""Claude Code lifecycle hooks (strictly fail-open).
+"""Claude Code hooks (strictly fail-open).
 
-The plugin's ``hooks.json`` wires ``SessionStart`` / ``SessionEnd`` / ``PreCompact``
-/ ``SubagentStop`` to ``basecamp-hook session-start`` / ``session-end`` /
-``pre-compact`` / ``subagent-stop``. Each invocation reads the hook JSON from stdin,
-dispatches to a handler, and *always* exits 0 — a hook must never block or fail a
-Claude Code session. Any failure (daemon down, malformed payload, unexpected error)
-is swallowed and logged best-effort.
+The plugin's ``hooks.json`` wires the session lifecycle — ``SessionStart`` /
+``SessionEnd`` / ``PreCompact`` / ``SubagentStop`` → ``basecamp-hook session-start``
+/ ``session-end`` / ``pre-compact`` / ``subagent-stop`` — plus a ``PostToolUse``
+``Write``/``Edit`` file-length warn → ``basecamp-hook file-length``. Each invocation
+reads the hook JSON from stdin, dispatches to a handler, and *always* exits 0 — a
+hook must never block or fail a Claude Code session. A handler may return a string,
+which is written to stdout as the hook's JSON response (the file-length warn uses
+this for its non-blocking advisory); the lifecycle handlers return ``None`` and stay
+silent. Any failure (daemon down, malformed payload, unexpected error) is swallowed
+and logged best-effort, so a broken hook degrades to no output rather than a block.
 """
 
 from __future__ import annotations
@@ -19,6 +23,7 @@ from typing import Any
 
 from basecamp.hub.claude.paths import claude_runtime_dir
 
+from .file_length import handle_file_length
 from .session import handle_pre_compact, handle_session_end, handle_session_start, handle_subagent_stop
 
 _HANDLERS = {
@@ -26,6 +31,7 @@ _HANDLERS = {
     "session-end": handle_session_end,
     "pre-compact": handle_pre_compact,
     "subagent-stop": handle_subagent_stop,
+    "file-length": handle_file_length,
 }
 
 
@@ -38,7 +44,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         payload = _read_payload()
         handler = _HANDLERS.get(event)
         if handler is not None:
-            handler(payload)
+            output = handler(payload)
+            if output:
+                sys.stdout.write(output)
     except Exception:  # noqa: BLE001 - hooks must never break a session
         _log_failure(event)
     return 0

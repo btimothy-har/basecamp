@@ -1,10 +1,7 @@
 """FastAPI application for the Claude Code session-lifecycle hub daemon.
 
 Deliberately tiny: health plus the hook-driven session routes over a single
-:class:`SessionStore`. None of the Pi swarm coordination surface (WebSocket,
-dispatch, workstreams, analysis) is wired here — importing ``basecamp.hub.app``
-would drag the whole swarm service graph along with it, which is exactly what the
-promotable Claude section must not depend on.
+:class:`SessionStore`.
 
 The one non-route concern is shutdown: transcript ingest runs as a detached
 background task (see :class:`.ingest.IngestScheduler`), so a ``lifespan`` handler

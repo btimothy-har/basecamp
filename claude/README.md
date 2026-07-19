@@ -48,7 +48,7 @@ Every basecamp capability lands in one of four homes, decided by two questions �
 - **Static** assets (skills, hooks, commands, agents) → **native plugin
   components**, which have first-class homes and shouldn't be contorted into MCP.
 - **Permissions** → **external** (the user's `~/.claude/settings.json`, or
-  written once by `basecamp setup`). The plugin cannot ship them: plugin
+  written once by `basecamp install`). The plugin cannot ship them: plugin
   `settings.json` supports only the `agent` and `subagentStatusLine` keys.
 - **Already native to Claude Code** → **dropped**.
 
@@ -75,7 +75,7 @@ performs today, so basecamp config stays the single source of truth.
 | Per-repo session setup (was the worktree setup hook) | ✅ hooks | **Native** — `hooks/hooks.json` → `SessionStart` |
 | `bash-reviewer` | ✅ `auto` mode; and MCP can't intercept host `Bash` | **Native hook** if wanted (`PreToolUse`); else drop |
 | basecamp slash commands | ✅ commands / skills | **Native** — `commands/`; invocable commands land as skills (e.g. `/create-pr` → the `pr` skill, landed) |
-| Cross-repo read boundary (`Read(~/code/**)` + secret `deny`s) | ✅ settings | **External** — user settings, or `basecamp setup` |
+| Cross-repo read boundary (`Read(~/code/**)` + secret `deny`s) | ✅ settings | **External** — user settings, or `basecamp install` |
 | `dispatch_agent` / within-session subagents | ✅ subagents + `agents/` | **Drop** |
 | `plan()` / plan mode | ✅ plan mode | **Drop** |
 | Task tracking (`create_tasks`, `start_task`, …) | ✅ todos | **Drop** |

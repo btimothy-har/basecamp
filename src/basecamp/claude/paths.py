@@ -40,9 +40,9 @@ def worktrees_root(home: Path | None = None) -> Path:
 def shipped_prompts_dir() -> Path:
     """Directory holding the committed prompt files (``<repo>/claude/prompts``).
 
-    Single source for the launcher (``system-prompt.md``) and setup
+    Single source for the launcher (``system-prompt.md``) and the installer
     (``doctrine.md``). Prefers the installer-recorded root, falling back to this
-    checkout when unset (editable/dev). Mirrors ``setup._source_dir()``.
+    checkout when unset (editable/dev). Mirrors ``install._source_dir()``.
     """
     from basecamp.core.settings import settings  # noqa: PLC0415  # local: avoid import cycle
 

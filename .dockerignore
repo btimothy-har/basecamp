@@ -14,14 +14,11 @@ node_modules/
 .playwright-mcp/
 **/__pycache__/
 
-# The Pi extension (TypeScript). This is live code, but the image builds only the
-# Python tool and never COPYs it, so excluding it is purely a build-context size
-# win — not a statement that it's dead.
+# Legacy Pi extension + pre-rearchitecture layout leftovers. These are gone from
+# the repo, but can linger untracked in a working tree that predates the Pi
+# deprecation, so they're excluded defensively to keep a stale checkout from
+# bloating the build context.
 pi/
-
-# Pre-rearchitecture layout leftovers. These namespace-portion dirs are gone from
-# the repo, but can linger untracked in a working tree that predates the move, so
-# they're excluded defensively to keep a stale checkout from bloating the context.
 core/
 workspace/
 pi-ui/
@@ -37,4 +34,3 @@ pi-bash-reviewer/
 docs/
 tests/
 migrations/
-scripts/

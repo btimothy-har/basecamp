@@ -32,7 +32,7 @@ from basecamp.workspace.ui import console, err_console
 @click.group("project", invoke_without_command=True)
 @click.pass_context
 def project_group(ctx: click.Context) -> None:
-    """Manage configured projects (repo roots, styles, context)."""
+    """Manage configured projects (repo roots, additional dirs, context)."""
     if ctx.invoked_subcommand is None:
         run_project_menu()
 
