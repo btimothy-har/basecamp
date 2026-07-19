@@ -19,6 +19,7 @@ dependencies = [
 
 [project.scripts]
 basecamp = "basecamp.cli:main"
+bcc = "basecamp.claude.launch:main"
 basecamp-mcp = "basecamp.mcp.server:main"
 basecamp-hook = "basecamp.hooks:main"
 

@@ -33,6 +33,14 @@ def test_parse_single_segment_is_none() -> None:
     assert parse_remote_identity("https://example.com/onlyone") is None
 
 
+def test_parse_rejects_traversal_segments() -> None:
+    # a crafted/mistyped origin must never yield a "../…" identity that would escape
+    # the scratch root when joined as a path component downstream
+    assert parse_remote_identity("https://host/../.ssh") is None
+    assert parse_remote_identity("https://host/../..") is None
+    assert parse_remote_identity("https://host/org/../name") == "org/name"
+
+
 def test_run_git_success_and_failure(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()

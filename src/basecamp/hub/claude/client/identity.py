@@ -89,7 +89,10 @@ def _parse_repo_identity(url: str) -> str | None:
             return None
         path = match.group("path")
     path = path.removesuffix(".git").strip("/")
-    parts = [segment for segment in path.split("/") if segment]
+    # Drop empty and traversal segments so a crafted/mistyped origin like
+    # ".../../.ssh" can't register a "../…" repo identity in the daemon store
+    # (mirrors basecamp.claude.gitutil.parse_remote_identity, the launcher copy).
+    parts = [segment for segment in path.split("/") if segment and segment not in (".", "..")]
     if len(parts) < 2:
         return None
     return "/".join(parts[-2:])
