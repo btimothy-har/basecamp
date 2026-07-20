@@ -14,6 +14,7 @@ import {
 } from "../../git/worktrees/crud.ts";
 import { processScoped } from "../../global-registry.ts";
 import { registerCwdProvider } from "../../host/exec.ts";
+import { isWithin } from "../../host/paths.ts";
 import { updateCurrentSessionStateIfInitialized } from "../../session/state/index.ts";
 import { buildActiveWorktreeState } from "./affinity.ts";
 import { SCRATCH_ROOT } from "./constants.ts";
@@ -39,16 +40,11 @@ function worktreeRequiresRepo(): never {
 	throw new Error("Workspace worktrees require a git repository");
 }
 
-function isPathWithin(child: string, parent: string): boolean {
-	const relative = path.relative(parent, child);
-	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
 function computeEffectiveCwd(state: WorkspaceState): string {
 	const targetPath = state.activeWorktree?.path;
 	if (!targetPath || !state.protectedRoot) return state.launchCwd;
 
-	if (isPathWithin(state.launchCwd, state.protectedRoot)) {
+	if (isWithin(state.launchCwd, state.protectedRoot)) {
 		const relative = path.relative(state.protectedRoot, state.launchCwd);
 		return path.resolve(targetPath, relative);
 	}

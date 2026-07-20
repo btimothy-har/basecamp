@@ -48,3 +48,20 @@ export function basecampCorePaths(homeDir = os.homedir()): BasecampCorePaths {
 		sessionStateDir: path.join(coreDir, "session-state"),
 	};
 }
+
+/**
+ * True when `child` is `parent` itself or nested inside it — path-string
+ * containment (no realpath/symlink resolution). The shared form previously
+ * copied verbatim across workspace guards, worktree migration, agent
+ * sandboxing, and bigquery. Convention: `(child, parent)`.
+ */
+export function isWithin(child: string, parent: string): boolean {
+	const relative = path.relative(parent, child);
+	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+/** Like {@link isWithin} but excludes the equal-path case (strictly nested). */
+export function isStrictlyWithin(child: string, parent: string): boolean {
+	const relative = path.relative(parent, child);
+	return !!relative && !relative.startsWith("..") && !path.isAbsolute(relative);
+}

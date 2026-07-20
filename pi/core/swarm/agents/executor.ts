@@ -8,6 +8,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isWithin } from "../../host/paths.ts";
 import { type AgentConfig, getAgentToolAllowlist, getMutativeAgentToolAllowlist } from "./types.ts";
 
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
@@ -28,11 +29,6 @@ export function sanitizeAgentSpawnEnv(input: Record<string, string>): Record<str
 		output[key] = value;
 	}
 	return output;
-}
-
-function isPathWithin(parent: string, child: string): boolean {
-	const relative = path.relative(parent, child);
-	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 function hasControlCharacter(value: string): boolean {
@@ -84,7 +80,7 @@ export interface PiArgsOpts {
 export function ensureAgentDir(name: string): string {
 	const baseDir = path.resolve(AGENT_BASE);
 	const dir = path.resolve(baseDir, name);
-	if (!isPathWithin(baseDir, dir)) {
+	if (!isWithin(dir, baseDir)) {
 		throw new Error(`Agent directory is outside basecamp-agents directory: ${name}`);
 	}
 	fs.mkdirSync(dir, { recursive: true });

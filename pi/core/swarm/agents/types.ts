@@ -2,6 +2,7 @@
  * Type definitions for the agent system.
  */
 
+import { getAgentDepth } from "../../host/env.ts";
 import type { AgentConfig } from "./discovery.ts";
 
 // Re-export agent discovery types so runtime modules have one import surface.
@@ -18,7 +19,7 @@ export interface AgentDepthState {
 
 /** Resolve this process's agent-depth gating from BASECAMP_AGENT_DEPTH / BASECAMP_AGENT_MAX_DEPTH. */
 export function resolveAgentDepthState(): AgentDepthState {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
+	const depth = getAgentDepth();
 	const isTopLevel = Number.isFinite(depth) ? depth <= 0 : true;
 	const maxDepth = Number(process.env.BASECAMP_AGENT_MAX_DEPTH ?? DEFAULT_AGENT_MAX_DEPTH);
 	const atMaxDepth = depth >= maxDepth;

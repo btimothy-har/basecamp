@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isStrictlyWithin, isWithin } from "../../host/paths.ts";
 import { WORKTREES_ROOT } from "../constants.ts";
 import { gitOutput } from "../repo.ts";
 import {
@@ -25,16 +26,6 @@ export interface LegacyMigrationResult {
 	skipped: { label: string; reason: string }[];
 }
 
-function isPathWithin(child: string, parent: string): boolean {
-	const relative = path.relative(parent, child);
-	return !!relative && !relative.startsWith("..") && !path.isAbsolute(relative);
-}
-
-function isPathEqualOrWithin(child: string, parent: string): boolean {
-	const relative = path.relative(parent, child);
-	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
 export function planLegacyWorktreeMigration(opts: {
 	records: { path: string; branch: string | null }[];
 	identity: string;
@@ -56,9 +47,9 @@ export function planLegacyWorktreeMigration(opts: {
 	const moves: PlannedWorktreeMove[] = [];
 	for (const record of opts.records.slice(1)) {
 		const p = path.resolve(record.path);
-		if (!isPathWithin(p, legacyRoot)) continue;
-		if (isPathEqualOrWithin(p, newRoot)) continue;
-		if (p === cwd || isPathEqualOrWithin(cwd, p)) continue;
+		if (!isStrictlyWithin(p, legacyRoot)) continue;
+		if (isWithin(p, newRoot)) continue;
+		if (p === cwd || isWithin(cwd, p)) continue;
 
 		try {
 			const label = labelFromWorktreePath(bareName, p);

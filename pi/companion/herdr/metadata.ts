@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { processScoped } from "#core/global-registry.ts";
+import { getAgentDepth } from "#core/host/env.ts";
 import { exec } from "#core/host/exec.ts";
 import type { CompanionSnapshot } from "../snapshot/model.ts";
 
@@ -98,7 +99,7 @@ export async function reportHerdrMetadata(pi: ExtensionAPI, snapshot: CompanionS
 			herdrEnv: process.env.HERDR_ENV,
 			herdrPaneId: process.env.HERDR_PANE_ID,
 			herdrSocketPath: process.env.HERDR_SOCKET_PATH,
-			agentDepth: Number(process.env.BASECAMP_AGENT_DEPTH ?? "0"),
+			agentDepth: getAgentDepth(),
 		};
 		if (!shouldReportHerdrMetadata(env) || !env.herdrPaneId) return;
 		await exec(pi, "herdr", buildHerdrMetadataArgs(env.herdrPaneId, snapshot, nextHerdrMetadataSeq()));

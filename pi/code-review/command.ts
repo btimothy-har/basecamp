@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { errorMessage } from "#core/errors.ts";
+import { isSubagent } from "#core/host/env.ts";
 import { exec } from "#core/host/exec.ts";
 import { basecampExtensionRoot } from "#core/host/paths.ts";
 import { buildAgentHandle, getActiveDaemonConnection } from "#core/hub/index.ts";
@@ -9,10 +11,9 @@ import { getWorkspaceState, type WorkspaceState } from "#core/project/workspace/
 import { createDaemonClient } from "#core/swarm/agents/client.ts";
 import { discoverAgents } from "#core/swarm/agents/discovery.ts";
 import { dispatchWithHandleRetry } from "#core/swarm/agents/dispatch-retry.ts";
-import { errorMessage } from "#core/swarm/agents/errors.ts";
-import { buildAgentLaunchSpec, processEnvForSpawn } from "#core/swarm/agents/launch.ts";
+import { buildAgentLaunchSpec, processEnvForSpawn, resolveParentSession } from "#core/swarm/agents/launch.ts";
 import { annotateFindings } from "./annotate-pane.ts";
-import { isSubagent, persistReviewArtifact } from "./command-helpers.ts";
+import { persistReviewArtifact } from "./command-helpers.ts";
 import { formatReviewPrompt } from "./format.ts";
 import { type OrchestrateDeps, REVIEWERS, type ReviewerSpec, type ReviewScope, runReview } from "./orchestrate.ts";
 import { transposeReport } from "./transpose.ts";
@@ -125,8 +126,7 @@ export function registerReviewCommand(pi: ExtensionAPI, deps: ReviewCommandDeps 
 						resolveModelAlias: deps.resolveModelAlias,
 						workspace: deps.getWorkspaceState(),
 						agentId,
-						parentSession:
-							process.env.BASECAMP_SESSION_NAME ?? (pi.getSessionName()?.trim() || ctx.sessionManager.getSessionId()),
+						parentSession: resolveParentSession(pi, ctx),
 						project: process.env.BASECAMP_PROJECT ?? "default",
 					});
 					if (!launch.ok) throw new Error(launch.message);

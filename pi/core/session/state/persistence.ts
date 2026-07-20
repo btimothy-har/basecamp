@@ -2,6 +2,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { isRecord, writeJsonFileAtomic } from "../../host/files.ts";
 import {
 	type BasecampSessionState,
 	defaultSessionStateDir,
@@ -31,10 +32,6 @@ export function createDefaultSessionState(identity: SessionStateIdentity): Basec
 		agentMode: null,
 		title: null,
 	};
-}
-
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isSessionStateWorktree(value: unknown): value is SessionStateWorktree {
@@ -111,9 +108,6 @@ export function saveSessionState(state: BasecampSessionState, stateDir?: string)
 		updatedAt: new Date().toISOString(),
 	};
 	const filePath = buildSessionStatePath(next.sessionId, stateDir);
-	fs.mkdirSync(path.dirname(filePath), { recursive: true });
-	const tmp = `${filePath}.tmp`;
-	fs.writeFileSync(tmp, JSON.stringify(next, null, 2));
-	fs.renameSync(tmp, filePath);
+	writeJsonFileAtomic(filePath, next);
 	return next;
 }

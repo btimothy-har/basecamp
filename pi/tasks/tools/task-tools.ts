@@ -16,7 +16,7 @@ import {
 	requireTasks,
 } from "../lifecycle/text.ts";
 import type { TaskStatus } from "../schemas/task.ts";
-import { renderPartial, renderSuccess } from "./render.ts";
+import { renderIndexedTaskCall, renderPartial, renderSuccess } from "./render.ts";
 
 export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void {
 	// --- Tool: update_goal ---
@@ -124,11 +124,7 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@earendil-works/pi-tui");
-			const idx = args.task as number;
-			const label = runtime.state.tasks[idx]?.label ?? "...";
-			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
-			return new Text(theme.fg("toolTitle", theme.bold("start_task ")) + theme.fg("dim", `[${idx}] ${preview}`), 0, 0);
+			return renderIndexedTaskCall("start_task", args, theme, runtime);
 		},
 		renderResult(_result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);
@@ -177,15 +173,7 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@earendil-works/pi-tui");
-			const idx = args.task as number;
-			const label = runtime.state.tasks[idx]?.label ?? "...";
-			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
-			return new Text(
-				theme.fg("toolTitle", theme.bold("complete_task ")) + theme.fg("dim", `[${idx}] ${preview}`),
-				0,
-				0,
-			);
+			return renderIndexedTaskCall("complete_task", args, theme, runtime);
 		},
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);
@@ -211,11 +199,7 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@earendil-works/pi-tui");
-			const idx = args.task as number;
-			const label = runtime.state.tasks[idx]?.label ?? "...";
-			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
-			return new Text(theme.fg("toolTitle", theme.bold("get_task ")) + theme.fg("dim", `[${idx}] ${preview}`), 0, 0);
+			return renderIndexedTaskCall("get_task", args, theme, runtime);
 		},
 		renderResult(_result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);
@@ -250,11 +234,7 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 			};
 		},
 		renderCall(args, theme) {
-			const { Text } = require("@earendil-works/pi-tui");
-			const idx = args.task as number;
-			const label = runtime.state.tasks[idx]?.label ?? "...";
-			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
-			return new Text(theme.fg("toolTitle", theme.bold("delete_task ")) + theme.fg("dim", `[${idx}] ${preview}`), 0, 0);
+			return renderIndexedTaskCall("delete_task", args, theme, runtime);
 		},
 		renderResult(_result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);

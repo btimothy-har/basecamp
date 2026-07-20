@@ -8,6 +8,7 @@ import {
 	type ListAgentsDetails,
 	ListAgentsParams,
 	type PublicListAgentItem,
+	requireAgentsSkillMessage,
 	shortListAgentsSummary,
 	toPublicListAgent,
 } from "./support.ts";
@@ -28,7 +29,7 @@ export function registerListAgentsTool(
 					content: [
 						{
 							type: "text",
-							text: 'Load the agents skill first: call skill({ name: "agents" }) before listing agents.',
+							text: requireAgentsSkillMessage("listing agents"),
 						},
 					],
 					isError: true,

@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMode } from "#core/agent-mode/index.ts";
+import { writeJsonFileAtomic } from "#core/host/files.ts";
 import { basecampRoot } from "#core/host/paths.ts";
 import type { TaskStatus } from "#tasks/index.ts";
 
@@ -92,10 +93,7 @@ export function buildSnapshot(input: SnapshotInput): CompanionSnapshot {
 }
 
 export function writeSnapshotFile(filePath: string, snapshot: CompanionSnapshot): void {
-	fs.mkdirSync(path.dirname(filePath), { recursive: true });
-	const tmp = `${filePath}.tmp`;
-	fs.writeFileSync(tmp, JSON.stringify(snapshot, null, 2));
-	fs.renameSync(tmp, filePath);
+	writeJsonFileAtomic(filePath, snapshot);
 }
 
 export function removeSnapshotFile(filePath: string): void {

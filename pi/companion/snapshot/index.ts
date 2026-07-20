@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentMode, onAgentModeChange } from "#core/agent-mode/index.ts";
 import { processScoped } from "#core/global-registry.ts";
+import { isSubagent } from "#core/host/env.ts";
 import { getWorkspaceEffectiveCwd, getWorkspaceState, onWorkspaceChange } from "#core/project/workspace/state.ts";
 import { getCurrentSessionState, onCurrentSessionTitleChange } from "#core/session/state/index.ts";
 import { getInvokedSkills } from "#core/skills/tracker.ts";
@@ -98,7 +99,7 @@ function writeNow(pi: ExtensionAPI): void {
 }
 
 export default function registerCompanion(pi: ExtensionAPI): void {
-	if (Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0) return;
+	if (isSubagent()) return;
 
 	const state = getCompanionState();
 	clearSubscriptions(state);

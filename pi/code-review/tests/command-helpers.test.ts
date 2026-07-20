@@ -3,7 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
-import { isSubagent, persistReviewArtifact } from "../command-helpers.ts";
+import { isSubagent } from "#core/host/env.ts";
+import { persistReviewArtifact } from "../command-helpers.ts";
 import type { Finding } from "../findings.ts";
 import type { ReviewResult } from "../orchestrate.ts";
 

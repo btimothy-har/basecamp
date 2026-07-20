@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { errorMessage } from "#core/swarm/agents/errors.ts";
+import { errorMessage } from "#core/errors.ts";
 
 export const HERDR_WORKSTREAM_OPEN_TIMEOUT_MS = 5000;
 

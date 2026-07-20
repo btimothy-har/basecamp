@@ -3,33 +3,40 @@ import { getSupportedThinkingLevels } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveModelAlias } from "./index.ts";
 
+/** Split a `provider/modelId` reference; null when there is no interior `/`. */
+function parseProviderModelRef(reference: string): { provider: string; modelId: string } | null {
+	const separator = reference.indexOf("/");
+	if (separator > 0 && separator < reference.length - 1) {
+		return { provider: reference.slice(0, separator), modelId: reference.slice(separator + 1) };
+	}
+	return null;
+}
+
+/** The single registry model whose id exactly equals `id`, or undefined if not exactly one. */
+function findModelByExactId(ctx: ExtensionContext, id: string): Model<Api> | undefined {
+	const matches = ctx.modelRegistry.getAll().filter((model) => model.id === id);
+	return matches.length === 1 ? matches[0] : undefined;
+}
+
 export function resolveModelFromString(ctx: ExtensionContext, modelName?: string): Model<Api> | undefined {
 	if (!modelName) return ctx.model;
 
-	const separator = modelName.indexOf("/");
-	if (separator > 0 && separator < modelName.length - 1) {
-		const provider = modelName.slice(0, separator);
-		const modelId = modelName.slice(separator + 1);
-		const model = ctx.modelRegistry.find(provider, modelId);
+	const ref = parseProviderModelRef(modelName);
+	if (ref) {
+		// Intentional divergence from resolveModelReference: a provider/modelId that fails
+		// to resolve falls through to an exact-id match rather than returning the failed
+		// lookup. Pinned by model/tests/resolution.test.ts.
+		const model = ctx.modelRegistry.find(ref.provider, ref.modelId);
 		if (model) return model;
 	}
 
-	const matches = ctx.modelRegistry.getAll().filter((model) => model.id === modelName);
-	if (matches.length === 1) return matches[0];
-
-	return ctx.model;
+	return findModelByExactId(ctx, modelName) ?? ctx.model;
 }
 
 export function resolveModelReference(ctx: ExtensionContext, modelReference: string): Model<Api> | undefined {
-	const separator = modelReference.indexOf("/");
-	if (separator > 0 && separator < modelReference.length - 1) {
-		const provider = modelReference.slice(0, separator);
-		const modelId = modelReference.slice(separator + 1);
-		return ctx.modelRegistry.find(provider, modelId);
-	}
-
-	const matches = ctx.modelRegistry.getAll().filter((model) => model.id === modelReference);
-	return matches.length === 1 ? matches[0] : undefined;
+	const ref = parseProviderModelRef(modelReference);
+	if (ref) return ctx.modelRegistry.find(ref.provider, ref.modelId);
+	return findModelByExactId(ctx, modelReference);
 }
 
 export async function resolveAliasedModel(

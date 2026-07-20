@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDepth } from "../host/env.ts";
 import { connect, type DaemonConnection } from "./connection.ts";
 import {
 	type DaemonIdentityDeps,
@@ -53,7 +54,7 @@ async function connectSpawnedAgent(ctx: ExtensionContext): Promise<DaemonConnect
 }
 
 export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps = defaultIdentityDeps()): void {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? 0);
+	const depth = getAgentDepth();
 	const isTopLevel = Number.isFinite(depth) ? depth <= 0 : true;
 	const isDaemonSpawnedAgent = !isTopLevel && Boolean(process.env.BASECAMP_RUN_ID);
 

@@ -1,6 +1,7 @@
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { isCopilotLaunch } from "#core/agent-mode/copilot.ts";
 import { setAgentMode } from "#core/agent-mode/index.ts";
+import { errorMessage } from "#core/errors.ts";
 import { resolveDaemonPaths } from "#core/hub/index.ts";
 import {
 	getWorkspaceState,
@@ -9,7 +10,6 @@ import {
 	type WorkspaceState,
 } from "#core/project/workspace/state.ts";
 import type { DaemonClient, WorkstreamDetail } from "#core/swarm/agents/client.ts";
-import { errorMessage } from "#core/swarm/agents/errors.ts";
 import { buildWorkstreamLaunchBrief } from "./brief.ts";
 
 // Cap only; waitForWorkspaceState resolves early via the workspace onChange event, so a generous

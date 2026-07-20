@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { sleep } from "../../async.ts";
 import type { DaemonConnection } from "./client.ts";
 import {
 	appendText,
@@ -24,10 +25,6 @@ import {
 } from "./run-result.ts";
 
 const FLUSH_DELAY_MS = 50;
-
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 function runnerManagedResultPath(): string | null {
 	if (process.env[BASECAMP_RUNNER_MANAGED_RESULT] !== "1") return null;

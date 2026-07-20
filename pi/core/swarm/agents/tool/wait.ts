@@ -8,6 +8,7 @@ import {
 	formatWaitItemText,
 	normalizeHandles,
 	preview,
+	requireAgentsSkillMessage,
 	type WaitDetails,
 	WaitForAgentParams,
 	type WaitHandleResult,
@@ -29,7 +30,7 @@ export function registerWaitForAgentTool(
 					content: [
 						{
 							type: "text",
-							text: 'Load the agents skill first: call skill({ name: "agents" }) before dispatching.',
+							text: requireAgentsSkillMessage("waiting for agents"),
 						},
 					],
 					isError: true,

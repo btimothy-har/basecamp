@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
+import { sleep } from "../async.ts";
 import type { DaemonPaths } from "./paths.ts";
 
 export type FindDaemonPidFn = (socketPath: string) => Promise<number | null>;
@@ -7,9 +8,7 @@ export type KillPidFn = (pid: number, signal: NodeJS.Signals) => void;
 
 const DEFAULT_DAEMON_STOP_TIMEOUT_MS = 2_000;
 
-export function defaultSleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
+export const defaultSleep = sleep;
 
 export function defaultPidExists(pid: number): boolean {
 	if (!Number.isInteger(pid) || pid <= 0) return false;

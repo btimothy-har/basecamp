@@ -1,12 +1,13 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { errorMessage } from "../../../errors.ts";
 import type { DaemonConnection } from "../../../hub/index.ts";
 import { buildAgentHandle } from "../../../hub/index.ts";
 import type { WaitResultFrame } from "../../../hub/protocol/index.ts";
 import { discoverAgents } from "../discovery.ts";
 import { dispatchWithHandleRetry } from "../dispatch-retry.ts";
-import { buildAgentLaunchSpec, processEnvForSpawn } from "../launch.ts";
+import { buildAgentLaunchSpec, processEnvForSpawn, resolveParentSession } from "../launch.ts";
 import { createDaemonClient } from "../rpc.ts";
 import {
 	AskAgentParams,
@@ -15,6 +16,7 @@ import {
 	type DaemonToolDeps,
 	hasText,
 	preview,
+	requireAgentsSkillMessage,
 } from "./support.ts";
 
 export function registerAskAgentTool(
@@ -34,7 +36,7 @@ export function registerAskAgentTool(
 					content: [
 						{
 							type: "text",
-							text: 'Load the agents skill first: call skill({ name: "agents" }) before dispatching.',
+							text: requireAgentsSkillMessage("asking agents"),
 						},
 					],
 					isError: true,
@@ -79,12 +81,11 @@ export function registerAskAgentTool(
 					resolveModelAlias: deps.resolveModelAlias,
 					workspace: deps.getWorkspaceState(),
 					agentId,
-					parentSession:
-						process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId(),
+					parentSession: resolveParentSession(pi, ctx),
 					project: process.env.BASECAMP_PROJECT ?? "default",
 				});
 			} catch (error) {
-				const msg = error instanceof Error ? error.message : String(error);
+				const msg = errorMessage(error);
 				return { content: [{ type: "text", text: msg }], isError: true, details: null };
 			}
 			if (!agentLaunch.ok) {

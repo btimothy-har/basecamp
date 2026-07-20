@@ -19,11 +19,6 @@ interface ReviewArtifact {
 export const PRIVATE_FILE_MODE = 0o600;
 export const PRIVATE_DIR_MODE = 0o700;
 
-export function isSubagent(): boolean {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
-	return Number.isFinite(depth) && depth > 0;
-}
-
 export function persistReviewArtifact(result: ReviewResult, reactions: (string | null)[] | null): string {
 	const findings: AnnotatedFinding[] = result.findings.map((finding, index) => ({
 		...finding,
