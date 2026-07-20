@@ -9,6 +9,7 @@ def test_top_level_commands_match_new_shape() -> None:
     commands = cli.basecamp.commands
 
     assert "config" in commands
+    assert "doctor" in commands
     assert "companion" in commands
     assert "setup" in commands
     assert "install" in commands
