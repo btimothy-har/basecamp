@@ -31,8 +31,7 @@ class AgentsWriterMixin:
         """Insert/update an agent row and refresh last-seen timestamp."""
 
         now = self._now()
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._writing(immediate=True) as connection:
             existing = connection.execute(
                 """
                 SELECT agent_handle, agent_type, model, sibling_group, session_file, repo, worktree_label

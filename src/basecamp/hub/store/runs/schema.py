@@ -4,7 +4,17 @@ from __future__ import annotations
 
 import sqlite3
 
+from .._sqlite import ensure_column
+
 TERMINAL_STATUSES = ("completed", "failed")
+
+# Columns added after the table's first release (the CREATE carries them fresh).
+_RUNS_MIGRATED_COLUMNS = (
+    ("dispatcher_id", "TEXT"),
+    ("exit_code", "INTEGER"),
+    ("pgid", "INTEGER"),
+    ("report_token_hash", "TEXT"),
+)
 
 
 class RunsSchemaMixin:
@@ -42,31 +52,5 @@ class RunsSchemaMixin:
             )
             """
         )
-        self._ensure_runs_dispatcher_id_column(connection)
-        self._ensure_runs_exit_code_column(connection)
-        self._ensure_runs_pgid_column(connection)
-        self._ensure_runs_report_token_hash_column(connection)
-
-    def _ensure_runs_dispatcher_id_column(self, connection: sqlite3.Connection) -> None:
-        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
-        names = {column[1] for column in columns}
-        if "dispatcher_id" not in names:
-            connection.execute("ALTER TABLE runs ADD COLUMN dispatcher_id TEXT")
-
-    def _ensure_runs_exit_code_column(self, connection: sqlite3.Connection) -> None:
-        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
-        names = {column[1] for column in columns}
-        if "exit_code" not in names:
-            connection.execute("ALTER TABLE runs ADD COLUMN exit_code INTEGER")
-
-    def _ensure_runs_pgid_column(self, connection: sqlite3.Connection) -> None:
-        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
-        names = {column[1] for column in columns}
-        if "pgid" not in names:
-            connection.execute("ALTER TABLE runs ADD COLUMN pgid INTEGER")
-
-    def _ensure_runs_report_token_hash_column(self, connection: sqlite3.Connection) -> None:
-        columns = connection.execute("PRAGMA table_info(runs)").fetchall()
-        names = {column[1] for column in columns}
-        if "report_token_hash" not in names:
-            connection.execute("ALTER TABLE runs ADD COLUMN report_token_hash TEXT")
+        for name, decl in _RUNS_MIGRATED_COLUMNS:
+            ensure_column(connection, "runs", name, decl)

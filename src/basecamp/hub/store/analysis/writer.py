@@ -18,7 +18,7 @@ class AnalysisWriterMixin:
         """Upsert the latest analysis for a session (replaces any prior row)."""
 
         timestamp = now or self._now()
-        with self._connect() as connection:
+        with self._writing() as connection:
             connection.execute(
                 """
                 INSERT INTO analysis (owner_id, based_on_thread_seq, model, sections_json, updated_at)

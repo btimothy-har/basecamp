@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import json
-import sqlite3
 from typing import Any
 
+from .._sqlite import load_json_column
 from .schema import TERMINAL_STATUSES
 
 
@@ -19,8 +18,7 @@ class RunsReaderMixin:
         agent's ``owned_worktree`` (the reaper's counterpart after a daemon crash).
         """
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             rows = connection.execute(
                 """
                 SELECT id, agent_id, pgid, status, spec_json
@@ -33,24 +31,19 @@ class RunsReaderMixin:
         results: list[dict[str, Any]] = []
         for row in rows:
             result = dict(row)
-            spec_json = result.get("spec_json")
-            if isinstance(spec_json, str):
-                result["spec_json"] = json.loads(spec_json)
+            result["spec_json"] = load_json_column(result.get("spec_json"))
             results.append(result)
         return results
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         """Fetch a run by id as a dict, or None when absent."""
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             row = connection.execute("SELECT * FROM runs WHERE id = ?", (run_id,)).fetchone()
             if row is None:
                 return None
             result = dict(row)
-            spec_json = result.get("spec_json")
-            if isinstance(spec_json, str):
-                result["spec_json"] = json.loads(spec_json)
+            result["spec_json"] = load_json_column(result.get("spec_json"))
             return result
 
     def resolve_agent_root(self, agent_id: str) -> str | None:
@@ -87,8 +80,7 @@ class RunsReaderMixin:
         where_terminal = " AND status IN ('completed', 'failed')" if terminal_only else ""
         query = f"SELECT id, status, result, error FROM runs WHERE id IN ({placeholders}){where_terminal}"
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             rows = connection.execute(query, tuple(run_ids)).fetchall()
 
         return [
@@ -104,8 +96,7 @@ class RunsReaderMixin:
     def get_run_events(self, run_id: str) -> list[dict[str, Any]]:
         """Return run events in sequence order."""
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             rows = connection.execute(
                 "SELECT run_id, seq, kind, payload_json, ts FROM run_events WHERE run_id = ? ORDER BY seq ASC",
                 (run_id,),
@@ -114,8 +105,6 @@ class RunsReaderMixin:
         results: list[dict[str, Any]] = []
         for row in rows:
             data = dict(row)
-            payload_json = data.get("payload_json")
-            if isinstance(payload_json, str):
-                data["payload_json"] = json.loads(payload_json)
+            data["payload_json"] = load_json_column(data.get("payload_json"))
             results.append(data)
         return results

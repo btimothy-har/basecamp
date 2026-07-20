@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 
+from .._sqlite import ensure_column
+
 WORKSTREAM_STATUSES = ("open", "closed")
 
 
@@ -55,14 +57,8 @@ class WorkstreamsSchemaMixin:
             )
             """
         )
-        self._ensure_workstreams_version_column(connection)
+        ensure_column(connection, "workstreams", "version", "INTEGER NOT NULL DEFAULT 1")
         self._backfill_workstream_versions(connection)
-
-    def _ensure_workstreams_version_column(self, connection: sqlite3.Connection) -> None:
-        columns = connection.execute("PRAGMA table_info(workstreams)").fetchall()
-        names = {column[1] for column in columns}
-        if "version" not in names:
-            connection.execute("ALTER TABLE workstreams ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
 
     def _backfill_workstream_versions(self, connection: sqlite3.Connection) -> None:
         """Seed the history table with each workstream's current version snapshot.
