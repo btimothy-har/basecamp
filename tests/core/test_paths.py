@@ -6,6 +6,7 @@ from pathlib import Path
 
 import basecamp.core
 from basecamp.core import paths
+from basecamp.core.settings import Settings, settings
 
 
 class TestPaths:
@@ -26,6 +27,11 @@ class TestPaths:
 
 class TestPublicApi:
     def test_exports_present(self) -> None:
+        # NB: the ``settings`` singleton is intentionally not re-exported here —
+        # its name collides with the ``basecamp.core.settings`` subpackage, so
+        # binding it on ``basecamp.core`` would shadow the package for
+        # ``import basecamp.core.settings.<sub>`` forms. Import it from its module:
+        # ``from basecamp.core.settings import settings``.
         expected = {
             "BASECAMP_CONFIG_DIR",
             "DEFAULT_CONFIG_PATH",
@@ -36,11 +42,13 @@ class TestPublicApi:
             "USER_PROMPTS_DIR",
             "USER_STYLES_DIR",
             "atomic_write_json",
-            "settings",
         }
         assert expected <= set(basecamp.core.__all__)
         for name in expected:
             assert hasattr(basecamp.core, name)
+
+    def test_settings_singleton_importable_from_module(self) -> None:
+        assert isinstance(settings, Settings)
 
     def test_launcher_error_is_exception(self) -> None:
         assert issubclass(basecamp.core.LauncherError, Exception)
