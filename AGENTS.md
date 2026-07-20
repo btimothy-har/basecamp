@@ -4,7 +4,7 @@
 
 A project-aware Pi extension suite for AI coding agents. Configures project context, manages isolated git worktrees, and provides workflow tooling for coding sessions.
 
-The repo is organized by the artifacts it ships (design record: docs/design/repo-rearchitecture.md):
+The repo is organized by the artifacts it ships:
 
 | Product | Directory | Purpose |
 |---------|-----------|---------|
@@ -50,6 +50,14 @@ docs/  tests/  migrations/     # design docs; Python tests (tests/<domain>/); on
 
 Cross-domain TypeScript imports use Node subpath imports (`#core/*` freely; other domains only via `#<domain>/index.ts`; core imports no other domain), enforced by `scripts/check-boundaries.ts` in `npm run check`.
 
+## Documentation
+
+`AGENTS.md` (this file) is the current-state guide to how the repo is built; `README.md` is the user-facing overview. Keep both accurate when things change — durable architecture rationale belongs in the **Architecture Decisions** section below, kept next to the guidance agents actually read.
+
+`docs/design/` is a **historical archive**, not an active workflow. Each file records the rationale for one past structural change; entries carry their own status header and may lag the code. Read them for background on *why* a subsystem is shaped the way it is — they are reference material, **not a pattern to imitate.**
+
+Do **not** write design or plan documents into `docs/` as part of routine work. Planning is done through the `plan()` tool, and the approved plan is the artifact handed to the implementer — it is never persisted to `docs/`. Most changes need no document at all: the code, its tests, and this file are the record. Add a new design doc only when the user explicitly asks for one.
+
 ## Architecture Decisions
 
 ### Prompt System
@@ -66,7 +74,7 @@ Playwright owns a fresh managed persistent profile. The retired `~/.pi/basecamp/
 
 ### Session Modes
 
-Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `work`, and `copilot`. `work` is the default — the working posture where the primary session implements directly; `analysis` and `planning` are read-only / pre-implementation postures. shift+tab (`cycleAgentMode`) rotates only the cyclable modes (`analysis`, `planning`, `work`) — copilot is excluded from the cycle. Approving an implementation plan hands off to `work` mode (the old supervisor-vs-IC/executor choice is gone); analysis plans stay in `analysis`. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers sharing one predicate (`isCopilotMode` in `pi/core/agent-mode`, paired with `PLAN_TOOL_NAME` — `plan()` is a Pi built-in, so its name is a core-owned constant beside the mode policy, not a tasks export): the tasks module's `tool_call` block (the hard guarantee) and the workspace module's copilot capabilities-index filter (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
+Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis`, `planning`, `work`, and `copilot`. `work` is the default — the working posture where the primary session implements directly; `analysis` and `planning` are read-only / pre-implementation postures. shift+tab (`cycleAgentMode`) rotates only the cyclable modes (`analysis`, `planning`, `work`) — copilot is excluded from the cycle. Approving an implementation plan hands off to `work` mode; analysis plans stay in `analysis`. `copilot` is a locked, launch-only mode: it is entered solely via `pi --copilot` (registered in `registerSession`, which forces copilot at `session_start` when the flag is present, else restores the stored mode) and is immutable — `cycleAgentMode` is a no-op in copilot, so shift+tab can neither enter nor leave it. `pi --copilot` takes precedence over `pi --workstream` (the workstream startup defers with a warning). Because Pi cannot unregister or per-session-gate a tool, `plan()` is removed from copilot by two layers sharing one predicate (`isCopilotMode` in `pi/core/agent-mode`, paired with `PLAN_TOOL_NAME` — `plan()` is a Pi built-in, so its name is a core-owned constant beside the mode policy, not a tasks export): the tasks module's `tool_call` block (the hard guarantee) and the workspace module's copilot capabilities-index filter (with copilot.md carrying no plan() guidance). The `/plan` slash command is deprecated repo-wide; the `plan()` tool and `/show-plan` remain for non-copilot sessions.
 
 ### Agent Execution Posture
 
@@ -78,7 +86,7 @@ All TypeScript behavior ships as one Pi extension; its entry point is `pi/extens
 
 ### Code Review
 
-`/skill:code-review` (owned by the `code-review` domain, in `pi/code-review/`) runs an independent third-party review of the current branch. It is a user-invoked skill (`skills/code-review/SKILL.md`, `disable-model-invocation` — hidden from the model and never exposed in subagents; registered primary-only via a `resources_discover` hook). The top-level session runs the skill, which loads the `agents` skill, dispatches the six read-only reviewer specialists (security, testing, docs, clarity, conventions, general) via `dispatch_agent` with a fixed scope-only brief, spawns extra `general-reviewer`s for any aspect the fixed six don't cover, `wait_for_agent`s on all handles, then transposes their plain-text reports into the `Finding` schema and calls the single registered `report_findings` tool. `report_findings` merges the findings, computes the verdict deterministically (no LLM synthesis; the verdict ignores the reviewee's opinion), opens the interactive annotate pane (finding → author `response` → user reaction), and persists a private JSON packet (structured findings + responses + reactions; raw reviewer prose is not retained). The top-level session is the reviewee — it orchestrates and relays but never decides the verdict, carries every finding through verbatim, and may attach a per-finding `response` to contest a finding but never drops or softens one; reviewer independence lives in the persona prompts, not an orchestration boundary. It is manual only. This replaces the earlier `/code-review` command (daemon-dispatched, `fast`-model transpose) and, before it, the `review_packet` / `code-walkthrough` surfaces.
+`/skill:code-review` (owned by the `code-review` domain, in `pi/code-review/`) runs an independent third-party review of the current branch. It is a user-invoked skill (`skills/code-review/SKILL.md`, `disable-model-invocation` — hidden from the model and never exposed in subagents; registered primary-only via a `resources_discover` hook). The top-level session runs the skill, which loads the `agents` skill, dispatches the six read-only reviewer specialists (security, testing, docs, clarity, conventions, general) via `dispatch_agent` with a fixed scope-only brief, spawns extra `general-reviewer`s for any aspect the fixed six don't cover, `wait_for_agent`s on all handles, then transposes their plain-text reports into the `Finding` schema and calls the single registered `report_findings` tool. `report_findings` merges the findings, computes the verdict deterministically (no LLM synthesis; the verdict ignores the reviewee's opinion), opens the interactive annotate pane (finding → author `response` → user reaction), and persists a private JSON packet (structured findings + responses + reactions; raw reviewer prose is not retained). The top-level session is the reviewee — it orchestrates and relays but never decides the verdict, carries every finding through verbatim, and may attach a per-finding `response` to contest a finding but never drops or softens one; reviewer independence lives in the persona prompts, not an orchestration boundary. It is manual only.
 
 ### Model Aliases
 
