@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildReactions, findingSummaryLines } from "../annotate-pane.ts";
+import { buildReactions, findingSummaryLines, responseDisplayLines } from "../annotate-pane.ts";
 import type { Finding } from "../findings.ts";
 
 function finding(overrides: Partial<Finding>): Finding {
@@ -79,5 +79,20 @@ describe("findingSummaryLines", () => {
 		assert.ok(lines.includes("[medium] [testing]  src/app.ts:42"));
 		assert.ok(lines.includes("Missing regression coverage"));
 		assert.ok(lines.includes("Fix: Add a regression test."));
+	});
+});
+
+describe("responseDisplayLines", () => {
+	it("shows the author response body when present", () => {
+		const lines = responseDisplayLines(finding({ response: "I disagree — this is intentional." }));
+		assert.deepEqual(lines, ["Author response:", "I disagree — this is intentional."]);
+	});
+
+	it("shows a placeholder when the response is absent", () => {
+		assert.deepEqual(responseDisplayLines(finding({})), ["Author response:", "—"]);
+	});
+
+	it("treats a whitespace-only response as absent", () => {
+		assert.deepEqual(responseDisplayLines(finding({ response: "   " })), ["Author response:", "—"]);
 	});
 });
