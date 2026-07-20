@@ -44,10 +44,30 @@ export const ReportFindingsArgs = Type.Object(
 export type ReportFindingsArgs = Static<typeof ReportFindingsArgs>;
 
 export const Finding = Type.Object(
-	{ ...ExtractedFindingProperties, dimension: Dimension },
+	{ ...ExtractedFindingProperties, dimension: Dimension, response: Type.Optional(Type.String()) },
 	{ additionalProperties: false },
 );
 export type Finding = Static<typeof Finding>;
+
+export const ReviewScope = Type.Object(
+	{
+		base: Type.String(),
+		mergeBase: Type.String(),
+		cwd: Type.String(),
+		label: Type.String(),
+	},
+	{ additionalProperties: false },
+);
+export type ReviewScope = Static<typeof ReviewScope>;
+
+export const ReportFindingsParams = Type.Object(
+	{
+		scope: ReviewScope,
+		findings: Type.Array(Finding),
+	},
+	{ additionalProperties: false },
+);
+export type ReportFindingsParams = Static<typeof ReportFindingsParams>;
 
 export const report_findings: Tool<typeof ReportFindingsArgs> = {
 	name: "report_findings",
