@@ -22,7 +22,7 @@ export function findingSummaryLines(finding: Finding, index: number, total: numb
 
 export function responseDisplayLines(finding: Finding): string[] {
 	const body = finding.response?.trim();
-	return ["Author response:", body ? body : "—"];
+	return ["Author response:", body || "—"];
 }
 
 export function buildReactions(findings: Finding[], drafts: Map<number, string>): (string | null)[] {

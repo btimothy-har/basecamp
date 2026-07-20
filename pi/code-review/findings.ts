@@ -21,18 +21,18 @@ export type Severity = Static<typeof Severity>;
 const NullableString = Type.Union([Type.String(), Type.Null()]);
 const NullableInteger = Type.Union([Type.Integer(), Type.Null()]);
 
-const FindingProperties = {
-	severity: Severity,
-	file: NullableString,
-	lineStart: NullableInteger,
-	lineEnd: NullableInteger,
-	title: Type.String(),
-	detail: Type.String(),
-	remediation: NullableString,
-};
-
 export const Finding = Type.Object(
-	{ ...FindingProperties, dimension: Dimension, response: Type.Optional(Type.String()) },
+	{
+		severity: Severity,
+		file: NullableString,
+		lineStart: NullableInteger,
+		lineEnd: NullableInteger,
+		title: Type.String(),
+		detail: Type.String(),
+		remediation: NullableString,
+		dimension: Dimension,
+		response: Type.Optional(Type.String()),
+	},
 	{ additionalProperties: false },
 );
 export type Finding = Static<typeof Finding>;

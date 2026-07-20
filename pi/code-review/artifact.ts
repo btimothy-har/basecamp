@@ -16,11 +16,8 @@ interface AnnotatedFinding extends Finding {
 	reaction: string | null;
 }
 
-interface ReviewArtifact {
-	scope: ReviewResult["scope"];
-	verdict: ReviewResult["verdict"];
+interface ReviewArtifact extends Omit<ReviewResult, "findings"> {
 	findings: AnnotatedFinding[];
-	createdAt: string;
 }
 
 export const PRIVATE_FILE_MODE = 0o600;
@@ -51,7 +48,7 @@ export function persistReviewArtifact(result: ReviewResult, reactions: (string |
 	);
 	try {
 		fs.writeFileSync(fd, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
-		fs.chmodSync(artifactPath, PRIVATE_FILE_MODE);
+		fs.fchmodSync(fd, PRIVATE_FILE_MODE);
 	} finally {
 		fs.closeSync(fd);
 	}

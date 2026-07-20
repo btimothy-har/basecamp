@@ -76,7 +76,8 @@ Call `report_findings({ scope, findings })`:
 - **Carry every finding from every reviewer, verbatim.** Transpose each into the structured shape
   (`dimension`, `severity`, `file`, `lineStart`/`lineEnd`, `title`, `detail`, `remediation`), copying
   the reviewer's stated severity exactly. Set `dimension` from the producing reviewer; adaptive
-  `general-reviewer` findings use `general`.
+  `general-reviewer` findings use `general`. Pass `null` for any of `file`/`lineStart`/`lineEnd`/
+  `remediation` that don't apply — include the key, never omit it.
 - You may add a per-finding `response` — your own opinion where you agree, disagree, or add context.
   **Never omit, merge away, or soften a finding to avoid it.** Disagreement belongs in `response`,
   not in a dropped finding. The verdict is computed from severities and ignores `response`.
