@@ -99,9 +99,9 @@ function resolveSessionDir(agentId: string): string {
 /**
  * The parent-session identity stamped on a dispatched agent: the explicit
  * BASECAMP_SESSION_NAME, else the live session name (an empty one ignored), else
- * the session id. Shared by dispatch/ask/code-review so the empty-name
- * fallthrough is consistent — dispatch/ask previously used `??` and would keep an
- * empty trimmed name; the `||` here matches code-review and is the intended behaviour.
+ * the session id. Shared by dispatch/ask so the empty-name fallthrough is
+ * consistent: the `||` drops an empty trimmed name (an earlier `??` would keep
+ * it), which is the intended behaviour.
  */
 export function resolveParentSession(
 	pi: { getSessionName(): string | undefined },

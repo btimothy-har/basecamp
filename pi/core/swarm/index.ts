@@ -8,9 +8,10 @@ import { registerAgentSurfaces } from "./agents/surfaces.ts";
  * session surfaces (dispatch/ask/cancel/peer tools, run reporter, active-agents
  * widget) over the core hub connection. Registered by `registerCore`.
  *
- * The `/code-review` and workstream *features* are separate domains
- * (`pi/code-review/`, `pi/workstreams/`) that consume this via
- * `#core/swarm/agents/*`.
+ * The code-review and workstream *features* are separate domains
+ * (`pi/code-review/`, `pi/workstreams/`): workstreams consumes this via
+ * `#core/swarm/agents/*`, while code-review drives the reviewers from its
+ * skill through the dispatch tools registered here.
  */
 export default function registerSwarm(pi: ExtensionAPI): void {
 	registerAgentCatalog();

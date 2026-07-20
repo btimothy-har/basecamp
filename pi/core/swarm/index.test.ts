@@ -76,8 +76,8 @@ describe("core/swarm primitive entrypoint", () => {
 		assert.equal(toolNames.has("dispatch_agent"), true);
 		assert.equal(toolNames.has("list_agents"), true);
 		assert.equal(toolNames.has("wait_for_agent"), true);
-		// The runtime primitive owns no slash command and no `agent` tool; the
-		// `/code-review` command lives in the code-review feature domain.
+		// The runtime primitive owns no slash command and no `agent` tool;
+		// code-review ships as a skill + report_findings tool in its own domain.
 		assert.equal(pi.commands.includes("code-review"), false);
 		assert.equal(toolNames.has("agent"), false);
 
