@@ -17,7 +17,12 @@ from basecamp.core.paths import (
     USER_PROMPTS_DIR,
     USER_STYLES_DIR,
 )
-from basecamp.core.settings import Settings, settings
+
+# Re-export the Settings *class* but not the `settings` singleton: the singleton's
+# name collides with the `settings` subpackage, so binding it here would shadow
+# `basecamp.core.settings` for ``import basecamp.core.settings.<sub> as ...`` forms.
+# Import the singleton from its module: ``from basecamp.core.settings import settings``.
+from basecamp.core.settings import Settings
 
 __all__ = [
     "BASECAMP_CONFIG_DIR",
@@ -29,5 +34,4 @@ __all__ = [
     "USER_PROMPTS_DIR",
     "USER_STYLES_DIR",
     "atomic_write_json",
-    "settings",
 ]

@@ -37,7 +37,7 @@ pi/                            # ① the Pi extension (TypeScript)
 src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
 ├── cli.py                      # Click entry point (setup, projects, environments, companion, hub)
 ├── setup.py  installer.py      # environment setup + install orchestration (uv tool + npm + single pi install)
-├── core/                       # settings, paths, files, exceptions + unified config.json: validation registry (config_schema) · generic get/set/edit (config_document) · `basecamp config` CLI (plumbing + project/env/alias porcelain)
+├── core/                       # settings/ package (store = locked config.json primitive · schema = section registry · document = generic get/set/edit) + models (config record types: project/env/logseq) + paths, files, exceptions · `basecamp config` CLI (plumbing + project/env/alias porcelain)
 ├── workspace/                  # per-repo worktree-setup environments + menus
 ├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
 └── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)

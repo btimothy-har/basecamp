@@ -1,30 +1,25 @@
-"""Per-repo environment configuration for basecamp-workspace.
+"""Per-repo environment IO for basecamp-workspace.
 
-Environments are keyed by the canonical ``<org>/<name>`` repo identity
-(``BASECAMP_REPO``, derived from the origin remote URL and falling back to the
-bare git basename) and persisted to the root ``config.json`` ``environments``
-section. Each environment currently holds a ``setup`` command run when a new
-implementation worktree is created.
+The :class:`~basecamp.core.models.EnvironmentConfig` model lives in
+:mod:`basecamp.core.models`; this module owns only the IO (re-exporting the
+model for back-compat). Environments are keyed by the canonical ``<org>/<name>``
+repo identity (``BASECAMP_REPO``, derived from the origin remote URL and falling
+back to the bare git basename) and persisted to the root ``config.json``
+``environments`` section. Each environment currently holds a ``setup`` command
+run when a new implementation worktree is created.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import ValidationError
 
 from basecamp.core.exceptions import LauncherError
+from basecamp.core.models import EnvironmentConfig
 from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 
 ENVIRONMENTS_SECTION = "environments"
-
-
-class EnvironmentConfig(BaseModel):
-    """Per-repo environment configuration."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    setup: str | None = None
 
 
 def load_environments(config: Settings | None = None) -> dict[str, EnvironmentConfig]:

@@ -2,14 +2,13 @@
 
 The ``git config``-style plumbing under ``basecamp config``: read, set, unset,
 and whole-file edit on dotted keys (``model_aliases.fast``, ``logseq.graph_dir``,
-``projects.demo.repo_root``). Every mutation runs the touched section through
-:mod:`basecamp.core.cli.config_schema` before the flock'd write, so generic
-edits validate exactly like the typed porcelain. The root :data:`settings`
+``projects.demo.repo_root``). Every mutation runs the touched section through the
+:mod:`~basecamp.core.settings.schema` registry before the flock'd write, so
+generic edits validate exactly like the typed porcelain. The root :data:`settings`
 singleton is the sole writer.
 
-Lives in the config-management layer (``core/cli``) with the schema aggregator
-it depends on; ``core`` primitives stay free of the workspace import that the
-``environments`` validator pulls in.
+Lives in the ``core/settings`` layer beside the registry it depends on; the CLI
+(``core/cli``) is a thin click surface over these functions.
 """
 
 from __future__ import annotations
@@ -19,9 +18,9 @@ from typing import Any
 
 import click
 
-from basecamp.core.cli.config_schema import validate_document, validate_touched
 from basecamp.core.exceptions import LauncherError
-from basecamp.core.settings import CONFIG_VERSION, Settings, settings
+from basecamp.core.settings.schema import validate_document, validate_touched
+from basecamp.core.settings.store import CONFIG_VERSION, Settings, settings
 
 _MISSING = object()
 

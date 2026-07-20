@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from basecamp.core.cli import config_document as cd
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import Settings
+from basecamp.core.settings import document as cd
 
 
 @pytest.fixture
