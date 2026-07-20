@@ -38,8 +38,26 @@ class DoctorArchive:
         return self._path
 
     @property
-    def has_entries(self) -> bool:
-        return bool(self._entries)
+    def has_recovery_data(self) -> bool:
+        if self._entries:
+            return True
+        if self._path is None:
+            return False
+        try:
+            return any(path.is_file() or path.is_symlink() for path in self._path.rglob("*"))
+        except OSError:
+            return True
+
+    def discard_if_empty(self) -> None:
+        """Remove this invocation's empty archive directories after a failed write."""
+        if self._path is None or self.has_recovery_data:
+            return
+        try:
+            for root, _directories, _files in os.walk(self._path, topdown=False, onerror=raise_walk_error):
+                Path(root).rmdir()
+        except OSError:
+            return
+        self._path = None
 
     def backup_bytes(self, source: Path, content: bytes, relative: Path) -> Path:
         """Persist exact bytes under ``backups/`` and record their digest."""
@@ -159,7 +177,7 @@ def hash_path(path: Path) -> str:
         raise OSError(msg)
 
     digest = hashlib.sha256()
-    for root, directories, files in os.walk(path, followlinks=False):
+    for root, directories, files in os.walk(path, followlinks=False, onerror=raise_walk_error):
         directories.sort()
         root_path = Path(root)
         for name in sorted([*directories, *files]):
@@ -172,3 +190,8 @@ def hash_path(path: Path) -> str:
             if item.is_file():
                 digest.update(hash_path(item).encode())
     return digest.hexdigest()
+
+
+def raise_walk_error(error: OSError) -> None:
+    """Fail closed when a filesystem walk cannot inspect a subtree."""
+    raise error

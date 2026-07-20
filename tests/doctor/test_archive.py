@@ -77,6 +77,27 @@ def test_archive_rejects_escape_duplicate_and_symlink(tmp_path: Path) -> None:
     assert link.is_symlink()
 
 
+def test_empty_failed_archive_is_removed_but_recovery_data_is_retained(tmp_path: Path) -> None:
+    paths = DoctorPaths.for_home(tmp_path)
+    empty = DoctorArchive(paths, timestamp="empty")
+    empty.reserve_backup_path(Path("swarm/daemon.db"))
+
+    empty.discard_if_empty()
+
+    assert empty.path is None
+    assert not (paths.archive_root / "empty").exists()
+
+    partial = DoctorArchive(paths, timestamp="partial")
+    target = partial.reserve_backup_path(Path("swarm/daemon.db"))
+    target.write_bytes(b"recoverable")
+
+    partial.discard_if_empty()
+
+    assert partial.path == paths.archive_root / "partial"
+    assert partial.has_recovery_data is True
+    assert target.read_bytes() == b"recoverable"
+
+
 def test_timestamp_collision_uses_a_distinct_archive(tmp_path: Path) -> None:
     paths = DoctorPaths.for_home(tmp_path)
     existing = paths.archive_root / "stamp"

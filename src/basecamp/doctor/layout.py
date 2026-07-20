@@ -9,7 +9,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from .archive import DoctorArchive, hash_path
+from .archive import DoctorArchive, hash_path, raise_walk_error
 from .models import DoctorCheck, DoctorPaths, DoctorReport, RepairAction, RepairKind, Severity
 
 
@@ -157,7 +157,7 @@ def _assert_migratable(pair: CustomizationPair) -> tuple[DirectoryEntry, ...]:
 
 def _inventory(root: Path) -> tuple[DirectoryEntry, ...]:
     entries: list[DirectoryEntry] = []
-    for current, directories, files in os.walk(root, followlinks=False):
+    for current, directories, files in os.walk(root, followlinks=False, onerror=raise_walk_error):
         directories.sort()
         current_path = Path(current)
         for name in directories:

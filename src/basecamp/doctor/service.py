@@ -9,6 +9,7 @@ from .config import inspect_config, repair_config
 from .hub import inspect_hub, repair_hub
 from .layout import inspect_customization_layout, repair_customization_layout
 from .models import DoctorCheck, DoctorPaths, DoctorReport, Severity
+from .retired import inspect_retired_artifacts, repair_retired_artifacts
 
 
 def run_doctor(paths: DoctorPaths, *, repair: bool = False) -> DoctorReport:
@@ -22,10 +23,12 @@ def run_doctor(paths: DoctorPaths, *, repair: bool = False) -> DoctorReport:
         *repair_config(paths, archive),
         *repair_customization_layout(paths, archive),
         *repair_hub(paths, archive),
+        *repair_retired_artifacts(paths, archive),
     ]
+    archive.discard_if_empty()
     final, _can_continue = _inspect(paths)
     final.checks.extend(repair_errors)
-    final.archive_path = archive.path if archive.has_entries else None
+    final.archive_path = archive.path if archive.has_recovery_data else None
     final.repair_attempted = bool(report.actions)
     return final
 
@@ -38,6 +41,7 @@ def _inspect(paths: DoctorPaths) -> tuple[DoctorReport, bool]:
         report.extend(inspect_config(paths))
         report.extend(inspect_customization_layout(paths))
         report.extend(inspect_hub(paths))
+        report.extend(inspect_retired_artifacts(paths))
     return report, can_continue
 
 
