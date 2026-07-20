@@ -44,7 +44,9 @@ def render_report(report: DoctorReport, *, repair: bool) -> None:
         _render_check(check)
     if report.archive_path is not None:
         console.print(f"\nRecovery archive: [bold]{report.archive_path}[/bold]")
-    elif repair and not report.actions:
+    elif repair and report.repair_attempted:
+        console.print("\n[dim]Repair pass completed.[/dim]")
+    elif repair:
         console.print("\n[dim]No repairs were needed.[/dim]")
 
     if report.has_unresolved:

@@ -58,6 +58,7 @@ class DoctorReport:
     checks: list[DoctorCheck] = field(default_factory=list)
     actions: list[RepairAction] = field(default_factory=list)
     archive_path: Path | None = None
+    repair_attempted: bool = False
 
     def add_check(self, check: DoctorCheck) -> None:
         self.checks.append(check)
@@ -70,6 +71,7 @@ class DoctorReport:
         self.actions.extend(other.actions)
         if other.archive_path is not None:
             self.archive_path = other.archive_path
+        self.repair_attempted = self.repair_attempted or other.repair_attempted
 
     @property
     def has_unresolved(self) -> bool:
@@ -89,6 +91,21 @@ class DoctorPaths:
     config: Path
     config_lock: Path
     archive_root: Path
+    context: Path
+    styles: Path
+    prompts: Path
+    core: Path
+    workspace: Path
+    legacy_projects: Path
+    legacy_aliases: Path
+    legacy_context: Path
+    legacy_styles: Path
+    legacy_prompts: Path
+    workstream_launches: Path
+    companion_analysis: Path
+    claude_runtime: Path
+    browser_profile: Path
+    browser_output: Path
     swarm: Path
     daemon_db: Path
     daemon_socket: Path
@@ -100,6 +117,9 @@ class DoctorPaths:
         resolved_home = home.expanduser()
         root = resolved_home / ".pi" / "basecamp"
         config = root / "config.json"
+        core = root / "core"
+        workspace = root / "workspace"
+        browser = root / "browser"
         swarm = root / "swarm"
         return cls(
             home=resolved_home,
@@ -107,6 +127,21 @@ class DoctorPaths:
             config=config,
             config_lock=config.with_suffix(".lock"),
             archive_root=root / "backups" / "doctor",
+            context=root / "context",
+            styles=root / "styles",
+            prompts=root / "prompts",
+            core=core,
+            workspace=workspace,
+            legacy_projects=workspace / "projects.json",
+            legacy_aliases=core / "model-aliases.json",
+            legacy_context=workspace / "context",
+            legacy_styles=workspace / "styles",
+            legacy_prompts=workspace / "prompts",
+            workstream_launches=root / "workstream-launches",
+            companion_analysis=root / "companion" / "analysis",
+            claude_runtime=root / "claude",
+            browser_profile=browser / "profile",
+            browser_output=browser / "playwright-output",
             swarm=swarm,
             daemon_db=swarm / "daemon.db",
             daemon_socket=swarm / "daemon.sock",

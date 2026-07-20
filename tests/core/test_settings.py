@@ -140,6 +140,19 @@ class TestUpdate:
         data = json.loads(cfg.path.read_text())
         assert data == {"keep": "me", "new": 42}
 
+    def test_update_if_changed_skips_and_applies_writes(self, tmp_path: Path) -> None:
+        cfg = _cfg(tmp_path)
+
+        assert cfg.update_if_changed(lambda _data: False) is False
+        assert not cfg.path.exists()
+
+        def add_value(data: dict) -> bool:
+            data["value"] = 1
+            return True
+
+        assert cfg.update_if_changed(add_value) is True
+        assert json.loads(cfg.path.read_text()) == {"value": 1}
+
 
 class TestLocking:
     def test_lock_file_created_on_write(self, tmp_path: Path) -> None:

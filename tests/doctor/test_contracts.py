@@ -48,7 +48,10 @@ def test_regular_root_passes_without_writing(tmp_path: Path) -> None:
 
     report = run_doctor(paths)
 
-    assert [(check.identifier, check.severity) for check in report.checks] == [("layout.root", Severity.PASS)]
+    checks = {check.identifier: check.severity for check in report.checks}
+    assert checks["layout.root"] is Severity.PASS
+    assert checks["config.missing"] is Severity.INFO
+    assert report.exit_code == 0
     assert list(paths.root.iterdir()) == []
 
 

@@ -61,6 +61,17 @@ class Settings:
         atomic_write_json(self._path, data, mode=0o600, dir_mode=0o700)
 
     @contextmanager
+    def _locked_document(self) -> Generator[dict[str, Any], None, None]:
+        """Read config while holding its sibling lock."""
+        self._lock_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+        lock_fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX)
+            yield self._read()
+        finally:
+            os.close(lock_fd)
+
+    @contextmanager
     def _locked_update(self) -> Generator[dict[str, Any], None, None]:
         """Read config under an exclusive lock, yield for mutation, then write back.
 
@@ -68,15 +79,9 @@ class Settings:
         :func:`basecamp.core.files.atomic_write_json`'s rename-into-place
         strategy.
         """
-        self._lock_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
-        lock_fd = os.open(str(self._lock_path), os.O_CREAT | os.O_RDWR, 0o600)
-        try:
-            fcntl.flock(lock_fd, fcntl.LOCK_EX)
-            data = self._read()
+        with self._locked_document() as data:
             yield data
             self._write(data)
-        finally:
-            os.close(lock_fd)
 
     def update(self, mutator: Callable[[dict[str, Any]], None]) -> None:
         """Apply ``mutator`` to the config document under an exclusive lock.
@@ -86,6 +91,14 @@ class Settings:
         """
         with self._locked_update() as data:
             mutator(data)
+
+    def update_if_changed(self, mutator: Callable[[dict[str, Any]], bool]) -> bool:
+        """Write only when ``mutator`` reports that it changed the document."""
+        with self._locked_document() as data:
+            changed = mutator(data)
+            if changed:
+                self._write(data)
+            return changed
 
     @property
     def install_dir(self) -> str | None:

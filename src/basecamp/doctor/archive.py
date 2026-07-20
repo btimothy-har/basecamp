@@ -57,14 +57,14 @@ class DoctorArchive:
 
     def record_backup(self, source: Path, destination: Path) -> None:
         """Record a backup written transactionally by another subsystem."""
-        self._record("backup", source, destination, _hash_path(destination))
+        self._record("backup", source, destination, hash_path(destination))
 
     def retire(self, source: Path, relative: Path) -> Path:
         """Move a verified-redundant path under ``retired/`` without copying."""
         if source.is_symlink():
             msg = f"Refusing to archive symlink: {source}"
             raise OSError(msg)
-        digest = _hash_path(source)
+        digest = hash_path(source)
         destination = self._destination("retired", relative)
         if destination.exists():
             msg = f"Archive destination already exists: {destination}"
@@ -139,7 +139,7 @@ def _atomic_write_bytes(path: Path, content: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
-def _hash_path(path: Path) -> str:
+def hash_path(path: Path) -> str:
     mode = path.lstat().st_mode
     if stat.S_ISLNK(mode):
         msg = f"Refusing to hash symlink: {path}"
@@ -166,5 +166,5 @@ def _hash_path(path: Path) -> str:
             relative = item.relative_to(path)
             digest.update(relative.as_posix().encode())
             if item.is_file():
-                digest.update(_hash_path(item).encode())
+                digest.update(hash_path(item).encode())
     return digest.hexdigest()
