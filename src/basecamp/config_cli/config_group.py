@@ -4,7 +4,7 @@ Two layers under one namespace:
   * generic plumbing — ``show/get/set/unset/edit`` on any dotted key, for
     machine use and writer-less sections like ``logseq``;
   * typed porcelain — ``project/env/alias`` (interactive/tabular), attached
-    from :mod:`basecamp.core.cli.config_porcelain`.
+    from :mod:`basecamp.config_cli.config_porcelain`.
 
 Both go through the same flock'd writer and the same validation registry.
 Bare ``basecamp config`` opens an interactive console over the sections.
@@ -18,8 +18,8 @@ from collections.abc import Callable
 import questionary
 import rich_click as click
 
-from basecamp.core.cli.config_porcelain import alias_group, env_group, project_group, run_alias_menu
-from basecamp.core.cli.project import run_project_menu
+from basecamp.config_cli.config_porcelain import alias_group, env_group, project_group, run_alias_menu
+from basecamp.config_cli.project import run_project_menu
 from basecamp.core.console import console, err_console
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import settings

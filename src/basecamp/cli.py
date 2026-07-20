@@ -8,7 +8,7 @@ from pathlib import Path
 import rich_click as click
 
 from basecamp.companion.app import run_companion
-from basecamp.core.cli.config_group import config
+from basecamp.config_cli.config_group import config
 from basecamp.core.console import err_console
 from basecamp.core.doctor import run_doctor
 from basecamp.core.exceptions import LauncherError

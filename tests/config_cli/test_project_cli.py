@@ -1,4 +1,4 @@
-"""Tests for basecamp-workspace project CLI helpers."""
+"""Tests for the `basecamp config project` CLI helpers."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from basecamp.core.cli import project as project_cli
+from basecamp.config_cli import project as project_cli
 from basecamp.core.settings import Settings
 
 

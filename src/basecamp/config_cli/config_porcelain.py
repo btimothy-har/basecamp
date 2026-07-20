@@ -13,7 +13,7 @@ import sys
 import questionary
 import rich_click as click
 
-from basecamp.core.cli.project import (
+from basecamp.config_cli.project import (
     execute_project_add,
     execute_project_edit,
     execute_project_list,
