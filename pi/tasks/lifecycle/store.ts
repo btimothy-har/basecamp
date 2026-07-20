@@ -3,6 +3,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { writeJsonFileAtomic } from "#core/host/files.ts";
 import { basecampRoot } from "#core/host/paths.ts";
 import type { GoalCycle } from "../schemas/task.ts";
 
@@ -50,9 +51,6 @@ export function loadCycles(filePath: string): GoalCycle[] {
 }
 
 export function saveCycles(filePath: string, cycles: GoalCycle[]): void {
-	fs.mkdirSync(path.dirname(filePath), { recursive: true });
-	const tmp = `${filePath}.tmp`;
 	const payload: TasksFile = { version: TASKS_SCHEMA_VERSION, cycles };
-	fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
-	fs.renameSync(tmp, filePath);
+	writeJsonFileAtomic(filePath, payload);
 }

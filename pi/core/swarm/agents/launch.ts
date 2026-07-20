@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDepth } from "../../host/env.ts";
+import { isWithin } from "../../host/paths.ts";
 import { resolveDaemonPaths } from "../../hub/index.ts";
 import type { AgentConfig } from "./discovery.ts";
 import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "./executor.ts";
@@ -124,8 +125,7 @@ function resolveToolSourcePath(value: string | undefined): string | null {
 function isWithinBasecampExtensionRoot(value: string | undefined, basecampExtensionRoot: string): boolean {
 	const sourcePath = resolveToolSourcePath(value);
 	if (!sourcePath) return false;
-	const relative = path.relative(basecampExtensionRoot, sourcePath);
-	return relative === "" || (relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative));
+	return isWithin(sourcePath, basecampExtensionRoot);
 }
 
 function isBasecampExtensionTool(tool: ToolInfo, basecampExtensionRoot: string): boolean {

@@ -1,3 +1,4 @@
+import { sleep } from "../async.ts";
 import type { DaemonConnection } from "./connection.ts";
 import type { ThreadReportNode } from "./protocol/thread-report.ts";
 import { awaitDaemonConnection } from "./state.ts";
@@ -6,10 +7,6 @@ import { awaitDaemonConnection } from "./state.ts";
 // loop. Yield briefly after the final send so a session that exits right after
 // `agent_end` (e.g. a headless `pi -p` one-shot) still flushes its last report.
 const FLUSH_DELAY_MS = 50;
-
-function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /** A computed raw-thread report, ready to wrap in the `thread_report` frame. */
 export interface ThreadReport {

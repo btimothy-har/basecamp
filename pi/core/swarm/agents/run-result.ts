@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isRecord } from "../../host/files.ts";
 import { resolveDaemonPaths } from "../../hub/index.ts";
 
 export const BASECAMP_RUNNER_MANAGED_RESULT = "BASECAMP_RUNNER_MANAGED_RESULT";
@@ -120,10 +121,6 @@ function parseFinalRunResult(value: unknown): FinalRunResult {
 		throw new Error("invalid final run result");
 	}
 	return { status, result, error, retry_count };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isRunResultStatus(value: unknown): value is RunResultStatus {

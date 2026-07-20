@@ -71,7 +71,7 @@ export function defaultWorkstreamToolsDeps(getConnection: () => Promise<unknown>
 	};
 }
 
-export { errorMessage } from "#core/swarm/agents/errors.ts";
+export { errorMessage } from "#core/errors.ts";
 
 function shellQuote(s: string): string {
 	return `'${s.replace(/'/g, "'\\''")}'`;

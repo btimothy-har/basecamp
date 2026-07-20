@@ -5,17 +5,13 @@
 import { createHash } from "node:crypto";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
+import { isWithin } from "#core/host/paths.ts";
 import { SCRATCH_SQL_PATH_ERROR, TMP_PI_ROOT } from "./params.ts";
 
 function expandHome(rawPath: string): string {
 	if (rawPath === "~") return process.env.HOME ?? rawPath;
 	if (rawPath.startsWith("~/")) return path.join(process.env.HOME ?? "~", rawPath.slice(2));
 	return rawPath;
-}
-
-function isPathWithin(child: string, parent: string): boolean {
-	const relative = path.relative(parent, child);
-	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
 }
 
 async function existingRealpath(filePath: string): Promise<string | null> {
@@ -41,10 +37,10 @@ export async function resolveSqlPath(rawPath: string, cwd: string, scratchDir: s
 		existingRealpath(scratchDir),
 		existingRealpath(TMP_PI_ROOT),
 	]);
-	if (!realScratchDir || !realTmpPiRoot || !isPathWithin(realScratchDir, realTmpPiRoot)) {
+	if (!realScratchDir || !realTmpPiRoot || !isWithin(realScratchDir, realTmpPiRoot)) {
 		throw new Error(SCRATCH_SQL_PATH_ERROR);
 	}
-	if (!isPathWithin(realSqlPath, realScratchDir)) {
+	if (!isWithin(realSqlPath, realScratchDir)) {
 		throw new Error(SCRATCH_SQL_PATH_ERROR);
 	}
 

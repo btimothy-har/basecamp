@@ -3,6 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { processScoped } from "../global-registry.ts";
+import { isRecord } from "../host/files.ts";
 import { basecampConfigPath, basecampRoot } from "../host/paths.ts";
 import { registerWorkspaceAllowedRootsProvider, requireWorkspaceState } from "./workspace/state.ts";
 
@@ -98,13 +99,13 @@ export function resolveConfigDir(dir: string, homeDir = os.homedir()): string {
 function readProjects(configPath: string): Record<string, RawProjectConfig> {
 	try {
 		const parsed: unknown = JSON.parse(fs.readFileSync(configPath, "utf8"));
-		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
-		const projects = (parsed as { projects?: unknown }).projects;
-		if (!projects || typeof projects !== "object" || Array.isArray(projects)) return {};
+		if (!isRecord(parsed)) return {};
+		const projects = parsed.projects;
+		if (!isRecord(projects)) return {};
 		return Object.fromEntries(
 			Object.entries(projects).filter((entry): entry is [string, RawProjectConfig] => {
 				const [, value] = entry;
-				return !!value && typeof value === "object" && !Array.isArray(value);
+				return isRecord(value);
 			}),
 		);
 	} catch {

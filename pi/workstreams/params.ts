@@ -1,3 +1,5 @@
+import { isRecord } from "#core/host/files.ts";
+
 export interface CreateWorkstreamParams {
 	source: {
 		dossierPath: string;
@@ -32,10 +34,6 @@ export interface ListWorkstreamsParams {
 export interface SetWorkstreamStatusParams {
 	workstream: string;
 	status: "open" | "closed";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function optionalTrimmedString(value: unknown): string | undefined {

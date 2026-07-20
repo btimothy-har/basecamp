@@ -1,29 +1,12 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { isRecord, readJsonFile } from "./files.ts";
 import { basecampConfigPath } from "./paths.ts";
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-	return value !== null && typeof value === "object" && !Array.isArray(value);
-}
-
 function readRootConfig(homeDir: string): Record<string, unknown> | null {
-	const configPath = basecampConfigPath(homeDir);
-	let raw: string;
-	try {
-		raw = fs.readFileSync(configPath, "utf8");
-	} catch {
-		return null;
-	}
-
-	let parsed: unknown;
-	try {
-		parsed = JSON.parse(raw);
-	} catch {
-		return null;
-	}
-
-	return isPlainObject(parsed) ? parsed : null;
+	const parsed = readJsonFile(basecampConfigPath(homeDir));
+	return isRecord(parsed) ? parsed : null;
 }
 
 function resolveConfiguredPath(value: string, homeDir: string): string {
@@ -37,12 +20,12 @@ export function readWorktreeSetupCommand(repoName: string, homeDir?: string): st
 	if (!parsed) return null;
 
 	const environments = parsed.environments;
-	if (!isPlainObject(environments)) {
+	if (!isRecord(environments)) {
 		return null;
 	}
 
 	const environment = environments[repoName];
-	if (!isPlainObject(environment)) {
+	if (!isRecord(environment)) {
 		return null;
 	}
 
@@ -61,7 +44,7 @@ export function readLogseqGraphDir(homeDir?: string): string | null {
 	if (!parsed) return null;
 
 	const logseq = parsed.logseq;
-	if (!isPlainObject(logseq)) {
+	if (!isRecord(logseq)) {
 		return null;
 	}
 

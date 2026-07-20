@@ -1,4 +1,4 @@
-import { errorMessage } from "#core/swarm/agents/errors.ts";
+import { errorMessage } from "#core/errors.ts";
 import type { Dimension, Finding } from "./findings.ts";
 import { computeVerdict, mergeFindings, type Verdict } from "./synthesis.ts";
 

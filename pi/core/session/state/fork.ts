@@ -2,8 +2,9 @@
 
 import * as fs from "node:fs";
 import type { ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { isRecord } from "../../host/files.ts";
 import type { BasecampSessionState } from "./model.ts";
-import { isRecord, loadSessionState } from "./persistence.ts";
+import { loadSessionState } from "./persistence.ts";
 
 function readFirstJsonlLine(filePath: string): string | null {
 	// Transcripts can be large; read only until the header newline instead of loading the whole file.

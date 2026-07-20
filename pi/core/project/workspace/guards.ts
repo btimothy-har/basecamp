@@ -2,6 +2,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createLocalBashOperations, isToolCallEventType } from "@earendil-works/pi-coding-agent";
+import { isWithin } from "../../host/paths.ts";
 import { allowedWriteDirsFrom, getWorkspaceState, listWorkspaceAllowedRoots, type WorkspaceState } from "./state.ts";
 
 /** Expand ~ in path (mirrors pi's path-utils expandPath). */
@@ -17,13 +18,8 @@ function shellQuote(s: string): string {
 	return `'${s.replace(/'/g, "'\\''")}'`;
 }
 
-function isPathWithin(child: string, parent: string): boolean {
-	const relative = path.relative(parent, child);
-	return relative === "" || (!!relative && !relative.startsWith("..") && !path.isAbsolute(relative));
-}
-
 function isAllowedPath(allowedRoots: string[], resolved: string): boolean {
-	return allowedRoots.some((root) => isPathWithin(resolved, root));
+	return allowedRoots.some((root) => isWithin(resolved, root));
 }
 
 const STRUCTURED_PATH_TOOLS = new Set(["read", "edit", "write", "grep", "find", "ls"]);
@@ -89,7 +85,7 @@ export function registerWorkspaceGuards(pi: ExtensionAPI, options: RegisterWorks
 		const isAbsolute = path.isAbsolute(expanded);
 		const resolved = isAbsolute ? path.resolve(expanded) : path.resolve(effectiveCwd, expanded);
 		const isStructuredMutation = STRUCTURED_MUTATION_TOOLS.has(event.toolName);
-		const isProtectedPath = protectedCheckout ? isPathWithin(resolved, protectedCheckout) : false;
+		const isProtectedPath = protectedCheckout ? isWithin(resolved, protectedCheckout) : false;
 
 		if (!worktreeDir && isStructuredMutation && isProtectedPath) {
 			if (state.unsafeEdit) return;
@@ -125,7 +121,7 @@ export function registerWorkspaceGuards(pi: ExtensionAPI, options: RegisterWorks
 
 		if (isAllowedPath(getAllowedRoots(), resolved)) return;
 
-		const withinWorktree = isPathWithin(resolved, worktreeDir);
+		const withinWorktree = isWithin(resolved, worktreeDir);
 
 		// Confinement: a structured write/edit must land inside the current write scope
 		// (allowed_dirs = active worktree ∪ scratch ∪ allowed-roots). This closes the
@@ -134,7 +130,7 @@ export function registerWorkspaceGuards(pi: ExtensionAPI, options: RegisterWorks
 		// the mutation path so read/grep/find/ls calls don't allocate it.
 		if (isStructuredMutation) {
 			const allowedDirs = allowedWriteDirsFrom(state, getAllowedRoots());
-			if (!allowedDirs.some((dir) => isPathWithin(resolved, dir))) {
+			if (!allowedDirs.some((dir) => isWithin(resolved, dir))) {
 				return {
 					block: true,
 					reason:

@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
+import { isRecord } from "../host/files.ts";
 import { basecampConfigPath } from "../host/paths.ts";
 
 export type ConfiguredModelAliases = Record<string, string>;
@@ -13,10 +14,6 @@ export type ModelAliasConfigLoadResult = { ok: true; aliases: ConfiguredModelAli
  */
 export function defaultModelAliasConfigPath(homeDir = os.homedir()): string {
 	return basecampConfigPath(homeDir);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
 // Lenient by design: skip malformed/empty entries (and take last-write-wins on
