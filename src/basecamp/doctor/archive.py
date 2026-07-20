@@ -37,6 +37,10 @@ class DoctorArchive:
     def path(self) -> Path | None:
         return self._path
 
+    @property
+    def has_entries(self) -> bool:
+        return bool(self._entries)
+
     def backup_bytes(self, source: Path, content: bytes, relative: Path) -> Path:
         """Persist exact bytes under ``backups/`` and record their digest."""
         destination = self._destination("backups", relative)

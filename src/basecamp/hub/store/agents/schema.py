@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from ..contract import STORE_USER_VERSION
 from ..text import _fallback_agent_handle
 
 
@@ -115,9 +116,9 @@ class AgentsSchemaMixin:
     def _migrate_agents_role_values(self, connection: sqlite3.Connection) -> None:
         """One-shot remap of legacy node-kind values: session->agent, agent->worker."""
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version >= 1:
+        if version >= STORE_USER_VERSION:
             return
         connection.execute(
             "UPDATE agents SET role = CASE role WHEN 'session' THEN 'agent' WHEN 'agent' THEN 'worker' ELSE role END"
         )
-        connection.execute("PRAGMA user_version = 1")
+        connection.execute(f"PRAGMA user_version = {STORE_USER_VERSION}")

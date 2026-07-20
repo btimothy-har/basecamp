@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from basecamp.hub.store import Store
+from basecamp.hub.store.contract import REQUIRED_COLUMNS, REQUIRED_INDEXES, STORE_USER_VERSION
 
 
 def test_store_initializes_required_tables(tmp_path: Path) -> None:
@@ -25,6 +26,26 @@ def test_store_initializes_required_tables(tmp_path: Path) -> None:
     assert "workstreams" in table_names
     assert "workstream_versions" in table_names
     assert "workstream_agents" in table_names
+
+
+def test_fresh_store_satisfies_doctor_contract(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    Store(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        columns = {
+            table: {row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')} for table in REQUIRED_COLUMNS
+        }
+        indexes = {
+            table: {row[1] for row in connection.execute(f'PRAGMA index_list("{table}")')} for table in REQUIRED_INDEXES
+        }
+
+    assert version == STORE_USER_VERSION
+    assert REQUIRED_COLUMNS.keys() <= tables
+    assert all(required <= columns[table] for table, required in REQUIRED_COLUMNS.items())
+    assert all(required <= indexes[table] for table, required in REQUIRED_INDEXES.items())
 
 
 def test_store_adds_messages_table_to_existing_database(tmp_path: Path) -> None:

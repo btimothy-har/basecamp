@@ -6,6 +6,7 @@ import stat
 
 from .archive import DoctorArchive
 from .config import inspect_config, repair_config
+from .hub import inspect_hub, repair_hub
 from .layout import inspect_customization_layout, repair_customization_layout
 from .models import DoctorCheck, DoctorPaths, DoctorReport, Severity
 
@@ -20,10 +21,11 @@ def run_doctor(paths: DoctorPaths, *, repair: bool = False) -> DoctorReport:
     repair_errors = [
         *repair_config(paths, archive),
         *repair_customization_layout(paths, archive),
+        *repair_hub(paths, archive),
     ]
     final, _can_continue = _inspect(paths)
     final.checks.extend(repair_errors)
-    final.archive_path = archive.path
+    final.archive_path = archive.path if archive.has_entries else None
     final.repair_attempted = bool(report.actions)
     return final
 
@@ -35,6 +37,7 @@ def _inspect(paths: DoctorPaths) -> tuple[DoctorReport, bool]:
     if can_continue:
         report.extend(inspect_config(paths))
         report.extend(inspect_customization_layout(paths))
+        report.extend(inspect_hub(paths))
     return report, can_continue
 
 
