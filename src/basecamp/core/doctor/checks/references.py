@@ -12,11 +12,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from basecamp.core.doctor import repair
 from basecamp.core.doctor.finding import Finding, Remedy, Severity
 from basecamp.core.doctor.locations import Locations
-from basecamp.core.exceptions import LauncherError
-from basecamp.core.projects import ProjectConfig, load_projects
+from basecamp.core.projects import PROJECTS_SECTION, ProjectConfig
 from basecamp.core.settings import Settings
 
 GROUP = "References"
@@ -66,26 +67,33 @@ def _check_logseq(settings: Settings) -> list[Finding]:
 
 
 def _check_projects(settings: Settings, locations: Locations) -> list[Finding]:
-    try:
-        projects = load_projects(settings)
-    except LauncherError:
-        return []  # invalid records are already reported by the integrity check
+    # Validate each record independently rather than via load_projects(), whose
+    # all-or-nothing raise on the first bad record would suppress reference
+    # checks for every other, valid project. Invalid records are already
+    # reported by the integrity check, so they are skipped here.
+    raw = settings.get_section(PROJECTS_SECTION)
     styles = _available_styles(settings, locations)
     contexts = _available_contexts(locations)
     findings: list[Finding] = []
-    for name, project in projects.items():
-        findings.extend(_check_project(name, project, locations, styles, contexts))
+    for name, data in raw.items():
+        try:
+            project = ProjectConfig.model_validate(data)
+        except ValidationError:
+            continue
+        findings.extend(_check_project(name, project, settings, locations, styles, contexts))
     return findings
 
 
 def _check_project(
     name: str,
     project: ProjectConfig,
+    settings: Settings,
     locations: Locations,
     styles: set[str],
     contexts: set[str],
 ) -> list[Finding]:
     findings = _check_repo_root(name, project.repo_root, locations)
+    findings.extend(_check_repo_root_storage(name, project.repo_root, settings, locations))
     for extra in project.additional_dirs:
         if not _resolve(extra, locations).is_dir():
             findings.append(Finding(GROUP, Severity.WARNING, f"{name}: additional dir does not exist: {extra}."))
@@ -105,6 +113,31 @@ def _check_repo_root(name: str, repo_root: str, locations: Locations) -> list[Fi
     if not (resolved / ".git").exists():
         return [Finding(GROUP, Severity.WARNING, f"{name}: repo_root is not a git repository: {resolved}.")]
     return []
+
+
+def _check_repo_root_storage(name: str, repo_root: str, settings: Settings, locations: Locations) -> list[Finding]:
+    """Flag a repo_root stored as an absolute path under $HOME (fixable → home-relative).
+
+    The porcelain always stores repo roots home-relative; an absolute one only
+    arises from a hand-edited config, and ``--fix`` can normalize it losslessly.
+    """
+    candidate = Path(repo_root)
+    if not candidate.is_absolute():
+        return []
+    try:
+        candidate.relative_to(locations.home)
+    except ValueError:
+        return []  # absolute but outside $HOME — cannot be stored home-relative
+    return [
+        Finding(
+            GROUP,
+            Severity.WARNING,
+            f"{name}: repo_root is stored as an absolute path under $HOME (should be home-relative).",
+            remedy=Remedy.FIX,
+            action=f"relativize {name} repo_root",
+            apply=lambda: repair.relativize_repo_root(settings, name, locations.home),
+        )
+    ]
 
 
 def _resolve(stored: str, locations: Locations) -> Path:

@@ -143,6 +143,37 @@ def test_missing_scaffold_dirs_fixable(env: tuple[Settings, Locations], monkeypa
     assert all(path.is_dir() for path in locations.scaffold_dirs)
 
 
+def test_reference_checks_survive_a_sibling_invalid_record(env: tuple[Settings, Locations]) -> None:
+    settings, locations = env
+    _scaffold(locations)
+    _write(
+        settings,
+        {
+            "version": CONFIG_VERSION,
+            "projects": {"bad": {"description": "missing repo_root"}, "good": {"repo_root": "gone/nowhere"}},
+        },
+    )
+    findings = gather(settings, locations, stale_days=30)
+    assert any(finding.group == "Config" and "projects.bad" in finding.summary for finding in findings)
+    refs = _in("References", findings)
+    assert any(finding.severity is Severity.ERROR and "good" in finding.summary for finding in refs)
+
+
+def test_absolute_repo_root_relativized_by_fix(
+    env: tuple[Settings, Locations], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings, locations = env
+    _scaffold(locations)
+    repo = locations.home / "work" / "demo"
+    (repo / ".git").mkdir(parents=True)
+    _write(settings, {"version": CONFIG_VERSION, "projects": {"demo": {"repo_root": str(repo)}}})
+    _all_available(monkeypatch)
+    refs = _in("References", gather(settings, locations, stale_days=30))
+    assert any(finding.remedy is Remedy.FIX and "relativize" in (finding.action or "") for finding in refs)
+    run_doctor(fix=True, settings=settings, locations=locations)
+    assert _read(settings)["projects"]["demo"]["repo_root"] == "work/demo"
+
+
 # --- unused config ------------------------------------------------------------
 
 
