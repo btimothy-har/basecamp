@@ -4,9 +4,7 @@
  * Tracks a goal and an ordered task list with three states:
  *   ✓ completed  →  active  ·  pending
  *
- * Each task has a label, description, and optional notes.
- * Description is set by the agent at creation. Notes are set by the
- * agent via annotate_task.
+ * Each task has a label, description, and criteria.
  *
  * Goal-cycle operations live in goal-cycle.ts, task-state text builders in
  * text.ts, file persistence in store.ts, and the widget in widget.ts. This

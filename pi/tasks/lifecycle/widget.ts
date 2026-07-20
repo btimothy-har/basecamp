@@ -7,7 +7,6 @@ export interface TaskProgressTask {
 	label: string;
 	status: TaskProgressStatus;
 	description?: string;
-	notes?: string | null;
 }
 
 export interface TaskProgressSnapshot {
@@ -80,14 +79,13 @@ function renderTaskProgressBody(snapshot: TaskProgressSnapshot, theme: TaskProgr
 	}
 
 	for (const task of windowTasks) {
-		const notesMark = task.notes ? theme.fg("dim", " 📝") : "";
 		const marker = MARKERS[task.status];
 		if (task.status === "deleted") {
 			lines.push(`${theme.fg("dim", marker)} ${theme.fg("dim", task.label)}`);
 		} else if (task.status === "active") {
-			lines.push(`${theme.fg("accent", marker)} ${theme.fg("accent", task.label)}${notesMark}`);
+			lines.push(`${theme.fg("accent", marker)} ${theme.fg("accent", task.label)}`);
 		} else {
-			lines.push(`${theme.fg("muted", marker)} ${task.label}${notesMark}`);
+			lines.push(`${theme.fg("muted", marker)} ${task.label}`);
 		}
 	}
 

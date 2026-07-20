@@ -34,15 +34,12 @@ export function buildSteerContent(state: TasksState, planRef: GoalCycle["planRef
 			const t = state.tasks[i]!;
 			if (t.status === "deleted") continue;
 			lines.push(`  [${i}] ${markers[t.status]} ${t.label}`);
-			if (t.status !== "completed" && t.notes) {
-				lines.push(`       Notes: ${t.notes}`);
-			}
 		}
 	}
 
 	lines.push(
 		"",
-		"Call start_task before beginning work on a task. Call complete_task when a task is done. When completing a task at a natural handoff, call complete_task with stop_work: true as the only tool call in that assistant response so the agent loop stops cleanly. Do not batch it with any other tool call. If blocked before the task is done, use annotate_task or escalate instead. If the plan changes, call create_tasks with the updated list.",
+		"Call start_task before beginning work on a task. Call complete_task when a task is done. When completing a task at a natural handoff, call complete_task with stop_work: true as the only tool call in that assistant response so the agent loop stops cleanly. Do not batch it with any other tool call. If blocked before the task is done, escalate instead. If the plan changes, call create_tasks with the updated list.",
 	);
 	return lines.join("\n");
 }
@@ -76,7 +73,6 @@ export function buildTaskContext(task: Task, index: number, state: TasksState): 
 		status: task.status,
 		description: task.description,
 		criteria: task.criteria,
-		notes: task.notes,
 		progress: buildProgress(state),
 	});
 }

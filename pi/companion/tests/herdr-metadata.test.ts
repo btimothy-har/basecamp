@@ -94,7 +94,7 @@ describe("companion/herdr-metadata", () => {
 		const metadata = buildHerdrMetadata(
 			snapshot({
 				title: `Title ${"x".repeat(100)}`,
-				tasks: [{ label: `Active ${"y".repeat(100)}`, status: "active", notes: null }],
+				tasks: [{ label: `Active ${"y".repeat(100)}`, status: "active" }],
 			}),
 		);
 
@@ -109,7 +109,7 @@ describe("companion/herdr-metadata", () => {
 			snapshot({
 				sessionId: "session-fallback",
 				title: " \n\t ",
-				tasks: [{ label: " \u0000 ", status: "active", notes: null }],
+				tasks: [{ label: " \u0000 ", status: "active" }],
 				worktree: { label: " \t ", branch: null, path: "/tmp/wt" },
 				agentMode: "planning",
 				repoName: "repo-name",
@@ -124,7 +124,7 @@ describe("companion/herdr-metadata", () => {
 		assert.equal(
 			buildHerdrMetadata(
 				snapshot({
-					tasks: [{ label: "Active task", status: "active", notes: null }],
+					tasks: [{ label: "Active task", status: "active" }],
 					worktree: { label: "worktree-label", branch: null, path: "/tmp/wt" },
 					agentMode: "work",
 					repoName: "repo-name",

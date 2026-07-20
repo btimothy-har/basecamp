@@ -31,7 +31,6 @@ export const TASK_TRACKING_TOOLS = [
 	"start_task",
 	"complete_task",
 	"get_task",
-	"annotate_task",
 	"delete_task",
 ] as const;
 export const SUBAGENT_SUPPORT_TOOLS = ["skill", ...TASK_TRACKING_TOOLS, "bq_query"] as const;

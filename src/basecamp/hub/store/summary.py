@@ -99,7 +99,6 @@ class SummaryMixin:
                 current_task = {
                     **task_row,
                     "description": _display_text(raw_task.get("description")),
-                    "notes": _display_text(raw_task.get("notes")),
                 }
 
         return {

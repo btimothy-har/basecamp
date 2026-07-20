@@ -19,10 +19,10 @@ describe("companion/snapshot", () => {
 				title: "Companion writer",
 				goal: "Ship companion writer",
 				rawTasks: [
-					{ label: "A", status: "completed", notes: "done" },
-					{ label: "B", status: "active", notes: null },
-					{ label: "C", status: "deleted", notes: "skip" },
-					{ label: "D", status: "pending", notes: "todo" },
+					{ label: "A", status: "completed" },
+					{ label: "B", status: "active" },
+					{ label: "C", status: "deleted" },
+					{ label: "D", status: "pending" },
 				],
 				agentMode: "work",
 				worktree: { label: "wt-a", branch: "main", path: "/tmp/wt-a" },
@@ -35,9 +35,9 @@ describe("companion/snapshot", () => {
 
 			assert.equal(snapshot.tasks.length, 3);
 			assert.deepEqual(snapshot.tasks, [
-				{ label: "A", status: "completed", notes: "done" },
-				{ label: "B", status: "active", notes: null },
-				{ label: "D", status: "pending", notes: "todo" },
+				{ label: "A", status: "completed" },
+				{ label: "B", status: "active" },
+				{ label: "D", status: "pending" },
 			]);
 			assert.deepEqual(snapshot.progress, { completed: 1, total: 3 });
 			assert.equal(snapshot.title, "Companion writer");
@@ -92,7 +92,7 @@ describe("companion/snapshot", () => {
 				sessionId: "session-1",
 				title: null,
 				goal: "Keep snapshots current",
-				rawTasks: [{ label: "A", status: "active", notes: null }],
+				rawTasks: [{ label: "A", status: "active" }],
 				agentMode: "work",
 				worktree: null,
 				repoName: "basecamp",

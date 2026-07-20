@@ -19,7 +19,6 @@ export interface Task {
 	label: string;
 	description: string;
 	criteria: string;
-	notes: string | null;
 	status: TaskStatus;
 	review: ReviewState | null;
 }

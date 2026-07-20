@@ -183,14 +183,13 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
                 "goal": "Ship \x1b[32mobservability\x1b[0m\x07",
                 "active": True,
                 "tasks": [
-                    {"label": "Done", "description": "d", "criteria": "c", "notes": None, "status": "completed"},
-                    {"label": 456, "description": "bad", "criteria": "bad", "notes": None, "status": "completed"},
-                    {"label": 123, "description": "bad", "criteria": "bad", "notes": None, "status": "pending"},
+                    {"label": "Done", "description": "d", "criteria": "c", "status": "completed"},
+                    {"label": 456, "description": "bad", "criteria": "bad", "status": "completed"},
+                    {"label": 123, "description": "bad", "criteria": "bad", "status": "pending"},
                     {
                         "label": "Bad status",
                         "description": "bad",
                         "criteria": "bad",
-                        "notes": None,
                         "status": "unknown",
                     },
                     "not-a-task",
@@ -198,11 +197,10 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
                         "label": "Current\x1b]0;title\x07 task",
                         "description": "Desc\x00 with controls",
                         "criteria": "c",
-                        "notes": "n" * 400,
                         "status": "active",
                     },
-                    {"label": "Deleted", "description": "d", "criteria": "c", "notes": None, "status": "deleted"},
-                    {"label": "Pending", "description": "d", "criteria": "c", "notes": None, "status": "pending"},
+                    {"label": "Deleted", "description": "d", "criteria": "c", "status": "deleted"},
+                    {"label": "Pending", "description": "d", "criteria": "c", "status": "pending"},
                 ],
             }
         ],
@@ -228,7 +226,6 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
             "label": "Current task",
             "status": "active",
             "description": "Desc with controls",
-            "notes": f"{'n' * 239}…",
         },
     }
     assert agent["recent_activity"] == [

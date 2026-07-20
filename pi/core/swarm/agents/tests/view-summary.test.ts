@@ -52,7 +52,7 @@ describe("run summary view", () => {
 							"bad",
 							{ index: 1, label: "Now", status: "active" },
 						],
-						current_task: { index: 1, label: "Now", status: "active", notes: "ignored" },
+						current_task: { index: 1, label: "Now", status: "active" },
 					},
 					latest_message: "not part of the TS summary surface",
 				},

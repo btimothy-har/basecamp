@@ -123,7 +123,6 @@ def _parse_current_task(payload: object) -> DaemonCurrentTask | None:
             label=_expect_str(payload, "label"),
             status=_expect_str(payload, "status"),
             description=_expect_optional_str(payload, "description"),
-            notes=_expect_optional_str(payload, "notes"),
         )
     except TypeError:
         return None

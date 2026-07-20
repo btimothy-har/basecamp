@@ -120,7 +120,6 @@ const SUPPORT_TOOLS = [
 	"start_task",
 	"complete_task",
 	"get_task",
-	"annotate_task",
 	"delete_task",
 	"bq_query",
 ];

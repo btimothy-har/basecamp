@@ -124,7 +124,6 @@ export function buildDraft(
 			label: t.label,
 			description: t.description,
 			criteria: t.criteria,
-			notes: null,
 			status: "pending" as TaskStatus,
 			review: null,
 		})),

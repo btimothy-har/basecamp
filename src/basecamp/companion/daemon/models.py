@@ -46,7 +46,6 @@ class DaemonCurrentTask:
     label: str
     status: str
     description: str | None
-    notes: str | None
 
 
 @dataclass(frozen=True)
