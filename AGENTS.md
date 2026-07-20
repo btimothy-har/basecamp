@@ -52,9 +52,12 @@ Cross-domain TypeScript imports use Node subpath imports (`#core/*` freely; othe
 
 ## Documentation
 
-`AGENTS.md` (this file) is the current-state guide to how the repo is built; `README.md` is the user-facing overview. Keep both accurate when things change — durable architecture rationale belongs in the **Architecture Decisions** section below, kept next to the guidance agents actually read.
+Documentation lives in exactly two files — there is no `docs/` tree:
 
-Do **not** write design or plan documents as part of routine work. Planning is done through the `plan()` tool, and the approved plan is the artifact handed to the implementer — it is not persisted to a file. Most changes need no document at all: the code, its tests, and this file are the record. Add a design or reference doc only when the user explicitly asks for one.
+- **`README.md`** — anything user-facing.
+- **`AGENTS.md`** (this file) — anything agent-facing that isn't obvious from the code: architecture decisions, cross-cutting conventions, and rationale a reader can't reconstruct from the source alone.
+
+Do **not** create design or plan documents. Planning happens through the `plan()` tool and the plan is handed to the implementer, not written to a file. Most changes need no prose at all — the code and its tests are the record. When something durable is worth writing down, it goes in one of these two files.
 
 ## Architecture Decisions
 
