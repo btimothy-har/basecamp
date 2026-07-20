@@ -4,9 +4,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import { isSubagent } from "#core/host/env.ts";
-import { persistReviewArtifact } from "../command-helpers.ts";
+import { persistReviewArtifact, type ReviewResult } from "../artifact.ts";
 import type { Finding } from "../findings.ts";
-import type { ReviewResult } from "../orchestrate.ts";
 
 interface AnnotatedFinding extends Finding {
 	reaction: string | null;
@@ -41,6 +40,7 @@ const result: ReviewResult = {
 			title: "Token is logged",
 			detail: "The access token is written to application logs.",
 			remediation: "Remove the log statement and add a regression test.",
+			response: "Acknowledged; will remove the log line.",
 		},
 		{
 			dimension: "testing",
@@ -113,6 +113,7 @@ describe("persistReviewArtifact", () => {
 		assert.equal(artifact.findings[0]?.title, "Token is logged");
 		assert.equal(artifact.findings[0]?.detail, "The access token is written to application logs.");
 		assert.equal(artifact.findings[0]?.remediation, "Remove the log statement and add a regression test.");
+		assert.equal(artifact.findings[0]?.response, "Acknowledged; will remove the log line.");
 		assert.equal(artifact.findings[1]?.dimension, "testing");
 		assert.equal(artifact.findings[1]?.severity, "medium");
 		assert.equal(artifact.findings[1]?.title, "Missing regression coverage");

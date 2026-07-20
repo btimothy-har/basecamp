@@ -97,7 +97,7 @@ Use it to list, add, edit, or remove configured projects.
 | `/show-plan` | Show the current plan and task progress |
 | `/worktree [label]` | Switch to an existing Git-registered worktree |
 | `/create-pr` | Create or update a pull request |
-| `/code-review` | Run an independent multi-agent review of the current branch |
+| `/skill:code-review` | Run an independent multi-agent review of the current branch |
 | `/title [text]` | Generate a session title from the conversation, or set one manually |
 | `/model-aliases` | Manage model aliases (list, add, edit, remove) |
 

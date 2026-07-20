@@ -2,18 +2,22 @@ import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { Finding } from "./findings.ts";
-import type { ReviewResult } from "./orchestrate.ts";
+import type { Finding, ReviewScope } from "./findings.ts";
+import type { Verdict } from "./synthesis.ts";
+
+export interface ReviewResult {
+	scope: ReviewScope;
+	verdict: Verdict;
+	findings: Finding[];
+	createdAt: string;
+}
 
 interface AnnotatedFinding extends Finding {
 	reaction: string | null;
 }
 
-interface ReviewArtifact {
-	scope: ReviewResult["scope"];
-	verdict: ReviewResult["verdict"];
+interface ReviewArtifact extends Omit<ReviewResult, "findings"> {
 	findings: AnnotatedFinding[];
-	createdAt: string;
 }
 
 export const PRIVATE_FILE_MODE = 0o600;
@@ -44,7 +48,7 @@ export function persistReviewArtifact(result: ReviewResult, reactions: (string |
 	);
 	try {
 		fs.writeFileSync(fd, `${JSON.stringify(artifact, null, 2)}\n`, "utf8");
-		fs.chmodSync(artifactPath, PRIVATE_FILE_MODE);
+		fs.fchmodSync(fd, PRIVATE_FILE_MODE);
 	} finally {
 		fs.closeSync(fd);
 	}

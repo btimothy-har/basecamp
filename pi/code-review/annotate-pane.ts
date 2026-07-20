@@ -20,6 +20,11 @@ export function findingSummaryLines(finding: Finding, index: number, total: numb
 	];
 }
 
+export function responseDisplayLines(finding: Finding): string[] {
+	const body = finding.response?.trim();
+	return ["Author response:", body || "—"];
+}
+
 export function buildReactions(findings: Finding[], drafts: Map<number, string>): (string | null)[] {
 	return findings.map((_finding, index) => {
 		const text = drafts.get(index)?.trim();
@@ -49,6 +54,13 @@ function colorSummaryLines(lines: readonly string[], theme: Theme): string[] {
 	return colored;
 }
 
+function colorResponseLines(lines: readonly string[], theme: Theme): string[] {
+	const colored = [...lines];
+	colored[0] = theme.fg("muted", colored[0] ?? "");
+	colored[1] = theme.fg("dim", colored[1] ?? "");
+	return colored;
+}
+
 export async function annotateFindings(
 	ui: Pick<ExtensionUIContext, "custom">,
 	findings: Finding[],
@@ -64,6 +76,7 @@ export async function annotateFindings(
 		const border = new DynamicBorder((s: string) => theme.fg("border", s));
 		const title = new Text(theme.fg("accent", theme.bold("Code Review Reactions")), 1, 0);
 		const summary = new Text("", 1, 0);
+		const responseText = new Text("", 1, 0);
 		const reactionLabel = new Text("", 1, 0);
 		const hint = new Text("", 1, 0);
 
@@ -80,6 +93,8 @@ export async function annotateFindings(
 		container.addChild(title);
 		container.addChild(new Spacer(1));
 		container.addChild(summary);
+		container.addChild(new Spacer(1));
+		container.addChild(responseText);
 		container.addChild(new Spacer(1));
 		container.addChild(reactionLabel);
 		container.addChild(reactionEditor);
@@ -99,6 +114,7 @@ export async function annotateFindings(
 		function updateView(): void {
 			const finding = findings[current]!;
 			summary.setText(colorSummaryLines(findingSummaryLines(finding, current, findings.length), theme).join("\n"));
+			responseText.setText(colorResponseLines(responseDisplayLines(finding), theme).join("\n"));
 			reactionLabel.setText(theme.fg("accent", "Your reaction (optional):"));
 			if (reactionEditor.getText() !== (drafts.get(current) ?? "")) {
 				reactionEditor.setText(drafts.get(current) ?? "");

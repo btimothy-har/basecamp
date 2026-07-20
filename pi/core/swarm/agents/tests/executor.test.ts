@@ -173,7 +173,7 @@ describe("getBasecampExtensionToolNames", () => {
 				baseDir: extensionRoot,
 				path: path.join(extensionRoot, `${name}.ts`),
 			});
-			const tools = ["bq_query", "agent", "escalate"].map((name) => ({
+			const tools = ["bq_query", "agent", "escalate", "report_findings"].map((name) => ({
 				name,
 				sourceInfo: sourceInfo(name),
 			}));

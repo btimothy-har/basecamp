@@ -9,7 +9,10 @@ import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "./executo
 import { resolveModel } from "./model-resolution.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
-const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate"]);
+// Top-level-only extension tools — excluded from every dispatched agent's toolset so a
+// subagent never sees a tool it could only hit a hard guard on. `agent`/`escalate` are
+// dispatch/UI-only; `report_findings` is primary-only (guarded in pi/code-review/tools.ts).
+const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "report_findings"]);
 
 interface ToolInfo {
 	name: string;
@@ -99,9 +102,9 @@ function resolveSessionDir(agentId: string): string {
 /**
  * The parent-session identity stamped on a dispatched agent: the explicit
  * BASECAMP_SESSION_NAME, else the live session name (an empty one ignored), else
- * the session id. Shared by dispatch/ask/code-review so the empty-name
- * fallthrough is consistent — dispatch/ask previously used `??` and would keep an
- * empty trimmed name; the `||` here matches code-review and is the intended behaviour.
+ * the session id. Shared by dispatch/ask so the empty-name fallthrough is
+ * consistent: the `||` drops an empty trimmed name (an earlier `??` would keep
+ * it), which is the intended behaviour.
  */
 export function resolveParentSession(
 	pi: { getSessionName(): string | undefined },
