@@ -1,4 +1,5 @@
 import type { ExtensionAPI, ExtensionContext, SessionShutdownEvent } from "@earendil-works/pi-coding-agent";
+import { getAgentDepth } from "#core/host/env.ts";
 import { exec } from "#core/host/exec.ts";
 import { getWorkspaceEffectiveCwd, getWorkspaceState } from "#core/project/workspace/state.ts";
 import { createHerdrPaneCloser, createHerdrPaneProvider } from "../herdr/provider.ts";
@@ -23,12 +24,8 @@ async function companionAvailable(pi: ExtensionAPI): Promise<boolean> {
 	}
 }
 
-function resolveAgentDepth(): number {
-	return Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
-}
-
 function resolvePaneProvider(ctx: ExtensionContext): PaneProvider | null {
-	const agentDepth = resolveAgentDepth();
+	const agentDepth = getAgentDepth();
 	return (
 		createHerdrPaneProvider({
 			herdrEnv: process.env.HERDR_ENV,

@@ -12,6 +12,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/copilot.ts";
 import { getAgentMode } from "#core/agent-mode/index.ts";
+import { isSubagent } from "#core/host/env.ts";
 import { hasInvokedSkill } from "#core/skills/tracker.ts";
 import type { TasksRuntime } from "../lifecycle/index.ts";
 import { isCompleteTaskStopWorkDetails } from "../lifecycle/text.ts";
@@ -84,10 +85,6 @@ export function registerPlanCopilotGuard(pi: ExtensionAPI): void {
 }
 
 const PLANNING_SKILL = "planning";
-
-function isSubagent(): boolean {
-	return Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0;
-}
 
 /** Requires the planning skill before interactive main-session plan() calls. */
 export function registerPlanSkillGuard(pi: ExtensionAPI): void {

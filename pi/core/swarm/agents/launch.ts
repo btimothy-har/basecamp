@@ -1,6 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDepth } from "../../host/env.ts";
 import { resolveDaemonPaths } from "../../hub/index.ts";
 import type { AgentConfig } from "./discovery.ts";
 import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "./executor.ts";
@@ -95,7 +96,7 @@ function resolveSessionDir(agentId: string): string {
 }
 
 export function buildAgentEnv(opts: { name: string; parentSession: string; project: string }): Record<string, string> {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0");
+	const depth = getAgentDepth();
 	const env: Record<string, string> = {};
 	for (const [k, v] of Object.entries(process.env)) {
 		if (k === "BASECAMP_AGENT_HANDLE") continue;

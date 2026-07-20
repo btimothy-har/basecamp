@@ -9,6 +9,7 @@ import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendi
 import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
 import { sweepAgentWorktrees } from "../../git/worktrees/sweep.ts";
 import { readLogseqGraphDir } from "../../host/config.ts";
+import { getAgentDepth } from "../../host/env.ts";
 import { getCurrentSessionState } from "../../session/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "./affinity.ts";
 import { requireWorkspaceRuntime } from "./runtime.ts";
@@ -165,7 +166,7 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 	pi.on("session_start", async (event, ctx) => {
 		const worktreeDir = (pi.getFlag("worktree-dir") as string | undefined) ?? null;
 		const launchCwd = path.resolve(ctx.cwd);
-		const isSubagent = Number(process.env.BASECAMP_AGENT_DEPTH ?? "0") > 0;
+		const isSubagent = getAgentDepth() > 0;
 
 		const { unsafeEditResult } = await initializeWorkspace({
 			launchCwd,

@@ -1,4 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentDepth } from "../host/env.ts";
 import { shortSessionId as defaultShortSessionId } from "../session/session-id.ts";
 import { formatTitle } from "../ui/index.ts";
 import type { DaemonIdentity } from "./connection.ts";
@@ -39,7 +40,7 @@ export function sanitizeDisplayLabel(value: string | null | undefined, maxLength
 }
 
 export function deriveDaemonIdentity(ctx: ExtensionContext, deps?: Partial<DaemonIdentityDeps>): DaemonIdentity {
-	const depth = Number(process.env.BASECAMP_AGENT_DEPTH ?? 0);
+	const depth = getAgentDepth();
 	const safeDepth = Number.isFinite(depth) && depth >= 0 ? depth : 0;
 	const nodeId = process.env.BASECAMP_AGENT_ID ?? ctx.sessionManager.getSessionId();
 	const explicitHandle = safeDepth > 0 ? process.env.BASECAMP_AGENT_HANDLE?.trim() : undefined;
