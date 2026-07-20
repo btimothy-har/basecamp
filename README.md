@@ -31,12 +31,10 @@ Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-w
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp
-uv run install.py           # interactive (prompts for editable mode)
-uv run install.py -e        # editable (recommended for development)
-uv run install.py --no-editable
+uv run install.py
 ```
 
-This installs the Python tool `basecamp`, prompts for optional Basecamp Pi package groups, and saves installer metadata to `~/.pi/basecamp/config.json`.
+This installs the Python tool, installs the extension dependencies, registers the repository root as the Basecamp Pi extension, and saves installer metadata to `~/.pi/basecamp/config.json`.
 
 Then initialize the environment:
 
@@ -85,10 +83,10 @@ If the launch cwd's git root does not match a configured `repo_root`, Basecamp s
 Project configuration is managed through the projects menu:
 
 ```bash
-basecamp projects
+basecamp config project
 ```
 
-Use it to list, add, edit, or remove configured projects.
+Use the menu to list, add, edit, or remove configured projects. Scriptable subcommands are available under the same group, such as `basecamp config project list`.
 
 ### Slash Commands (in-session)
 
@@ -124,40 +122,63 @@ Named read-only agents may fan out for parallel investigation and review. Be con
 
 ## Configuration
 
-Projects are defined in `~/.pi/basecamp/workspace/projects.json`:
+Basecamp’s machine-readable configuration is one locked JSON document at `~/.pi/basecamp/config.json`. Python is the sole writer; the Pi extension reads it in-process. Manage it interactively with `basecamp config`, through typed `project`/`env`/`alias` subcommands, or with generic `show|get|set|unset|edit` commands.
 
 ```json
 {
   "version": 1,
+  "install_dir": "/Users/me/src/basecamp",
   "projects": {
     "web-app": {
       "repo_root": "GitHub/web-app",
       "additional_dirs": [],
       "description": "Main web application",
-      "working_style": "engineering"
-    },
-    "data-pipeline": {
-      "repo_root": "GitHub/pipeline",
-      "additional_dirs": ["GitHub/pipeline-config"],
-      "description": "ETL pipeline and configuration",
       "working_style": "engineering",
-      "context": "pipeline"
+      "context": null
     }
+  },
+  "environments": {
+    "acme/web-app": {"setup": "uv sync && npm ci"}
+  },
+  "model_aliases": {
+    "fast": "claude-haiku-4-5"
+  },
+  "logseq": {
+    "graph_dir": "~/logseq"
   }
 }
 ```
 
-Root `~/.pi/basecamp/config.json` holds installer-owned metadata (`install_dir`, `installed_modules`) and per-repo worktree `environments` (see [Worktree environments](#worktree-environments)); it does not contain project definitions.
+Project fields:
 
 | Field | Required | Description |
 |-------|----------|-------------|
 | `repo_root` | Yes | Path relative to `$HOME` for the git repository root used to detect the project |
 | `additional_dirs` | No | Extra project directories included in prompt context and allowed file roots |
-| `description` | No | Shown in `basecamp projects` listings |
-| `working_style` | No | Loads matching working style prompt (see below) |
-| `context` | No | Stem only (no `.md`); loads `~/.pi/basecamp/workspace/context/{name}.md` for project context |
+| `description` | No | Shown in project listings |
+| `working_style` | No | Loads a matching working-style prompt |
+| `context` | No | Stem only (no `.md`); loads `~/.pi/basecamp/context/{name}.md` |
 
-Existing local config files with the older project directory schema are migrated to `repo_root` and `additional_dirs` by setup/projects flows.
+User-authored prompt customizations live beside the config in `~/.pi/basecamp/context/`, `styles/`, and `prompts/`.
+
+### Local-state doctor
+
+`basecamp doctor` is read-only. It checks the current config and directory layout, known retired paths, hub liveness, SQLite integrity, and the Store’s expected schema/invariants. Repairable findings and errors produce exit status 1; informational findings and warnings do not.
+
+```bash
+basecamp doctor
+basecamp doctor --repair
+```
+
+`--repair` applies only bounded, non-destructive repairs. It locks and backs up config before rewriting it, migrates non-conflicting prior config/layout data, archives clean-break artifacts without importing them, and runs the existing Store migrations only when the hub is conclusively stopped. Changed config and databases, plus retired artifacts removed from the active layout, are retained under one private timestamped recovery archive:
+
+```text
+~/.pi/basecamp/backups/doctor/<timestamp>/
+```
+
+The doctor never resets current records, overwrites conflicts, follows symlinks, drops unknown state, terminates a daemon, or prunes its archives. Corrupt, newer, and conflicting state remains in place with an actionable error. Ambiguous daemon liveness is a read-only warning and blocks the affected repair. The former browser profile at `~/.pi/basecamp/browser/profile` is explicitly excluded.
+
+Older standalone project/alias files and `workspace/{context,styles,prompts}` are handled by `--repair`; the standalone `migrations/001_consolidate_basecamp_state.py` script records an earlier one-shot consolidation and is not the current repair surface.
 
 ## Prompt System
 
@@ -187,7 +208,7 @@ project context (configured context plus AGENTS.md/CLAUDE.md)
 runtime environment (paths, platform, date, git/worktree state)
 ```
 
-Built-in prompt files can be overridden by creating matching files under `~/.pi/basecamp/workspace/prompts/` (for example, `~/.pi/basecamp/workspace/prompts/environment.md` or `~/.pi/basecamp/workspace/prompts/modes/work.md`).
+Built-in prompt files can be overridden by creating matching files under `~/.pi/basecamp/prompts/` (for example, `~/.pi/basecamp/prompts/environment.md` or `~/.pi/basecamp/prompts/modes/work.md`).
 
 ### Session Modes
 
@@ -203,11 +224,11 @@ The session mode sets the agent's posture and is shown in the footer. Cycle betw
 | `advisor` | Advisor role, efficient discovery, direct communication, decision support |
 | `logseq` | Knowledge graph curation, structured entries, user-driven content approval |
 
-Create custom working styles as `{name}.md` files in `~/.pi/basecamp/workspace/styles/`.
+Create custom working styles as `{name}.md` files in `~/.pi/basecamp/styles/`.
 
 ### Project Context
 
-For multi-repo projects, add cross-repo context in `~/.pi/basecamp/workspace/context/`. The `context` field in project config is the file stem only; Basecamp appends `.md` when loading the matching file.
+For multi-repo projects, add cross-repo context in `~/.pi/basecamp/context/`. The `context` field in project config is the file stem only; Basecamp appends `.md` when loading the matching file.
 
 Single-repo projects typically use `AGENTS.md` in the repo itself.
 
@@ -233,10 +254,10 @@ The workspace service owns the `~/.worktrees/<org>/<name>/<label>/` storage conv
 A fresh worktree contains tracked files only — gitignored artifacts (`.venv`, `node_modules`, `.env`, build output) are absent. To provision newly created worktrees, configure a per-repo **environment**: a setup command keyed by repo name.
 
 ```bash
-basecamp environments                       # interactive menu (list / add / edit / remove)
-basecamp environments list
-basecamp environments set <org>/<name> "uv sync && npm ci"
-basecamp environments remove <org>/<name>
+basecamp config env                         # interactive menu (list / add / edit / remove)
+basecamp config env list
+basecamp config env set <org>/<name> "uv sync && npm ci"
+basecamp config env remove <org>/<name>
 ```
 
 Environments are stored under the `environments` section of `~/.pi/basecamp/config.json`, keyed by the canonical `<org>/<name>` repo identity (derived from the origin remote URL, falling back to the bare git basename) — i.e. `BASECAMP_REPO`:
@@ -260,7 +281,7 @@ For anything beyond a one-liner, point the command at a script you maintain outs
 basecamp is organized by the artifacts it ships (design record: `docs/design/repo-rearchitecture.md`):
 
 - `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
-- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `swarm` (daemon), and `companion` (TUI) subpackages
+- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): CLI/setup/install shell plus `core`, `workspace`, `hub` (daemon), `companion` (TUI), and the cross-domain local-state `doctor` feature
 
 ## License
 

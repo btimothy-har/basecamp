@@ -60,5 +60,6 @@ def test_one_repair_pass_uses_one_recovery_archive(tmp_path: Path, monkeypatch: 
         "retired/workstream-launches",
     }
     assert not paths.legacy_context.exists()
+    assert not paths.workspace.exists()
     assert not paths.workstream_launches.exists()
     assert paths.context.joinpath("project.md").read_text(encoding="utf-8") == "context\n"

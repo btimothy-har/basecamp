@@ -58,9 +58,9 @@ def repair_config(paths: DoctorPaths, archive: DoctorArchive) -> list[DoctorChec
         except (LauncherError, OSError, ValueError) as exc:
             errors.append(_repair_error("write_failed", f"Config repair failed: {exc}", paths.config))
             return errors
-    elif state.needs_mode_repair:
+    if state.needs_mode_repair:
         try:
-            paths.config.chmod(0o600)
+            Settings(paths.config).restrict_permissions()
         except OSError as exc:
             errors.append(_repair_error("mode_failed", f"Config permission repair failed: {exc}", paths.config))
 

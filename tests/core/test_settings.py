@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from basecamp.core.paths import DEFAULT_CONFIG_PATH
 from basecamp.core.settings import CONFIG_VERSION, Settings
 
@@ -177,6 +179,18 @@ class TestLocking:
     def test_lock_path_is_sibling(self, tmp_path: Path) -> None:
         cfg = _cfg(tmp_path)
         assert cfg.lock_path == cfg.path.with_suffix(".lock")
+
+    def test_restrict_permissions_does_not_follow_symlinks(self, tmp_path: Path) -> None:
+        cfg = _cfg(tmp_path)
+        target = tmp_path / "target.json"
+        target.write_text("{}", encoding="utf-8")
+        target.chmod(0o644)
+        cfg.path.symlink_to(target)
+
+        with pytest.raises(OSError):
+            cfg.restrict_permissions()
+
+        assert target.stat().st_mode & 0o777 == 0o644
 
 
 class TestDefaults:

@@ -9,7 +9,7 @@ The repo is organized by the artifacts it ships (design record: docs/design/repo
 | Product | Directory | Purpose |
 |---------|-----------|---------|
 | Basecamp Pi extension | `pi/` (`pi/extension.ts` + `pi/<domain>/`) | The single Pi package, registered from the repo root: all session, workspace, workflow, and agent behavior, assembled from domain modules |
-| `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, `basecamp.hub` (daemon), and `basecamp.companion` (TUI) subpackages |
+| `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, `basecamp.hub` (daemon), `basecamp.companion` (TUI), and cross-domain `basecamp.doctor` feature subpackages |
 
 ## Repo Map
 
@@ -35,12 +35,13 @@ pi/                            # ① the Pi extension (TypeScript)
 └── browser/                    # primary-only browser automation: pinned Playwright CLI shim + on-demand skill
 
 src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
-├── cli.py                      # Click entry point (setup, projects, environments, companion, hub)
+├── cli.py                      # Click entry point (setup, config, doctor, companion, hub, install)
 ├── setup.py  installer.py      # environment setup + install orchestration (uv tool + npm + single pi install)
 ├── core/                       # settings, paths, files, exceptions + unified config.json: validation registry (config_schema) · generic get/set/edit (config_document) · `basecamp config` CLI (plumbing + project/env/alias porcelain)
 ├── workspace/                  # per-repo worktree-setup environments + menus
 ├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
-└── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)
+├── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)
+└── doctor/                      # cross-domain, read-only-by-default local config/layout + hub-schema diagnostics and backed-up repair
 
 docs/  tests/  migrations/     # design docs; Python tests (tests/<domain>/); one-shot state migration
 ```

@@ -107,7 +107,8 @@ class DoctorArchive:
     def _ensure_root(self) -> Path:
         if self._path is not None:
             return self._path
-        self._paths.archive_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        for directory in (self._paths.archive_root.parent, self._paths.archive_root):
+            _ensure_private_directory(directory)
         candidate = self._paths.archive_root / self._timestamp
         suffix = 1
         while candidate.exists():
@@ -137,6 +138,18 @@ class DoctorArchive:
             mode=0o600,
             dir_mode=0o700,
         )
+
+
+def _ensure_private_directory(path: Path) -> None:
+    try:
+        path.mkdir(mode=0o700)
+    except FileExistsError:
+        pass
+    mode = path.lstat().st_mode
+    if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+        msg = f"Archive directory is not a regular directory: {path}"
+        raise OSError(msg)
+    path.chmod(0o700)
 
 
 def _atomic_write_bytes(path: Path, content: bytes) -> None:

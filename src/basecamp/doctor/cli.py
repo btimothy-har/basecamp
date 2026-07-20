@@ -21,7 +21,7 @@ _STYLES: dict[Severity, tuple[str, str]] = {
 
 
 @click.command("doctor")
-@click.option("--repair", is_flag=True, help="Apply only backed-up, non-destructive schema repairs.")
+@click.option("--repair", is_flag=True, help="Apply backed-up config, layout, and Store repairs.")
 def doctor(*, repair: bool) -> None:
     """Check Basecamp config, local-state layout, and hub database health."""
     report = run_doctor(DoctorPaths.for_home(Path.home()), repair=repair)
@@ -36,12 +36,13 @@ def render_report(report: DoctorReport, *, repair: bool) -> None:
     console.print("[bold blue]basecamp doctor[/bold blue]")
     console.print()
 
-    current_section: str | None = None
+    sections: dict[str, list[DoctorCheck]] = {}
     for check in report.checks:
-        if check.section != current_section:
-            current_section = check.section
-            console.print(f"[bold]{current_section.replace('_', ' ').title()}[/bold]")
-        _render_check(check)
+        sections.setdefault(check.section, []).append(check)
+    for section, checks in sections.items():
+        console.print(f"[bold]{section.replace('_', ' ').title()}[/bold]")
+        for check in checks:
+            _render_check(check)
     if report.archive_path is not None:
         console.print(f"\nRecovery archive: [bold]{report.archive_path}[/bold]")
     elif repair and report.repair_attempted:

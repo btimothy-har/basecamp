@@ -10,6 +10,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import stat
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -99,6 +100,18 @@ class Settings:
             if changed:
                 self._write(data)
             return changed
+
+    def restrict_permissions(self) -> None:
+        """Set the config file to 0600 without following a replacement symlink."""
+        with self._locked_document():
+            descriptor = os.open(self._path, os.O_RDONLY | os.O_NOFOLLOW)
+            try:
+                if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+                    msg = f"Config is no longer a regular file: {self._path}"
+                    raise OSError(msg)
+                os.fchmod(descriptor, 0o600)
+            finally:
+                os.close(descriptor)
 
     @property
     def install_dir(self) -> str | None:

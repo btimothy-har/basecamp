@@ -188,13 +188,13 @@ def _copy_missing(pair: CustomizationPair, entries: tuple[DirectoryEntry, ...]) 
         source = pair.legacy / entry.relative
         destination = pair.current / entry.relative
         if entry.is_directory:
-            destination.mkdir(parents=True, exist_ok=True)
+            destination.mkdir(parents=True, exist_ok=True, mode=0o700)
         elif not destination.exists():
             _atomic_copy_absent(source, destination)
 
 
 def _atomic_copy_absent(source: Path, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     descriptor, temporary_name = tempfile.mkstemp(prefix=f".{destination.name}.", suffix=".tmp", dir=destination.parent)
     temporary = Path(temporary_name)
     try:

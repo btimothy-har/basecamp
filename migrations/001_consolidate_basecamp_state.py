@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Consolidate Basecamp-owned local state under ~/.pi/basecamp.
+"""Historical one-shot consolidation of Basecamp state under ~/.pi/basecamp.
+
+This script targets the bounded-context layout that preceded unified
+``config.json``. Use ``basecamp doctor`` (or ``basecamp doctor --repair``) for
+current installations; this migration remains executable only for its original
+source layouts and recorded behavior.
 
 Dry-run is the default:
 

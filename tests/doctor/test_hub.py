@@ -139,6 +139,66 @@ def test_live_or_ambiguous_daemon_blocks_pending_migration(tmp_path: Path, monke
         assert archive.path is None
 
 
+def test_liveness_race_inside_spawn_lock_aborts_without_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    paths = _paths(tmp_path)
+    _legacy_database(paths.daemon_db)
+    statuses = iter(
+        [
+            DaemonStatus(DaemonState.DOWN),
+            DaemonStatus(DaemonState.LIVE, protocol=PROTOCOL_VERSION),
+        ]
+    )
+    monkeypatch.setattr(hub, "inspect_daemon", lambda *_args, **_kwargs: next(statuses))
+    before = paths.daemon_db.read_bytes()
+    archive = DoctorArchive(paths, timestamp="stamp")
+
+    errors = repair_hub(paths, archive)
+
+    assert [error.identifier for error in errors] == ["database.repair_race"]
+    assert paths.daemon_db.read_bytes() == before
+    assert not paths.daemon_spawn_lock.exists()
+    assert archive.path is None
+
+
+def test_spawn_lock_contention_aborts_without_replacing_owner(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    _legacy_database(paths.daemon_db)
+    owner = b'{"pid": 999, "ts": 1}'
+    paths.daemon_spawn_lock.write_bytes(owner)
+    before = paths.daemon_db.read_bytes()
+    archive = DoctorArchive(paths, timestamp="stamp")
+
+    errors = repair_hub(paths, archive)
+
+    assert [error.identifier for error in errors] == ["database.repair_spawn_lock"]
+    assert paths.daemon_db.read_bytes() == before
+    assert paths.daemon_spawn_lock.read_bytes() == owner
+    assert archive.path is None
+
+
+def test_failed_database_backup_removes_partial_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    paths = _paths(tmp_path)
+    _legacy_database(paths.daemon_db)
+    before = paths.daemon_db.read_bytes()
+    archive = DoctorArchive(paths, timestamp="stamp")
+
+    def reject_backup(_connection: sqlite3.Connection) -> None:
+        raise sqlite3.DatabaseError
+
+    monkeypatch.setattr(hub, "_require_valid_backup", reject_backup)
+
+    errors = repair_hub(paths, archive)
+
+    assert [error.identifier for error in errors] == ["database.repair_failed"]
+    assert paths.daemon_db.read_bytes() == before
+    assert archive.path is not None
+    assert not (archive.path / "backups" / "swarm" / "daemon.db").exists()
+    archive.discard_if_empty()
+    assert archive.path is None
+
+
 def test_corrupt_and_forward_database_are_report_only(tmp_path: Path) -> None:
     corrupt_paths = _paths(tmp_path / "corrupt")
     corrupt_paths.daemon_db.write_bytes(b"not sqlite")
@@ -225,6 +285,30 @@ def test_missing_workstream_snapshot_is_backfilled_offline(tmp_path: Path) -> No
             "SELECT label, brief FROM workstream_versions WHERE workstream_id = 'ws-1' AND version = 1"
         ).fetchone()
     assert row == ("Alpha", "Brief")
+
+
+def test_logical_orphans_are_reported_without_mutation(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    Store(db_path=paths.daemon_db, task_dir=paths.root / "tasks")
+    with sqlite3.connect(paths.daemon_db) as connection:
+        connection.execute("INSERT INTO runs (id, agent_id, status) VALUES ('run-1', 'missing', 'failed')")
+    before = paths.daemon_db.read_bytes()
+
+    report = inspect_hub(paths)
+
+    assert report.exit_code == 0
+    assert _checks(report)["database.orphans"] is Severity.WARNING
+    assert paths.daemon_db.read_bytes() == before
+
+
+def test_database_directory_is_reported_without_opening(tmp_path: Path) -> None:
+    paths = DoctorPaths.for_home(tmp_path)
+    paths.daemon_db.mkdir(parents=True)
+
+    report = inspect_hub(paths)
+
+    assert report.exit_code == 1
+    assert _checks(report)["database.type"] is Severity.ERROR
 
 
 def test_database_symlink_is_never_followed(tmp_path: Path) -> None:

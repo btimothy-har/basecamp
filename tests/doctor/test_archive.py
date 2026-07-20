@@ -15,6 +15,7 @@ from basecamp.doctor.models import DoctorPaths
 def test_backup_is_exact_private_and_manifested(tmp_path: Path) -> None:
     paths = DoctorPaths.for_home(tmp_path)
     source = paths.root / "config.json"
+    paths.root.mkdir(parents=True)
     content = b'{"value": "exact"}\n'
     archive = DoctorArchive(paths, timestamp="20260719T120000000000Z")
 
@@ -79,6 +80,7 @@ def test_archive_rejects_escape_duplicate_and_symlink(tmp_path: Path) -> None:
 
 def test_empty_failed_archive_is_removed_but_recovery_data_is_retained(tmp_path: Path) -> None:
     paths = DoctorPaths.for_home(tmp_path)
+    paths.root.mkdir(parents=True)
     empty = DoctorArchive(paths, timestamp="empty")
     empty.reserve_backup_path(Path("swarm/daemon.db"))
 
@@ -96,6 +98,25 @@ def test_empty_failed_archive_is_removed_but_recovery_data_is_retained(tmp_path:
     assert partial.path == paths.archive_root / "partial"
     assert partial.has_recovery_data is True
     assert target.read_bytes() == b"recoverable"
+
+
+@pytest.mark.parametrize("component", ["backups", "doctor"])
+def test_archive_prefix_symlink_is_never_followed(tmp_path: Path, component: str) -> None:
+    paths = DoctorPaths.for_home(tmp_path)
+    external = tmp_path / "external"
+    external.mkdir()
+    paths.root.mkdir(parents=True)
+    if component == "backups":
+        paths.archive_root.parent.symlink_to(external, target_is_directory=True)
+    else:
+        paths.archive_root.parent.mkdir()
+        paths.archive_root.symlink_to(external, target_is_directory=True)
+    archive = DoctorArchive(paths, timestamp="stamp")
+
+    with pytest.raises(OSError):
+        archive.backup_bytes(paths.config, b"{}", Path("config.json"))
+
+    assert list(external.iterdir()) == []
 
 
 def test_timestamp_collision_uses_a_distinct_archive(tmp_path: Path) -> None:

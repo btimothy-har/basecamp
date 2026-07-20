@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from basecamp.doctor.models import DoctorPaths, Severity
 from basecamp.doctor.service import run_doctor
 
@@ -167,6 +169,45 @@ def test_standalone_legacy_sections_import_then_archive(tmp_path: Path) -> None:
     assert document["model_aliases"] == {"fast": "model-a"}
     assert (repaired.archive_path / "retired" / "workspace" / "projects.json").exists()
     assert (repaired.archive_path / "retired" / "core" / "model-aliases.json").exists()
+
+
+def test_conflicting_root_model_aliases_are_never_rewritten(tmp_path: Path) -> None:
+    paths = DoctorPaths.for_home(tmp_path)
+    original = _write_json(
+        paths.config,
+        {
+            "version": 1,
+            "models": {"fast": "legacy-model"},
+            "model_aliases": {"fast": "current-model"},
+        },
+    )
+
+    report = run_doctor(paths, repair=True)
+
+    assert report.exit_code == 1
+    assert paths.config.read_bytes() == original
+    assert report.archive_path is None
+    assert _config_checks(report)["config.schema"] is Severity.ERROR
+
+
+@pytest.mark.parametrize(
+    "project",
+    [
+        {"dirs": ["legacy"], "repo_root": "current"},
+        {"dirs": ["root", "legacy-extra"], "repo_root": "root", "additional_dirs": ["current-extra"]},
+        {"dirs": []},
+    ],
+)
+def test_conflicting_legacy_project_dirs_are_never_rewritten(tmp_path: Path, project: dict) -> None:
+    paths = DoctorPaths.for_home(tmp_path)
+    original = _write_json(paths.config, {"version": 1, "projects": {"demo": project}})
+
+    report = run_doctor(paths, repair=True)
+
+    assert report.exit_code == 1
+    assert paths.config.read_bytes() == original
+    assert report.archive_path is None
+    assert _config_checks(report)["config.schema"] is Severity.ERROR
 
 
 def test_conflicting_legacy_section_stays_in_place(tmp_path: Path) -> None:

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import stat
+from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -63,7 +65,7 @@ def repair_hub(paths: DoctorPaths, archive: DoctorArchive) -> list[DoctorCheck]:
                 ]
             _backup_database(paths.daemon_db, archive, lock)
             lock.refresh(force=True)
-            Store(db_path=paths.daemon_db, task_dir=paths.root / "tasks")
+            lock.run_while_refreshing(lambda: Store(db_path=paths.daemon_db, task_dir=paths.root / "tasks"))
     except FileExistsError:
         return [_repair_error("spawn_lock", "Hub spawn lock is held; no database changes were made.", paths.daemon_db)]
     except (OSError, sqlite3.Error) as exc:
@@ -105,7 +107,7 @@ def _build_state(paths: DoctorPaths) -> HubState:
         return HubState(report, daemon, safe_to_repair=False)
 
     try:
-        with _read_only_connection(paths.daemon_db) as connection:
+        with closing(_read_only_connection(paths.daemon_db)) as connection:
             safe_to_repair = _inspect_database(connection, report, paths.daemon_db)
     except sqlite3.Error as exc:
         report.add_check(
@@ -403,8 +405,13 @@ def _count(connection: sqlite3.Connection, query: str) -> int:
 
 def _backup_database(source: Path, archive: DoctorArchive, lock: DaemonSpawnLock) -> Path:
     destination = archive.reserve_backup_path(Path("swarm") / "daemon.db")
+    descriptor = os.open(destination, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    os.close(descriptor)
     try:
-        with _read_only_connection(source) as source_connection, sqlite3.connect(destination) as target_connection:
+        with (
+            closing(_read_only_connection(source)) as source_connection,
+            closing(sqlite3.connect(destination)) as target_connection,
+        ):
 
             def progress(_status: int, _remaining: int, _total: int) -> None:
                 lock.refresh()

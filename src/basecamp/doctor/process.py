@@ -7,7 +7,9 @@ import os
 import re
 import socket
 import subprocess
+import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from http.client import HTTPConnection, HTTPException
@@ -97,6 +99,29 @@ class DaemonSpawnLock:
         self._payload = self._new_payload()
         atomic_write_json(self._path, self._payload, mode=0o600, dir_mode=0o700)
         self._last_refresh = now
+
+    def run_while_refreshing(self, operation: Callable[[], object], *, interval: float = 5.0) -> None:
+        """Run a blocking migration while keeping the cross-process lock fresh."""
+        stopped = threading.Event()
+        refresh_errors: list[OSError] = []
+
+        def heartbeat() -> None:
+            while not stopped.wait(interval):
+                try:
+                    self.refresh(force=True)
+                except OSError as exc:
+                    refresh_errors.append(exc)
+                    return
+
+        thread = threading.Thread(target=heartbeat, name="basecamp-doctor-lock", daemon=True)
+        thread.start()
+        try:
+            operation()
+        finally:
+            stopped.set()
+            thread.join()
+        if refresh_errors:
+            raise refresh_errors[0]
 
     def _new_payload(self) -> dict[str, int]:
         return {"pid": os.getpid(), "ts": int(time.time() * 1000)}

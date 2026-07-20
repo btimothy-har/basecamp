@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -69,6 +70,42 @@ def test_spawn_lock_refreshes_and_releases_only_its_own_file(tmp_path: Path) -> 
     with DaemonSpawnLock(lock_path):
         lock_path.write_text('{"pid": 999, "ts": 1}', encoding="utf-8")
     assert lock_path.exists()
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "basecamp hub --uds /tmp/basecamp.sock --db /tmp/db",
+        "/usr/local/bin/basecamp hub --uds=/tmp/basecamp.sock",
+        "basecamp swarm daemon --uds /tmp/basecamp.sock",
+    ],
+)
+def test_daemon_command_matches_supported_forms(command: str) -> None:
+    assert process._is_daemon_command(command, Path("/tmp/basecamp.sock")) is True
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "basecamp hub --uds /tmp/other.sock",
+        "basecamp companion --snapshot /tmp/basecamp.sock",
+        "cat /tmp/basecamp.sock",
+    ],
+)
+def test_daemon_command_rejects_unrelated_processes(command: str) -> None:
+    assert process._is_daemon_command(command, Path("/tmp/basecamp.sock")) is False
+
+
+def test_spawn_lock_heartbeat_covers_blocking_operation(tmp_path: Path) -> None:
+    lock_path = tmp_path / "daemon.spawn.lock"
+
+    with DaemonSpawnLock(lock_path) as lock:
+        first = json.loads(lock_path.read_text(encoding="utf-8"))
+        lock.run_while_refreshing(lambda: time.sleep(0.03), interval=0.005)
+        refreshed = json.loads(lock_path.read_text(encoding="utf-8"))
+        assert refreshed["ts"] > first["ts"]
+
+    assert not lock_path.exists()
 
 
 def test_spawn_lock_refuses_existing_owner(tmp_path: Path) -> None:
