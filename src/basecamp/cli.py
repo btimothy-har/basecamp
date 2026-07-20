@@ -8,13 +8,13 @@ from pathlib import Path
 import rich_click as click
 
 from basecamp.companion.app import run_companion
-from basecamp.core.cli.config_group import config
+from basecamp.config_cli.config_group import config
+from basecamp.core.console import err_console
 from basecamp.core.doctor import run_doctor
 from basecamp.core.exceptions import LauncherError
 from basecamp.hub.server import run_hub
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
-from basecamp.workspace.ui import err_console
 
 click.rich_click.USE_RICH_MARKUP = True
 click.rich_click.SHOW_ARGUMENTS = True

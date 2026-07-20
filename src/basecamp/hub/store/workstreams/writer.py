@@ -47,7 +47,7 @@ class WorkstreamsWriterMixin:
         """Insert a new workstream row and seed its version-1 content snapshot."""
 
         timestamp = now or self._now()
-        with self._connect() as connection:
+        with self._writing() as connection:
             try:
                 connection.execute(
                     """
@@ -109,8 +109,7 @@ class WorkstreamsWriterMixin:
         """
 
         timestamp = now or self._now()
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._writing(immediate=True) as connection:
             row = connection.execute(
                 "SELECT version FROM workstreams WHERE id = ?",
                 (workstream_id,),
@@ -143,7 +142,7 @@ class WorkstreamsWriterMixin:
         if status not in WORKSTREAM_STATUSES:
             raise ValueError("invalid workstream status")  # noqa: TRY003
         timestamp = now or self._now()
-        with self._connect() as connection:
+        with self._writing() as connection:
             cursor = connection.execute(
                 "UPDATE workstreams SET status = ?, updated_at = ? WHERE id = ?",
                 (status, timestamp, workstream_id),
@@ -164,8 +163,7 @@ class WorkstreamsWriterMixin:
         """Attach (or re-attach) an agent to a workstream."""
 
         timestamp = now or self._now()
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._writing(immediate=True) as connection:
             existing = connection.execute(
                 "SELECT id FROM workstreams WHERE id = ?",
                 (workstream_id,),

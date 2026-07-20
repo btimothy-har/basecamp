@@ -2,10 +2,13 @@
 
 Bundled as an injectable :class:`Locations` so the reference and runtime checks
 can be pointed at a temporary root under test. :meth:`Locations.default`
-resolves the real ``~`` / ``~/.pi/basecamp`` tree. The scaffold-dir properties
-mirror :mod:`basecamp.core.paths` (they are the same paths when ``basecamp_dir``
-is the default); the runtime paths mirror the hub daemon layout
-(``~/.pi/basecamp/swarm/``) and the retired Puppeteer browser profile.
+resolves the real ``~`` / ``~/.pi/basecamp`` tree. The live-tree properties
+(scaffold dirs, the daemon pid file) ``rebase`` the canonical
+:mod:`basecamp.core.paths` constants onto ``basecamp_dir`` — one source of
+truth, resolved under whatever root the doctor was pointed at. Only the two
+doctor-specific *retired* locations (the legacy override root and the retired
+Puppeteer browser profile) are spelled here, since they are not part of the
+live layout ``core.paths`` advertises.
 """
 
 from __future__ import annotations
@@ -13,7 +16,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from basecamp.core.paths import BASECAMP_CONFIG_DIR
+from basecamp.core.paths import (
+    BASECAMP_CONFIG_DIR,
+    DAEMON_PID,
+    USER_CONTEXT_DIR,
+    USER_PROMPTS_DIR,
+    USER_STYLES_DIR,
+    rebase,
+)
 
 
 @dataclass(frozen=True)
@@ -31,17 +41,17 @@ class Locations:
     @property
     def context_dir(self) -> Path:
         """User-supplied context overrides directory."""
-        return self.basecamp_dir / "context"
+        return rebase(USER_CONTEXT_DIR, self.basecamp_dir)
 
     @property
     def styles_dir(self) -> Path:
         """User-supplied working-style overrides directory."""
-        return self.basecamp_dir / "styles"
+        return rebase(USER_STYLES_DIR, self.basecamp_dir)
 
     @property
     def prompts_dir(self) -> Path:
         """User-supplied prompt-fragment overrides directory."""
-        return self.basecamp_dir / "prompts"
+        return rebase(USER_PROMPTS_DIR, self.basecamp_dir)
 
     @property
     def scaffold_dirs(self) -> tuple[Path, Path, Path]:
@@ -61,4 +71,4 @@ class Locations:
     @property
     def daemon_pidfile(self) -> Path:
         """The hub daemon's pid file under the swarm runtime dir."""
-        return self.basecamp_dir / "swarm" / "daemon.pid"
+        return rebase(DAEMON_PID, self.basecamp_dir)

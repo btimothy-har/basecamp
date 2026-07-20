@@ -22,7 +22,7 @@ class AnalysisReaderMixin:
     def get_analysis(self, owner_id: str) -> AnalysisRow | None:
         """Return the latest analysis for a session, or ``None`` if none exists."""
 
-        with self._connect() as connection:
+        with self._reading() as connection:
             row = connection.execute(
                 """
                 SELECT owner_id, based_on_thread_seq, model, sections_json, updated_at

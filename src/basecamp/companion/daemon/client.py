@@ -32,8 +32,9 @@ from basecamp.companion.daemon.models import (
     DaemonTaskProjection,
 )
 from basecamp.companion.daemon.parse import _parse_messages_payload, _parse_payload
+from basecamp.core.paths import DAEMON_SOCK
 
-DEFAULT_DAEMON_SOCKET_PATH = Path("~/.pi/basecamp/swarm/daemon.sock").expanduser()
+DEFAULT_DAEMON_SOCKET_PATH = DAEMON_SOCK
 DEFAULT_DAEMON_MESSAGES_LIMIT = 3
 DEFAULT_DAEMON_SUMMARY_LIMIT = 5
 DEFAULT_DAEMON_TIMEOUT_SECONDS = 0.5

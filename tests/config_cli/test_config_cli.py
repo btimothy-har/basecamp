@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-import basecamp.core.cli.config_group as config_group
-import basecamp.core.cli.project as cli_project
+import basecamp.config_cli.config_group as config_group
+import basecamp.config_cli.project as cli_project
 import basecamp.core.model_aliases as model_aliases
 import basecamp.core.projects as projects
 import basecamp.core.settings.document as config_document
 import basecamp.workspace.environments as environments
-from basecamp.core.cli.config_group import config
+from basecamp.config_cli.config_group import config
 from basecamp.core.settings import Settings
 
 

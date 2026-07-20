@@ -35,8 +35,7 @@ class RawPiThreadWriterMixin:
         """
 
         timestamp = now or self._now()
-        with self._connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+        with self._writing(immediate=True) as connection:
             row = connection.execute(
                 "SELECT latest_seq, leaf_id FROM raw_pi_thread WHERE owner_id = ?",
                 (owner_id,),

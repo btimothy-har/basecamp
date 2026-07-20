@@ -8,7 +8,7 @@ generic edits validate exactly like the typed porcelain. The root :data:`setting
 singleton is the sole writer.
 
 Lives in the ``core/settings`` layer beside the registry it depends on; the CLI
-(``core/cli``) is a thin click surface over these functions.
+(``config_cli``) is a thin click surface over these functions.
 """
 
 from __future__ import annotations

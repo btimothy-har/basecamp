@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 
 import questionary
 
+from basecamp.core.console import console
 from basecamp.workspace import (
     EnvironmentConfig,
     get_environment,
@@ -20,7 +21,7 @@ from basecamp.workspace import (
     remove_environment,
     set_environment,
 )
-from basecamp.workspace.ui import console, display_environments
+from basecamp.workspace.ui import display_environments
 
 
 def derive_repo_identity(remote_url: str | None, fallback: str) -> str:

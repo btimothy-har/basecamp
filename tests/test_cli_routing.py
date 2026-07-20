@@ -1,8 +1,8 @@
 from click.testing import CliRunner
 
 import basecamp.cli as cli
-import basecamp.core.cli.config_porcelain as porcelain
-from basecamp.core.cli.config_group import config
+import basecamp.config_cli.config_porcelain as porcelain
+from basecamp.config_cli.config_group import config
 
 
 def test_top_level_commands_match_new_shape() -> None:

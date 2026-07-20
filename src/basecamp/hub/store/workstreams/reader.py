@@ -12,8 +12,7 @@ class WorkstreamsReaderMixin:
     def get_workstream(self, identifier: str) -> dict[str, Any] | None:
         """Fetch a workstream by id or slug as a dict, or None when absent."""
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             row = connection.execute(
                 "SELECT * FROM workstreams WHERE id = ? OR slug = ?",
                 (identifier, identifier),
@@ -23,8 +22,7 @@ class WorkstreamsReaderMixin:
     def get_workstream_with_agents(self, identifier: str) -> dict[str, Any] | None:
         """Fetch a workstream by id or slug with its attached agents and version history."""
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             ws_row = connection.execute(
                 "SELECT * FROM workstreams WHERE id = ? OR slug = ?",
                 (identifier, identifier),
@@ -73,8 +71,7 @@ class WorkstreamsReaderMixin:
     def list_workstream_versions(self, identifier: str) -> list[dict[str, Any]] | None:
         """List a workstream's content-version history (newest first), or None when absent."""
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             ws_row = connection.execute(
                 "SELECT id FROM workstreams WHERE id = ? OR slug = ?",
                 (identifier, identifier),
@@ -141,8 +138,7 @@ class WorkstreamsReaderMixin:
             ORDER BY w.updated_at DESC
         """
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             rows = connection.execute(sql, tuple(params)).fetchall()
 
         return [dict(row) for row in rows]

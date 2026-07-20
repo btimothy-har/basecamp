@@ -81,7 +81,7 @@ class RawPiThreadReaderMixin:
     def get_raw_pi_thread(self, owner_id: str) -> RawPiThreadRow | None:
         """Return the per-session head, or ``None`` if the session is unknown."""
 
-        with self._connect() as connection:
+        with self._reading() as connection:
             row = connection.execute(
                 """
                 SELECT owner_id, session_id, session_file, leaf_id, latest_seq, updated_at
@@ -110,7 +110,7 @@ class RawPiThreadReaderMixin:
         ``live``/``abandoned`` when the session or its leaf is unknown.
         """
 
-        with self._connect() as connection:
+        with self._reading() as connection:
             head = connection.execute(
                 "SELECT leaf_id FROM raw_pi_thread WHERE owner_id = ?",
                 (owner_id,),

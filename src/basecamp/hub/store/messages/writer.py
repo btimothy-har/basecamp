@@ -28,7 +28,7 @@ class MessagesWriterMixin:
     ) -> None:
         """Persist a newly accepted peer message."""
 
-        with self._connect() as connection:
+        with self._writing() as connection:
             connection.execute(
                 """
                 INSERT INTO messages (
@@ -63,7 +63,7 @@ class MessagesWriterMixin:
         """Mark a non-terminal peer message as sent."""
 
         sent_at = self._now()
-        with self._connect() as connection:
+        with self._writing() as connection:
             cursor = connection.execute(
                 """
                 UPDATE messages
@@ -86,7 +86,7 @@ class MessagesWriterMixin:
         """Mark a non-terminal peer message as queued for recipient handling."""
 
         queued_at = self._now()
-        with self._connect() as connection:
+        with self._writing() as connection:
             cursor = connection.execute(
                 """
                 UPDATE messages
@@ -108,7 +108,7 @@ class MessagesWriterMixin:
         """Mark a non-terminal peer message as failed."""
 
         failed_at = self._now()
-        with self._connect() as connection:
+        with self._writing() as connection:
             cursor = connection.execute(
                 """
                 UPDATE messages
@@ -131,7 +131,7 @@ class MessagesWriterMixin:
         """Mark a non-terminal peer message as unavailable for this phase."""
 
         failed_at = self._now()
-        with self._connect() as connection:
+        with self._writing() as connection:
             cursor = connection.execute(
                 """
                 UPDATE messages

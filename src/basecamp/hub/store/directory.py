@@ -2,11 +2,10 @@
 
 from __future__ import annotations
 
-import json
-import sqlite3
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from ._sqlite import load_json_column
 from .text import _preview_text
 
 # Soft-expiry TTL for the live agent roster: rows with no live connection and no
@@ -82,21 +81,15 @@ class DirectoryMixin:
         if awaitable:
             params.append(requester_node_id)
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             rows = connection.execute(query, tuple(params)).fetchall()
 
         directory: list[dict[str, Any]] = []
         for row in rows:
             task: str | None = None
-            spec_json = row["spec_json"]
-            if isinstance(spec_json, str):
-                try:
-                    spec = json.loads(spec_json)
-                except json.JSONDecodeError:
-                    spec = None
-                if isinstance(spec, dict):
-                    task = _preview_text(spec.get("task"))
+            spec = load_json_column(row["spec_json"])
+            if isinstance(spec, dict):
+                task = _preview_text(spec.get("task"))
 
             directory.append(
                 {
@@ -147,8 +140,7 @@ class DirectoryMixin:
               AND a.role != 'agent'
             """
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             rows = connection.execute(query, (dispatcher_id, *agent_ids)).fetchall()
 
         return [dict(row) for row in rows]
@@ -181,8 +173,7 @@ class DirectoryMixin:
               AND a.role != 'agent'
             """
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             rows = connection.execute(query, (dispatcher_id, *agent_handles)).fetchall()
 
         return [dict(row) for row in rows]

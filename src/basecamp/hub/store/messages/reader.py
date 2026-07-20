@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
 from .schema import MESSAGE_STATUS_UNKNOWN, MESSAGE_STATUSES
@@ -14,8 +13,7 @@ class MessagesReaderMixin:
     def get_message(self, message_id: str) -> dict[str, Any] | None:
         """Fetch a peer message by id as a dict, or None when absent."""
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             row = connection.execute("SELECT * FROM messages WHERE id = ?", (message_id,)).fetchone()
             return dict(row) if row is not None else None
 
@@ -32,8 +30,7 @@ class MessagesReaderMixin:
             "failed_at": None,
         }
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             row = connection.execute(
                 """
                 SELECT

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import os
-import sqlite3
 from typing import Any
 
+from ._sqlite import load_json_column
 from .text import _agent_id_short, _display_text, _is_valid_agent_id, _message_text, _preview_text
 
 RUN_SUMMARY_DEFAULT_LIMIT = 5
@@ -118,8 +118,7 @@ class SummaryMixin:
         if not run_id:
             return []
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             rows = connection.execute(
                 """
                 SELECT seq, kind, payload_json, ts
@@ -141,11 +140,7 @@ class SummaryMixin:
                 "seq": row["seq"],
                 "timestamp": _display_text(row["ts"]),
             }
-            payload: Any = {}
-            try:
-                payload = json.loads(row["payload_json"]) if isinstance(row["payload_json"], str) else {}
-            except json.JSONDecodeError:
-                payload = {}
+            payload: Any = load_json_column(row["payload_json"], {})
             if isinstance(payload, dict):
                 for key in _ACTIVITY_PAYLOAD_KEYS:
                     value = payload.get(key)
@@ -163,8 +158,7 @@ class SummaryMixin:
         if not run_id:
             return []
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             rows = connection.execute(
                 """
                 SELECT seq, payload_json, ts
@@ -178,11 +172,7 @@ class SummaryMixin:
 
         skills: dict[str, dict[str, Any]] = {}
         for row in rows:
-            payload: Any = {}
-            try:
-                payload = json.loads(row["payload_json"]) if isinstance(row["payload_json"], str) else {}
-            except json.JSONDecodeError:
-                payload = {}
+            payload: Any = load_json_column(row["payload_json"], {})
             if not isinstance(payload, dict) or payload.get("toolName") != "skill":
                 continue
 
@@ -230,8 +220,7 @@ class SummaryMixin:
             )
         """
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
+        with self._reading() as connection:
             agent_row = connection.execute(
                 f"""
                 {recursive_scope}
@@ -264,11 +253,7 @@ class SummaryMixin:
                 ).fetchall()
 
                 for row in reversed(rows):
-                    payload: Any = {}
-                    try:
-                        payload = json.loads(row["payload_json"]) if isinstance(row["payload_json"], str) else {}
-                    except json.JSONDecodeError:
-                        payload = {}
+                    payload: Any = load_json_column(row["payload_json"], {})
                     if not isinstance(payload, dict):
                         continue
                     text = _message_text(payload.get("text"))
@@ -317,9 +302,7 @@ class SummaryMixin:
             )
         """
 
-        with self._connect() as connection:
-            connection.row_factory = sqlite3.Row
-
+        with self._reading() as connection:
             counts_row = connection.execute(
                 f"""
                 {recursive_scope}
