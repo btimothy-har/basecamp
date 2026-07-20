@@ -14,11 +14,36 @@ export function tasksFilePath(sessionId: string, dir = defaultTasksDir()): strin
 	return path.join(dir, `${sessionId}.json`);
 }
 
+export const TASKS_SCHEMA_VERSION = 1;
+
+interface TasksFile {
+	version: number;
+	cycles: GoalCycle[];
+}
+
+/**
+ * Drop any legacy `notes` key left on persisted tasks (the annotate_task field
+ * was removed). Mutates in place — the parsed objects are throwaway.
+ */
+function stripLegacyNotes(cycles: GoalCycle[]): GoalCycle[] {
+	for (const cycle of cycles) {
+		if (!Array.isArray(cycle?.tasks)) continue;
+		for (const task of cycle.tasks) {
+			if (task && typeof task === "object") delete (task as { notes?: unknown }).notes;
+		}
+	}
+	return cycles;
+}
+
+/** Read the versioned envelope, migrating a legacy bare-array file on read. */
 export function loadCycles(filePath: string): GoalCycle[] {
 	try {
-		const raw = fs.readFileSync(filePath, "utf8");
-		const parsed = JSON.parse(raw);
-		return Array.isArray(parsed) ? parsed : [];
+		const parsed: unknown = JSON.parse(fs.readFileSync(filePath, "utf8"));
+		if (Array.isArray(parsed)) return stripLegacyNotes(parsed as GoalCycle[]);
+		if (parsed && typeof parsed === "object" && Array.isArray((parsed as TasksFile).cycles)) {
+			return stripLegacyNotes((parsed as TasksFile).cycles);
+		}
+		return [];
 	} catch {
 		return [];
 	}
@@ -27,6 +52,7 @@ export function loadCycles(filePath: string): GoalCycle[] {
 export function saveCycles(filePath: string, cycles: GoalCycle[]): void {
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
 	const tmp = `${filePath}.tmp`;
-	fs.writeFileSync(tmp, JSON.stringify(cycles, null, 2));
+	const payload: TasksFile = { version: TASKS_SCHEMA_VERSION, cycles };
+	fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
 	fs.renameSync(tmp, filePath);
 }

@@ -57,6 +57,8 @@ class SummaryMixin:
         except (OSError, json.JSONDecodeError):
             return []
 
+        if isinstance(parsed, dict):
+            parsed = parsed.get("cycles")
         if not isinstance(parsed, list):
             return []
         return [cycle for cycle in parsed if isinstance(cycle, dict)]

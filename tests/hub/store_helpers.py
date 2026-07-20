@@ -79,7 +79,8 @@ def _summary_agent(store: Store, *, agent_id: str = "agent-1") -> None:
 
 def _write_task_log(task_dir: Path, agent_id: str, cycles: list[dict[str, object]]) -> None:
     task_dir.mkdir(parents=True, exist_ok=True)
-    (task_dir / f"{agent_id}.json").write_text(json.dumps(cycles), encoding="utf-8")
+    payload = {"version": 1, "cycles": cycles}
+    (task_dir / f"{agent_id}.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
 def _insert_run(
