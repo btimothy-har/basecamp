@@ -2,8 +2,15 @@ import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import type { Finding } from "./findings.ts";
-import type { ReviewResult } from "./orchestrate.ts";
+import type { Finding, ReviewScope } from "./findings.ts";
+import type { Verdict } from "./synthesis.ts";
+
+export interface ReviewResult {
+	scope: ReviewScope;
+	verdict: Verdict;
+	findings: Finding[];
+	createdAt: string;
+}
 
 interface AnnotatedFinding extends Finding {
 	reaction: string | null;
