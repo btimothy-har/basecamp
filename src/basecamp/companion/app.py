@@ -11,6 +11,7 @@ from textual.containers import Horizontal
 from textual.screen import Screen
 from textual.widgets import ContentSwitcher, Footer, Static
 
+from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.daemon import (
     DaemonAgentMessages,
     DaemonSummary,
@@ -30,12 +31,11 @@ from basecamp.companion.diff import (
 )
 from basecamp.companion.poll import (
     apply_effective_cwd,
-    ensure_dashboard_source,
+    poll_daemon_analysis,
     poll_daemon_messages,
     poll_daemon_summary,
 )
 from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot
-from basecamp.companion.source import DashboardSource
 from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
 from basecamp.companion.ui.files import FileBrowser
@@ -101,27 +101,9 @@ class CompanionApp(App[None]):
     }
 
     #dashboard-body {
-        layout: horizontal;
+        layout: vertical;
         height: 1fr;
         padding: 0 1;
-    }
-
-    #dashboard-goals {
-        border: round $accent;
-        width: 34%;
-        height: 1fr;
-        padding: 0 1;
-        margin-right: 1;
-    }
-
-    .goal-box {
-        height: auto;
-        width: 100%;
-    }
-
-    #dashboard-main {
-        width: 1fr;
-        height: 1fr;
     }
 
     .dashboard-box {
@@ -129,22 +111,14 @@ class CompanionApp(App[None]):
         padding: 0 1;
     }
 
-    #dashboard-task {
-        height: 3fr;
-        min-height: 4;
-        width: 100%;
-        margin-bottom: 1;
-    }
-
     #dashboard-monitor {
-        height: 2fr;
+        height: 1fr;
         width: 100%;
         margin-bottom: 1;
     }
 
     #dashboard-bottom {
-        height: 2fr;
-        margin-bottom: 1;
+        height: 1fr;
     }
 
     #dashboard-capture {
@@ -217,21 +191,17 @@ class CompanionApp(App[None]):
         snapshot_path: Path,
         cwd: Path,
         scratch_dir: Path | None = None,
-        tasks_dir: Path | None = None,
         daemon_source: DaemonSummarySource | None = None,
     ) -> None:
         super().__init__()
         self.snapshot_path = snapshot_path
         self.cwd = cwd
         self.scratch_dir = scratch_dir
-        self._tasks_dir = tasks_dir
         self._daemon_source = daemon_source or DaemonSummarySource()
         self._git = make_git_runner(cwd)
         self._snapshot_mtime_ns: int | None = None
         self._snapshot_exists: bool | None = None
         self._snapshot: CompanionSnapshot | None = None
-        self._dashboard_source: DashboardSource | None = None
-        self._dashboard_source_session_id: str | None = None
         self._base_commit: str | None = None
         self._files: list[FileStatus] = []
         self._compact = False
@@ -386,9 +356,6 @@ class CompanionApp(App[None]):
             delta_factory=delta_factory,
         )
 
-    def _ensure_dashboard_source(self, session_id: str) -> DashboardSource:
-        return ensure_dashboard_source(self, session_id)
-
     def _apply_effective_cwd(self, snapshot: CompanionSnapshot) -> bool:
         """Switch git/file state to the snapshot cwd when it changes."""
 
@@ -422,10 +389,7 @@ class CompanionApp(App[None]):
         swarm_body = self.query_one("#swarm-body", SwarmBody)
 
         if self._snapshot is not None:
-            dashboard_source = self._ensure_dashboard_source(self._snapshot.session_id)
-            model = dashboard_source.poll()
-            if model is not None:
-                dashboard_body.update(model)
+            dashboard_body.update(self._poll_daemon_analysis(self._snapshot.session_id))
 
             swarm_body.update_daemon(self._poll_daemon_summary(self._snapshot.session_id))
             agent_handle = swarm_body.selected_agent_handle()
@@ -454,6 +418,9 @@ class CompanionApp(App[None]):
         self.query_one("#workspace-panel", WorkspacePanel).update_workspace(self._snapshot, status)
 
         self._update_selected_file_diff()
+
+    def _poll_daemon_analysis(self, session_id: str) -> CompanionAnalysis | None:
+        return poll_daemon_analysis(self, session_id)
 
     def _poll_daemon_summary(self, root_id: str) -> DaemonSummary:
         return poll_daemon_summary(self, root_id)

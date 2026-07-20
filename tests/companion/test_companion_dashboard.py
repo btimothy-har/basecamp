@@ -1,4 +1,4 @@
-"""Tests for the companion dashboard sources and daemon polling."""
+"""Tests for the analysis-only companion dashboard and app daemon polling."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ import subprocess
 from pathlib import Path
 
 from rich.console import Console
-from textual.containers import VerticalScroll
-from textual.widgets import ContentSwitcher, Static
+from textual.app import App, ComposeResult
+from textual.widgets import Static
 
 from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.app import CompanionApp
@@ -23,10 +23,7 @@ from basecamp.companion.daemon import (
     DaemonSummaryOk,
     DaemonSummaryUnavailable,
 )
-from basecamp.companion.snapshot import CompanionGoal, CompanionProgress, CompanionTask
-from basecamp.companion.source import DashboardModel
 from basecamp.companion.ui.dashboard import DashboardBody
-from basecamp.companion.ui.swarm import SwarmBody
 
 
 def _to_text(renderable: object) -> str:
@@ -50,6 +47,13 @@ def _build_repo(repo: Path) -> None:
     _run_git(repo, "commit", "-m", "base commit")
 
 
+def _write_snapshot(path: Path, session_id: str, cwd: Path) -> None:
+    path.write_text(
+        json.dumps({"version": 1, "sessionId": session_id, "updatedAt": "t", "effectiveCwd": str(cwd)}),
+        encoding="utf-8",
+    )
+
+
 class _FakeDaemonSource:
     def __init__(
         self,
@@ -71,12 +75,7 @@ class _FakeDaemonSource:
     def poll_analysis(self, session_id: str) -> CompanionAnalysis | None:  # noqa: ARG002
         return self.analysis
 
-    def poll_messages(
-        self,
-        root_id: str,
-        agent_handle: str,
-        limit: int | None = None,
-    ) -> DaemonAgentMessages:
+    def poll_messages(self, root_id: str, agent_handle: str, limit: int | None = None) -> DaemonAgentMessages:
         self.message_poll_calls.append((root_id, agent_handle, limit))
         assert limit is None or isinstance(limit, int)
         return self.messages or DaemonAgentMessagesOk(root_id=root_id, agent_handle=agent_handle, messages=[])
@@ -92,44 +91,38 @@ class _FailingDaemonSource:
         raise _DaemonPollError(root_id)
 
 
-def _goal(name: str, tasks: list[CompanionTask], *, active: bool, completed: int, total: int) -> CompanionGoal:
-    return CompanionGoal(
-        goal=name,
-        tasks=tasks,
-        agent_mode=None,
-        active=active,
-        archived_at=None if active else "2025-01-01T00:00:00Z",
-        progress=CompanionProgress(completed=completed, total=total),
-    )
+class _DashboardHostApp(App[None]):
+    def __init__(self, dashboard: DashboardBody) -> None:
+        super().__init__()
+        self._dashboard = dashboard
+
+    def compose(self) -> ComposeResult:
+        yield self._dashboard
 
 
-def _daemon_summary_ok(
-    *,
-    total: int,
-    agents: list[DaemonSummaryAgent],
-    session_active: bool = True,
-) -> DaemonSummaryOk:
+def _daemon_summary_ok(*, total: int, agents: list[DaemonSummaryAgent]) -> DaemonSummaryOk:
     return DaemonSummaryOk(
         root_id="root",
         counts=DaemonSummaryCounts(pending=0, running=0, completed=total, failed=0, total=total),
         agents=agents,
-        session_active=session_active,
+        session_active=True,
     )
 
 
-def test_dashboard_source_cache_tracks_session_id(tmp_path: Path) -> None:
-    app = CompanionApp(
-        snapshot_path=tmp_path / "snapshot.json",
-        cwd=tmp_path,
-        tasks_dir=tmp_path / "tasks",
+def _running_agent(handle: str, session_name: str, agent_type: str) -> DaemonSummaryAgent:
+    return DaemonSummaryAgent(
+        agent_handle=handle,
+        agent_type=agent_type,
+        role="worker",
+        session_name=session_name,
+        status="running",
+        result_preview=None,
+        error_preview=None,
+        exit_code=None,
+        created_at="2026-01-01T00:00:00Z",
+        started_at="2026-01-01T00:00:01Z",
+        ended_at=None,
     )
-
-    first = app._ensure_dashboard_source("session-one")
-    assert app._ensure_dashboard_source("session-one") is first
-
-    second = app._ensure_dashboard_source("session-two")
-    assert second is not first
-    assert app._dashboard_source_session_id == "session-two"
 
 
 def test_poll_daemon_summary_converts_unexpected_source_errors(tmp_path: Path) -> None:
@@ -145,62 +138,85 @@ def test_poll_daemon_summary_converts_unexpected_source_errors(tmp_path: Path) -
     assert "session-123" in result.error
 
 
-def test_swarm_receives_daemon_summary_when_session_active(tmp_path: Path) -> None:
+def test_dashboard_renders_daemon_analysis(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
-    tasks_dir = tmp_path / "tasks"
-    tasks_dir.mkdir()
-    snapshot_path = tmp_path / "snapshot.json"
     _build_repo(repo)
-    session_id = "dead-beef-cafe-babe"
-    snapshot_path.write_text(
-        json.dumps({"version": 1, "sessionId": session_id, "updatedAt": "t", "effectiveCwd": str(repo)}),
-        encoding="utf-8",
-    )
-    (tasks_dir / f"{session_id}.json").write_text(
-        json.dumps(
-            [
-                {
-                    "goal": "Dashboard goal",
-                    "tasks": [
-                        {"label": "T1", "description": "d1", "criteria": "c1", "status": "active", "notes": None}
-                    ],
-                    "agentMode": None,
-                    "active": True,
-                    "archivedAt": None,
-                }
-            ]
-        ),
-        encoding="utf-8",
-    )
+    snapshot_path = tmp_path / "snapshot.json"
+    session_id = "abcd-1234-5678-90ef"
+    _write_snapshot(snapshot_path, session_id, repo)
     daemon_source = _FakeDaemonSource(
-        _daemon_summary_ok(
-            total=0,
-            agents=[],
-            session_active=True,
-        )
+        DaemonSummaryUnavailable(error="unavailable in test"),
+        analysis=CompanionAnalysis(
+            monitor=["watch the tests"],
+            needs_capture=["capture a decision"],
+            checkpoints=["checkpoint one"],
+        ),
     )
-    app = CompanionApp(
-        snapshot_path=snapshot_path,
-        cwd=repo,
-        tasks_dir=tasks_dir,
-        daemon_source=daemon_source,
-    )
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo, daemon_source=daemon_source)
 
     async def run() -> None:
         async with app.run_test() as pilot:
             await pilot.pause()
             dash = app.query_one("#dashboard-body", DashboardBody)
+
+            assert app.query_one("#dashboard-monitor", Static).border_title == "Monitor"
+            assert app.query_one("#dashboard-capture", Static).border_title == "Needs capture"
+            assert app.query_one("#dashboard-checkpoints", Static).border_title == "Checkpoints"
+            assert not app.query("#dashboard-goals")
+            assert not app.query("#dashboard-task")
+
             for _ in range(100):
-                if dash._active_index is not None and app.query("#goal-0"):
+                if dash._analysis is not None:
                     break
                 await pilot.pause(0.02)
             else:
                 raise AssertionError
 
-            app.query_one("#swarm-body", SwarmBody)
+            assert "watch the tests" in _to_text(app.query_one("#dashboard-monitor", Static).content)
+            assert "capture a decision" in _to_text(app.query_one("#dashboard-capture", Static).content)
+            assert "checkpoint one" in _to_text(app.query_one("#dashboard-checkpoints", Static).content)
+            assert daemon_source.poll_calls[-1] == session_id
+
+    asyncio.run(run())
+
+
+def test_dashboard_update_retains_last_analysis_on_none() -> None:
+    dashboard = DashboardBody()
+    app = _DashboardHostApp(dashboard)
+    analysis = CompanionAnalysis(monitor=["keep me"], needs_capture=[], checkpoints=[])
+
+    async def run() -> None:
+        async with app.run_test():
+            dashboard.update(analysis)
+            assert dashboard._analysis is analysis
+
+            dashboard.update(None)
+            assert dashboard._analysis is analysis
+            assert "keep me" in _to_text(app.query_one("#dashboard-monitor", Static).content)
+
+    asyncio.run(run())
+
+
+def test_swarm_receives_daemon_summary_when_session_active(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    snapshot_path = tmp_path / "snapshot.json"
+    _build_repo(repo)
+    session_id = "dead-beef-cafe-babe"
+    _write_snapshot(snapshot_path, session_id, repo)
+    daemon_source = _FakeDaemonSource(_daemon_summary_ok(total=0, agents=[]))
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo, daemon_source=daemon_source)
+
+    async def run() -> None:
+        async with app.run_test() as pilot:
+            for _ in range(100):
+                if daemon_source.poll_calls:
+                    break
+                await pilot.pause(0.02)
+            else:
+                raise AssertionError
+
             swarm_detail = app.query_one("#swarm-detail-content", Static)
             assert "No async agents yet" in _to_text(swarm_detail.content)
-            assert not app.query("#dashboard-daemon")
             assert daemon_source.poll_calls[-1] == session_id
 
     asyncio.run(run())
@@ -208,55 +224,20 @@ def test_swarm_receives_daemon_summary_when_session_active(tmp_path: Path) -> No
 
 def test_swarm_polls_messages_for_selected_agent_when_session_active(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
-    tasks_dir = tmp_path / "tasks"
-    tasks_dir.mkdir()
     snapshot_path = tmp_path / "snapshot.json"
     _build_repo(repo)
     session_id = "feed-beef-cafe-babe"
-    snapshot_path.write_text(
-        json.dumps({"version": 1, "sessionId": session_id, "updatedAt": "t", "effectiveCwd": str(repo)}),
-        encoding="utf-8",
-    )
-    (tasks_dir / f"{session_id}.json").write_text("[]", encoding="utf-8")
+    _write_snapshot(snapshot_path, session_id, repo)
     daemon_source = _FakeDaemonSource(
         _daemon_summary_ok(
             total=2,
             agents=[
-                DaemonSummaryAgent(
-                    agent_handle="selected-agent",
-                    agent_type="worker",
-                    role="worker",
-                    session_name="selected",
-                    status="running",
-                    result_preview=None,
-                    error_preview=None,
-                    exit_code=None,
-                    created_at="2026-01-01T00:00:00Z",
-                    started_at="2026-01-01T00:00:01Z",
-                    ended_at=None,
-                ),
-                DaemonSummaryAgent(
-                    agent_handle="other-agent",
-                    agent_type="scout",
-                    role="worker",
-                    session_name="other",
-                    status="running",
-                    result_preview=None,
-                    error_preview=None,
-                    exit_code=None,
-                    created_at="2026-01-01T00:00:00Z",
-                    started_at="2026-01-01T00:00:01Z",
-                    ended_at=None,
-                ),
+                _running_agent("selected-agent", "selected", "worker"),
+                _running_agent("other-agent", "other", "scout"),
             ],
         )
     )
-    app = CompanionApp(
-        snapshot_path=snapshot_path,
-        cwd=repo,
-        tasks_dir=tasks_dir,
-        daemon_source=daemon_source,
-    )
+    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo, daemon_source=daemon_source)
 
     async def run() -> None:
         async with app.run_test() as pilot:
@@ -269,119 +250,5 @@ def test_swarm_polls_messages_for_selected_agent_when_session_active(tmp_path: P
 
             assert daemon_source.message_poll_calls[-1] == (session_id, "selected-agent", None)
             assert all(call[1] != "other-agent" for call in daemon_source.message_poll_calls)
-
-    asyncio.run(run())
-
-
-def test_dashboard_autopin_navigation_and_repin(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    tasks_dir = tmp_path / "tasks"
-    tasks_dir.mkdir()
-    snapshot_path = tmp_path / "snapshot.json"
-    _build_repo(repo)
-    session_id = "abcd-1234-5678-90ef"
-    snapshot_path.write_text(
-        json.dumps({"version": 1, "sessionId": session_id, "updatedAt": "t", "effectiveCwd": str(repo)}),
-        encoding="utf-8",
-    )
-    (tasks_dir / f"{session_id}.json").write_text(
-        json.dumps(
-            [
-                {
-                    "goal": "First goal",
-                    "tasks": [
-                        {"label": "T1", "description": "d1", "criteria": "c1", "status": "completed", "notes": "n1"},
-                        {"label": "T2", "description": "d2", "criteria": "c2", "status": "completed", "notes": None},
-                    ],
-                    "agentMode": "work",
-                    "active": False,
-                    "archivedAt": "2025-01-01T00:00:00Z",
-                },
-                {
-                    "goal": "Second goal",
-                    "tasks": [
-                        {"label": "T3", "description": "d3", "criteria": "c3", "status": "completed", "notes": None},
-                        {"label": "T4", "description": "d4", "criteria": "c4", "status": "active", "notes": "wip"},
-                    ],
-                    "agentMode": None,
-                    "active": True,
-                    "archivedAt": None,
-                },
-            ]
-        ),
-        encoding="utf-8",
-    )
-    daemon_source = _FakeDaemonSource(
-        DaemonSummaryUnavailable(error="unavailable in test"),
-        analysis=CompanionAnalysis(monitor=["monitor1"], needs_capture=["capture1"], checkpoints=["checkpoint1"]),
-    )
-    app = CompanionApp(
-        snapshot_path=snapshot_path,
-        cwd=repo,
-        tasks_dir=tasks_dir,
-        daemon_source=daemon_source,
-    )
-
-    async def run() -> None:
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            dash = app.query_one("#dashboard-body", DashboardBody)
-            # Wait for the dashboard to load goals + mount goal widgets (mount + first
-            # refresh + call_after_refresh) instead of a fixed sleep.
-            for _ in range(100):
-                if dash._active_index is not None and app.query("#goal-1"):
-                    break
-                await pilot.pause(0.02)
-
-            switcher = app.query_one("#body", ContentSwitcher)
-            assert switcher.current == "dashboard-body"
-            assert dash.has_focus
-            app.query_one("#dashboard-goals", VerticalScroll)
-            for box_id in (
-                "#dashboard-task",
-                "#dashboard-monitor",
-                "#dashboard-capture",
-                "#dashboard-checkpoints",
-            ):
-                app.query_one(box_id, Static)
-            assert app.query_one("#dashboard-monitor", Static).border_title == "Monitor"
-            assert app.query_one("#dashboard-capture", Static).border_title == "Needs capture"
-            assert app.query_one("#dashboard-checkpoints", Static).border_title == "Checkpoints"
-            app.query_one("#goal-1", Static)
-
-            swarm_detail = app.query_one("#swarm-detail-content", Static)
-            assert "Daemon unavailable" in _to_text(swarm_detail.content)
-            assert not app.query("#dashboard-daemon")
-
-            assert daemon_source.poll_calls[-1] == session_id
-
-            assert dash._active_index == 1
-            assert dash._following is True
-            assert dash._selected_goal == 1
-            assert dash._selected_task == 1
-
-            dash.action_goal_older()
-            assert dash._selected_goal == 0
-            assert dash._following is False
-            assert dash._selected_task == 0
-
-            dash.action_task_next()
-            assert dash._selected_task == 1
-            assert dash._following is False
-
-            repinned = DashboardModel(
-                goals=[
-                    _goal("First goal", [], active=False, completed=2, total=2),
-                    _goal("Second goal", [], active=False, completed=2, total=2),
-                    _goal(
-                        "Third goal", [CompanionTask(label="T5", status="active")], active=True, completed=0, total=1
-                    ),
-                ],
-                analysis=None,
-            )
-            dash.update(repinned)
-            assert dash._active_index == 2
-            assert dash._following is True
-            assert dash._selected_goal == 2
 
     asyncio.run(run())

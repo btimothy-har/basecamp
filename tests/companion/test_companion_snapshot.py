@@ -28,7 +28,7 @@ class TestLoadSnapshot:
                     "updatedAt": "2026-06-02T12:34:56Z",
                     "goal": "Ship companion scaffold",
                     "tasks": [
-                        {"label": "Implement scaffold", "status": "active", "notes": "in progress"},
+                        {"label": "Implement scaffold", "status": "active"},
                     ],
                     "progress": {"completed": 1, "total": 3},
                     "agentMode": "work",

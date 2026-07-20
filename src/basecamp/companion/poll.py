@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from basecamp.companion.analysis import CompanionAnalysis
-from basecamp.companion.cycles import companion_tasks_path
 from basecamp.companion.daemon import (
     DaemonAgentMessages,
     DaemonAgentMessagesError,
@@ -15,22 +14,11 @@ from basecamp.companion.daemon import (
 )
 from basecamp.companion.diff import make_git_runner, resolve_browse_roots
 from basecamp.companion.snapshot import CompanionSnapshot
-from basecamp.companion.source import DashboardSource
 from basecamp.companion.ui.diff import DiffView
 from basecamp.companion.ui.files import FileBrowser
 
 if TYPE_CHECKING:
     from basecamp.companion.app import CompanionApp
-
-
-def ensure_dashboard_source(app: CompanionApp, session_id: str) -> DashboardSource:
-    if app._dashboard_source is not None and app._dashboard_source_session_id == session_id:
-        return app._dashboard_source
-
-    tasks_path = companion_tasks_path(session_id, app._tasks_dir)
-    app._dashboard_source = DashboardSource(tasks_path, lambda: poll_daemon_analysis(app, session_id))
-    app._dashboard_source_session_id = session_id
-    return app._dashboard_source
 
 
 def apply_effective_cwd(app: CompanionApp, snapshot: CompanionSnapshot) -> bool:
