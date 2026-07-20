@@ -6,7 +6,7 @@ import type { DaemonConnection } from "../../../hub/index.ts";
 import { buildAgentHandle } from "../../../hub/index.ts";
 import { discoverAgents } from "../discovery.ts";
 import { dispatchWithHandleRetry } from "../dispatch-retry.ts";
-import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
+import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn, resolveParentSession } from "../launch.ts";
 import { discardMutativeWorktree, type MutativeProvision, provisionMutativeWorktree } from "../mutative-worktree.ts";
 import { createDaemonClient } from "../rpc.ts";
 import {
@@ -125,8 +125,7 @@ export function registerDispatchAgentTool(
 					modelContext: ctx.model,
 					resolveModelAlias: deps.resolveModelAlias,
 					workspace: workspaceState,
-					parentSession:
-						process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId(),
+					parentSession: resolveParentSession(pi, ctx),
 					project: process.env.BASECAMP_PROJECT ?? "default",
 					mutativeWorktreeDir: provision?.worktreeDir ?? null,
 				});

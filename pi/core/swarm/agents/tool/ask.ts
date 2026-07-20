@@ -7,7 +7,7 @@ import { buildAgentHandle } from "../../../hub/index.ts";
 import type { WaitResultFrame } from "../../../hub/protocol/index.ts";
 import { discoverAgents } from "../discovery.ts";
 import { dispatchWithHandleRetry } from "../dispatch-retry.ts";
-import { buildAgentLaunchSpec, processEnvForSpawn } from "../launch.ts";
+import { buildAgentLaunchSpec, processEnvForSpawn, resolveParentSession } from "../launch.ts";
 import { createDaemonClient } from "../rpc.ts";
 import {
 	AskAgentParams,
@@ -81,8 +81,7 @@ export function registerAskAgentTool(
 					resolveModelAlias: deps.resolveModelAlias,
 					workspace: deps.getWorkspaceState(),
 					agentId,
-					parentSession:
-						process.env.BASECAMP_SESSION_NAME ?? pi.getSessionName()?.trim() ?? ctx.sessionManager.getSessionId(),
+					parentSession: resolveParentSession(pi, ctx),
 					project: process.env.BASECAMP_PROJECT ?? "default",
 				});
 			} catch (error) {

@@ -11,7 +11,7 @@ import { getWorkspaceState, type WorkspaceState } from "#core/project/workspace/
 import { createDaemonClient } from "#core/swarm/agents/client.ts";
 import { discoverAgents } from "#core/swarm/agents/discovery.ts";
 import { dispatchWithHandleRetry } from "#core/swarm/agents/dispatch-retry.ts";
-import { buildAgentLaunchSpec, processEnvForSpawn } from "#core/swarm/agents/launch.ts";
+import { buildAgentLaunchSpec, processEnvForSpawn, resolveParentSession } from "#core/swarm/agents/launch.ts";
 import { annotateFindings } from "./annotate-pane.ts";
 import { persistReviewArtifact } from "./command-helpers.ts";
 import { formatReviewPrompt } from "./format.ts";
@@ -126,8 +126,7 @@ export function registerReviewCommand(pi: ExtensionAPI, deps: ReviewCommandDeps 
 						resolveModelAlias: deps.resolveModelAlias,
 						workspace: deps.getWorkspaceState(),
 						agentId,
-						parentSession:
-							process.env.BASECAMP_SESSION_NAME ?? (pi.getSessionName()?.trim() || ctx.sessionManager.getSessionId()),
+						parentSession: resolveParentSession(pi, ctx),
 						project: process.env.BASECAMP_PROJECT ?? "default",
 					});
 					if (!launch.ok) throw new Error(launch.message);

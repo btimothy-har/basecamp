@@ -96,6 +96,20 @@ function resolveSessionDir(agentId: string): string {
 	return path.join(resolveDaemonPaths().agentsDir, agentId, "session");
 }
 
+/**
+ * The parent-session identity stamped on a dispatched agent: the explicit
+ * BASECAMP_SESSION_NAME, else the live session name (an empty one ignored), else
+ * the session id. Shared by dispatch/ask/code-review so the empty-name
+ * fallthrough is consistent — dispatch/ask previously used `??` and would keep an
+ * empty trimmed name; the `||` here matches code-review and is the intended behaviour.
+ */
+export function resolveParentSession(
+	pi: { getSessionName(): string | undefined },
+	ctx: { sessionManager: { getSessionId(): string } },
+): string {
+	return process.env.BASECAMP_SESSION_NAME ?? (pi.getSessionName()?.trim() || ctx.sessionManager.getSessionId());
+}
+
 export function buildAgentEnv(opts: { name: string; parentSession: string; project: string }): Record<string, string> {
 	const depth = getAgentDepth();
 	const env: Record<string, string> = {};

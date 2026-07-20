@@ -4,8 +4,10 @@ import type {
 	AttachWorkstreamAgentAckFrame,
 	CancelAckFrame,
 	CreateWorkstreamAckFrame,
+	Frame,
 	ListAgentItem,
 	MessageStatusResultFrame,
+	OutboundFrame,
 	PeerMessageAckFrame,
 	ReviseWorkstreamAckFrame,
 	UpdateWorkstreamAckFrame,
@@ -128,6 +130,27 @@ function dedupeRequestedResults(
 	return deduped;
 }
 
+/**
+ * Send a request frame and await its correlated ack, collapsing the
+ * randomUUID → send → waitForFrame(request_id match) round-trip shared by every
+ * request/ack RPC. (dispatch correlates on run_id and waitForAgents on a custom
+ * result-set predicate, so both stay bespoke.)
+ */
+async function requestAck<T extends Frame["type"]>(
+	connection: DaemonConnection,
+	ackType: T,
+	request: OutboundFrame & { request_id: string },
+	signal?: AbortSignal,
+): Promise<Extract<Frame, { type: T }>> {
+	connection.send(request);
+	return waitForFrame(
+		connection,
+		ackType,
+		(frame) => (frame as { request_id: string }).request_id === request.request_id,
+		signal,
+	);
+}
+
 export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 	return {
 		dispatchAgent: async (input) => {
@@ -157,17 +180,11 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			};
 		},
 		listAgents: async (input) => {
-			const requestId = randomUUID();
-			connection.send({
+			const frame = await requestAck(connection, "list_agents_result", {
 				type: "list_agents",
-				request_id: requestId,
+				request_id: randomUUID(),
 				awaitable: Boolean(input.awaitable),
 			});
-			const frame = await waitForFrame(
-				connection,
-				"list_agents_result",
-				(response) => response.request_id === requestId,
-			);
 			return frame.agents;
 		},
 		waitForAgents: async (input) => {
@@ -192,47 +209,34 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			return dedupeRequestedResults(frame.results, requested);
 		},
 		sendPeerMessage: async (input) => {
-			const requestId = randomUUID();
-			connection.send({
+			const ack = await requestAck(connection, "peer_message_ack", {
 				type: "peer_message",
-				request_id: requestId,
+				request_id: randomUUID(),
 				target_handle: input.targetHandle,
 				message: input.message,
 				interrupt: Boolean(input.interrupt),
 			});
-			const ack = await waitForFrame(connection, "peer_message_ack", (frame) => frame.request_id === requestId);
-			return {
-				message_id: ack.message_id,
-				status: ack.status,
-				error: ack.error,
-			};
+			return { message_id: ack.message_id, status: ack.status, error: ack.error };
 		},
 		cancelAgent: async (input) => {
-			const requestId = randomUUID();
-			connection.send({
+			const ack = await requestAck(connection, "cancel_ack", {
 				type: "cancel",
-				request_id: requestId,
+				request_id: randomUUID(),
 				target_handle: input.targetHandle,
 			});
-			const ack = await waitForFrame(connection, "cancel_ack", (frame) => frame.request_id === requestId);
-			return {
-				status: ack.status,
-				error: ack.error,
-			};
+			return { status: ack.status, error: ack.error };
 		},
 		messageStatus: async (input) => {
-			const requestId = randomUUID();
-			connection.send({
-				type: "message_status",
-				request_id: requestId,
-				message_id: input.messageId,
-				wait_until_delivery: Boolean(input.waitUntilDelivery),
-				timeout_s: input.timeoutS,
-			});
-			const frame = await waitForFrame(
+			const frame = await requestAck(
 				connection,
 				"message_status_result",
-				(response) => response.request_id === requestId,
+				{
+					type: "message_status",
+					request_id: randomUUID(),
+					message_id: input.messageId,
+					wait_until_delivery: Boolean(input.waitUntilDelivery),
+					timeout_s: input.timeoutS,
+				},
 				input.signal,
 			);
 			return {
@@ -246,10 +250,9 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			};
 		},
 		createWorkstream: async (input) => {
-			const requestId = randomUUID();
-			connection.send({
+			const ack = await requestAck(connection, "create_workstream_ack", {
 				type: "create_workstream",
-				request_id: requestId,
+				request_id: randomUUID(),
 				workstream_id: input.workstreamId,
 				slug: input.slug,
 				label: input.label,
@@ -258,65 +261,39 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 				constraints: input.constraints ?? null,
 				source_repo_page_path: input.sourceRepoPagePath ?? null,
 			});
-			const ack = await waitForFrame(connection, "create_workstream_ack", (frame) => frame.request_id === requestId);
-			return {
-				status: ack.status,
-				workstream_id: ack.workstream_id,
-				slug: ack.slug,
-				error: ack.error,
-			};
+			return { status: ack.status, workstream_id: ack.workstream_id, slug: ack.slug, error: ack.error };
 		},
 		attachWorkstreamAgent: async (input) => {
-			const requestId = randomUUID();
-			connection.send({
+			const ack = await requestAck(connection, "attach_workstream_agent_ack", {
 				type: "attach_workstream_agent",
-				request_id: requestId,
+				request_id: randomUUID(),
 				workstream: input.workstream,
 				repo: input.repo ?? null,
 				worktree_label: input.worktreeLabel ?? null,
 				status: input.status,
 				error: input.error ?? null,
 			});
-			const ack = await waitForFrame(
-				connection,
-				"attach_workstream_agent_ack",
-				(frame) => frame.request_id === requestId,
-			);
-			return {
-				status: ack.status,
-				error: ack.error,
-			};
+			return { status: ack.status, error: ack.error };
 		},
 		updateWorkstream: async (input) => {
-			const requestId = randomUUID();
-			connection.send({
+			const ack = await requestAck(connection, "update_workstream_ack", {
 				type: "update_workstream",
-				request_id: requestId,
+				request_id: randomUUID(),
 				workstream: input.workstream,
 				status: input.status,
 			});
-			const ack = await waitForFrame(connection, "update_workstream_ack", (frame) => frame.request_id === requestId);
-			return {
-				status: ack.status,
-				error: ack.error,
-			};
+			return { status: ack.status, error: ack.error };
 		},
 		reviseWorkstream: async (input) => {
-			const requestId = randomUUID();
-			connection.send({
+			const ack = await requestAck(connection, "revise_workstream_ack", {
 				type: "revise_workstream",
-				request_id: requestId,
+				request_id: randomUUID(),
 				workstream: input.workstream,
 				label: input.label,
 				brief: input.brief,
 				constraints: input.constraints ?? null,
 			});
-			const ack = await waitForFrame(connection, "revise_workstream_ack", (frame) => frame.request_id === requestId);
-			return {
-				status: ack.status,
-				version: ack.version,
-				error: ack.error,
-			};
+			return { status: ack.status, version: ack.version, error: ack.error };
 		},
 	};
 }
