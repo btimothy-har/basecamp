@@ -9,7 +9,10 @@ import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "./executo
 import { resolveModel } from "./model-resolution.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
-const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate"]);
+// Top-level-only extension tools — excluded from every dispatched agent's toolset so a
+// subagent never sees a tool it could only hit a hard guard on. `agent`/`escalate` are
+// dispatch/UI-only; `report_findings` is primary-only (guarded in pi/code-review/tools.ts).
+const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "report_findings"]);
 
 interface ToolInfo {
 	name: string;
