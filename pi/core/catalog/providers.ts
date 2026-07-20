@@ -3,6 +3,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isModelInvocationDisabled } from "../skills/skill-content.ts";
 import { registerCatalogProvider } from "./index.ts";
 
 export function registerCatalogProviders(pi: ExtensionAPI): void {
@@ -27,6 +28,9 @@ export function registerCatalogProviders(pi: ExtensionAPI): void {
 			pi
 				.getCommands()
 				.filter((command) => command.source === "skill")
+				// Model-hidden skills (`disable-model-invocation`) are user-invoked only —
+				// keep them out of the capability index the model sees.
+				.filter((command) => !isModelInvocationDisabled(command.sourceInfo.path))
 				.map((command) => ({
 					type: "skills" as const,
 					name: command.name.replace(/^skill:/, ""),

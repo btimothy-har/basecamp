@@ -6,7 +6,7 @@
  */
 
 import { readFileSync } from "node:fs";
-import { stripFrontmatter } from "@earendil-works/pi-coding-agent";
+import { parseFrontmatter, stripFrontmatter } from "@earendil-works/pi-coding-agent";
 
 function escapeXml(str: string): string {
 	return str
@@ -47,4 +47,22 @@ export function loadSkillBlock(name: string, filePath: string): string | null {
 	const content = readSkillContent(filePath);
 	if (content === null) return null;
 	return buildSkillBlock(name, content);
+}
+
+/**
+ * True when a skill file's frontmatter sets `disable-model-invocation: true`.
+ * Such skills are user-invoked only (via `/skill:name`): Basecamp hides them
+ * from the model's capability index and the `skill` tool refuses to load them.
+ * Pi's own `disableModelInvocation` filter applies only to its default prompt,
+ * which Basecamp replaces — so Basecamp must enforce the flag itself.
+ */
+export function isModelInvocationDisabled(filePath: string): boolean {
+	let raw: string;
+	try {
+		raw = readFileSync(filePath, "utf-8");
+	} catch {
+		return false;
+	}
+	const { frontmatter } = parseFrontmatter<{ "disable-model-invocation"?: boolean }>(raw);
+	return frontmatter["disable-model-invocation"] === true;
 }

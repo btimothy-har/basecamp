@@ -11,7 +11,7 @@
 
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { loadSkillBlock } from "./skill-content.ts";
+import { isModelInvocationDisabled, loadSkillBlock } from "./skill-content.ts";
 import { trackSkillInvocation } from "./tracker.ts";
 
 const SkillParams = Type.Object(
@@ -93,6 +93,19 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 					details: null,
 					isError: true,
 					content: [{ type: "text", text: `No skill found with name "${name}".${hint}` }],
+				};
+			}
+
+			if (isModelInvocationDisabled(command.sourceInfo.path)) {
+				return {
+					details: null,
+					isError: true,
+					content: [
+						{
+							type: "text",
+							text: `Skill "${name}" is user-invoked only (via /skill:${name}) and cannot be loaded by the agent.`,
+						},
+					],
 				};
 			}
 
