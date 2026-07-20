@@ -12,12 +12,13 @@
  * (reader.ts) for cross-domain observers; the task tools and tool_call guards
  * are the tools/ layer, wired by the composition root.
  *
- * Widget shows a sliding window of 3 open tasks with collapse
- * counters for completed/remaining items.
+ * Widget shows a sliding window of 3 open tasks (plus the active task's
+ * description) with collapse counters for completed/remaining items.
  *
- * State is persisted to ~/.pi/basecamp/tasks/<session-id>.json.
- * Each file contains an array of goal cycles — at most one active.
- * Goal transitions archive the previous cycle and start a new one.
+ * State is persisted to ~/.pi/basecamp/tasks/<session-id>.json as a versioned
+ * { version, cycles } envelope (legacy bare-array files migrate on read).
+ * Each file holds the goal cycles — at most one active. Goal transitions
+ * archive the previous cycle and start a new one.
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
