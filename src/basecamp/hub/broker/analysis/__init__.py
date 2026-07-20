@@ -2,8 +2,7 @@
 
 The reducer is the only reader of pi ``SessionEntry`` content; the analyzer is a
 swappable seam with a provisional PydanticAI implementation; the scheduler runs
-the analyzer reactively when fresh turns land. See
-docs/design/companion-daemon-broker.md §6.
+the analyzer reactively when fresh turns land.
 """
 
 from __future__ import annotations

@@ -5,7 +5,7 @@ The scheduler/reducer/store depend only on the ``Analyzer`` protocol. ``Pydantic
 is the v2 *provisional* implementation: it carries the existing prompt and sections
 through alias-resolved PydanticAI so the pipeline runs end-to-end. Its prompt, model
 handling, and output shape are expected to be reworked independently — swapping this
-class behind the seam touches nothing else (see docs/design/companion-daemon-broker.md §6).
+class behind the seam touches nothing else.
 """
 
 from __future__ import annotations

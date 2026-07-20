@@ -126,7 +126,7 @@ export function registerWorkspaceGuards(pi: ExtensionAPI, options: RegisterWorks
 		// Confinement: a structured write/edit must land inside the current write scope
 		// (allowed_dirs = active worktree ∪ scratch ∪ allowed-roots). This closes the
 		// absolute-path escape — e.g. writing into a sibling worktree by absolute path —
-		// that a relative-only check missed (docs/design/agent-isolation.md). Computed only on
+		// that a relative-only check missed. Computed only on
 		// the mutation path so read/grep/find/ls calls don't allocate it.
 		if (isStructuredMutation) {
 			const allowedDirs = allowedWriteDirsFrom(state, getAllowedRoots());

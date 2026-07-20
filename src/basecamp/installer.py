@@ -4,7 +4,7 @@ Called by both install.py (bootstrap) and `basecamp install` (reconfiguration).
 
 Every install gets everything: the Python tool and the single Pi extension
 registered from the repo root. The pre-consolidation component picker and
-extras are gone by design (docs/design/repo-consolidation.md §3).
+extras are gone by design.
 """
 
 from __future__ import annotations

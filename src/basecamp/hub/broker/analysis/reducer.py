@@ -10,8 +10,8 @@ of ``entry_json`` strings, root→leaf), this derives the analyzer's input by:
    each tool call as ``[tool: <name>]`` and collapse each tool result to
    ``[result: <name> ok|error]`` + a short preview. Tool payloads (the noise) drop.
 
-This is a leaf subsystem versioned against pi's ``SessionEntry`` shape (see
-docs/design/companion-daemon-broker.md §6); the daemon core parses none of it.
+This is a leaf subsystem versioned against pi's ``SessionEntry`` shape; the daemon
+core parses none of it.
 """
 
 from __future__ import annotations

@@ -96,7 +96,7 @@ export function registerDispatchAgentTool(
 				: null;
 
 			// A mutative agent gets its own worktree (branched from the parent's HEAD) before launch;
-			// read-only agents provision nothing (docs/design/agent-isolation.md §4.2).
+			// read-only agents provision nothing.
 			let provision: MutativeProvision | null;
 			try {
 				// Key the worktree on the per-run localId, not the durable agentId, so a re-task

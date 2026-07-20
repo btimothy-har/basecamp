@@ -11,8 +11,7 @@ export interface ThreadReportNode {
  * Raw session thread pushed by a top-level session at end of turn. The extension
  * splits `getBranch()` into per-entry `nodes` so the daemon stores immutable
  * nodes (keyed by `id`) without parsing pi content. `session_id`/`session_file`
- * are pi's own id and `.jsonl` transcript path (see
- * docs/design/companion-daemon-broker.md).
+ * are pi's own id and `.jsonl` transcript path.
  */
 export interface ThreadReportFrame extends ProtocolEnvelope {
 	type: "thread_report";

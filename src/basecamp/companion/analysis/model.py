@@ -1,6 +1,6 @@
 """Companion analysis model — the dashboard sections the UI renders.
 
-The analyzer runs in the daemon now (see docs/design/companion-daemon-broker.md);
+The analyzer runs in the daemon now;
 the UI parses the daemon's ``GET /analysis/{session_id}`` response into this model.
 No sidecar file IO — the daemon owns analysis storage.
 """

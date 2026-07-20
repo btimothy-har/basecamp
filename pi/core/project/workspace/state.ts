@@ -85,8 +85,8 @@ export function getWorkspaceState(): WorkspaceState | null {
  * active worktree, the session scratch dir, and every registered allowed-root. The main
  * checkout is never in it; with no active worktree the scope is scratch + allowed-roots.
  *
- * The write/edit guard confines structured mutations to this scope while a worktree is active
- * (docs/design/agent-isolation.md §4.3); the bash-reviewer will read the same scope. (Pre-handoff
+ * The write/edit guard confines structured mutations to this scope while a worktree is active;
+ * the bash-reviewer will read the same scope. (Pre-handoff
  * — no worktree — the guard still blocks the protected checkout, but extending the full
  * `allowed_dirs` confinement to that case lands with the deferred guard collapse.) Each pi
  * process has its own workspace state, so an agent resolves this to its own Wn and the human

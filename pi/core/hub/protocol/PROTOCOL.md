@@ -17,7 +17,7 @@ Version handling:
 - v17 adds safe current-task previews to `list_agents_result` rows.
 - v18 adds cancel-agent request/ack frames and dispatched-run lifecycle hardening: process-group spawn, dispatcher-disconnect grace reaping, and startup reconciliation of orphaned runs.
 - v19 adds workstream management frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` read endpoints.
-- v20 adds the `thread_report` frame: a top-level session ships its raw `getBranch()` thread to the daemon at end of turn for the companion analyzer (see `docs/design/companion-daemon-broker.md`).
+- v20 adds the `thread_report` frame: a top-level session ships its raw `getBranch()` thread to the daemon at end of turn for the companion analyzer.
 - v21 adds first-class node-identity facets (`repo`, `worktree_label`) to `register`, renames node roles to `agent` (user-facing) / `worker` (backgrounded) derived from `BASECAMP_USER_FACING`, and removes the retired `product_role` (register display role) and `run_kind` (dispatch/list mutative kind) fields along with the agent-role and mutative seams.
 - v22 adds the `revise_workstream`/`revise_workstream_ack` frames for in-place workstream content versioning: a revision bumps the workstream's `version`, snapshots the new content into a `workstream_versions` history table (the prior version is retained), and leaves identity/dossier/attached agents unchanged. `GET /workstreams/{id_or_slug}` now also returns the workstream's `version` and a `versions` history array.
 

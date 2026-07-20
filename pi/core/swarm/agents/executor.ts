@@ -119,7 +119,7 @@ export function buildPiArgs(
 	args.push("--no-prompt-templates");
 
 	// Read-only agents get --read-only; a mutative agent instead works (and commits) in its
-	// own worktree, which the parent integrates by merge (docs/design/agent-isolation.md).
+	// own worktree, which the parent integrates by merge.
 	if (opts.readOnly) args.push("--read-only");
 
 	const effectivePrompt = agent?.systemPrompt ?? null;

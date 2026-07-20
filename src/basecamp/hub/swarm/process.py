@@ -271,8 +271,8 @@ def _reap_outcome(exit_code: int, result_path: str | Path) -> tuple[str, str | N
 def reclaim_agent_worktree(worktree: str) -> None:
     """Remove a mutative agent's worktree once its run has exited, keeping its branch.
 
-    Teardown is the symmetric bookend to provision-at-dispatch (docs/design/agent-isolation.md
-    §4.5): the run is over, so the worktree is no longer needed; its committed branch persists
+    Teardown is the symmetric bookend to provision-at-dispatch: the run is over, so the
+    worktree is no longer needed; its committed branch persists
     as the deliverable for the parent to merge. Best-effort — any failure is left to the
     session-start sweep backstop. Run from the main checkout (resolved via the common git dir),
     since a worktree cannot remove itself.

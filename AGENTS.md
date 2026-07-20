@@ -43,7 +43,7 @@ src/basecamp/                  # ② the basecamp Python package (one ordinary s
 ├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
 └── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)
 
-docs/  tests/  migrations/     # design docs; Python tests (tests/<domain>/); one-shot state migration
+tests/  migrations/            # Python tests (tests/<domain>/); one-shot state migration
 ```
 
 `basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.)
@@ -54,9 +54,7 @@ Cross-domain TypeScript imports use Node subpath imports (`#core/*` freely; othe
 
 `AGENTS.md` (this file) is the current-state guide to how the repo is built; `README.md` is the user-facing overview. Keep both accurate when things change — durable architecture rationale belongs in the **Architecture Decisions** section below, kept next to the guidance agents actually read.
 
-`docs/design/` is a **historical archive**, not an active workflow. Each file records the rationale for one past structural change; entries carry their own status header and may lag the code. Read them for background on *why* a subsystem is shaped the way it is — they are reference material, **not a pattern to imitate.**
-
-Do **not** write design or plan documents into `docs/` as part of routine work. Planning is done through the `plan()` tool, and the approved plan is the artifact handed to the implementer — it is never persisted to `docs/`. Most changes need no document at all: the code, its tests, and this file are the record. Add a new design doc only when the user explicitly asks for one.
+Do **not** write design or plan documents as part of routine work. Planning is done through the `plan()` tool, and the approved plan is the artifact handed to the implementer — it is not persisted to a file. Most changes need no document at all: the code, its tests, and this file are the record. Add a design or reference doc only when the user explicitly asks for one.
 
 ## Architecture Decisions
 
@@ -78,7 +76,7 @@ Agent modes (`pi/core/agent-mode`, in `SESSION_STATE_AGENT_MODES`) are `analysis
 
 ### Agent Execution Posture
 
-Dispatched agents default to **read-only** — `AgentConfig.readOnly` is fail-closed (read-only unless a persona sets `readOnly: false`): `getAgentToolAllowlist()` (`pi/core/swarm/agents/types.ts`) yields a toolset without `write`/`edit`, they launch `--read-only`, and they share the parent's worktree (seeing its live WIP). A **mutative** agent (currently only `worker`) instead gets its **own git worktree** — `agent-<runToken>/<name>`, branched from the parent worktree's HEAD and keyed per-run so re-tasks don't collide (`pi/core/swarm/agents/mutative-worktree.ts` over the `pi/core/git/worktrees/lifecycle.ts` primitives). It spawns with `cwd` = that worktree (auto-adopted via `isLinkedWorktree`), gets `write`/`edit` (`getMutativeAgentToolAllowlist()`), is confined to that worktree by the workspace guard's `allowed_dirs` rule (`pi/core/project/workspace/guards.ts`), and commits its work to a branch — the branch is the deliverable, the **primary integrates it by merge** and the worktree is torn down on finish (the branch is kept for the parent to merge, then deleted). `bash` is retained (scouts need `git log`/`gh`, reviewers need `git diff`) and is deliberately **not** a mutation sandbox — a bash write can still reach the filesystem, so toolset + worktree confinement is defense-in-depth, not a wall; the symmetric bash-reviewer `allowed_dirs` pass is the next increment. The full design is `docs/design/agent-isolation.md`. Independently, the workspace `tool_call` guard hard-blocks structured `write`/`edit` to the protected main checkout even when a subagent has no active worktree.
+Dispatched agents default to **read-only** — `AgentConfig.readOnly` is fail-closed (read-only unless a persona sets `readOnly: false`): `getAgentToolAllowlist()` (`pi/core/swarm/agents/types.ts`) yields a toolset without `write`/`edit`, they launch `--read-only`, and they share the parent's worktree (seeing its live WIP). A **mutative** agent (currently only `worker`) instead gets its **own git worktree** — `agent-<runToken>/<name>`, branched from the parent worktree's HEAD and keyed per-run so re-tasks don't collide (`pi/core/swarm/agents/mutative-worktree.ts` over the `pi/core/git/worktrees/lifecycle.ts` primitives). It spawns with `cwd` = that worktree (auto-adopted via `isLinkedWorktree`), gets `write`/`edit` (`getMutativeAgentToolAllowlist()`), is confined to that worktree by the workspace guard's `allowed_dirs` rule (`pi/core/project/workspace/guards.ts`), and commits its work to a branch — the branch is the deliverable, the **primary integrates it by merge** and the worktree is torn down on finish (the branch is kept for the parent to merge, then deleted). `bash` is retained (scouts need `git log`/`gh`, reviewers need `git diff`) and is deliberately **not** a mutation sandbox — a bash write can still reach the filesystem, so toolset + worktree confinement is defense-in-depth, not a wall; the symmetric bash-reviewer `allowed_dirs` pass is the next increment. Independently, the workspace `tool_call` guard hard-blocks structured `write`/`edit` to the protected main checkout even when a subagent has no active worktree.
 
 ### Extension Modules
 
