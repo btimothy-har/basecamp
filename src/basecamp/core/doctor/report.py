@@ -1,19 +1,13 @@
 """Rich rendering for the doctor report: grouped findings, marks, and a summary.
 
 Groups print in a fixed foundational-first order; a group with no findings shows
-a single green line so the report always reflects the full check surface. The
-console lives here (not imported from another domain) to keep ``core/doctor``
-free of a workspace dependency.
+a single green line so the report always reflects the full check surface.
 """
 
 from __future__ import annotations
 
-from rich.console import Console
-
+from basecamp.core.console import console
 from basecamp.core.doctor.finding import Finding
-
-console = Console()
-err_console = Console(stderr=True)
 
 GROUP_ORDER = ("Config", "References", "Prerequisites", "Unused config", "Runtime")
 

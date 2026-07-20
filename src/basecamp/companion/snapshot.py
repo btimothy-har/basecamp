@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from pydantic.alias_generators import to_camel
 
 from basecamp.companion.diff import WorkspaceStatus
+from basecamp.core.paths import COMPANION_DIR
 
 COMPANION_SNAPSHOT_DIR_NAME = "snapshots"
 
@@ -63,7 +64,7 @@ class CompanionSnapshot(CompanionBaseModel):
 def default_companion_snapshot_dir() -> Path:
     """Return the default Basecamp companion snapshot directory."""
 
-    return Path.home() / ".pi" / "basecamp" / "companion" / COMPANION_SNAPSHOT_DIR_NAME
+    return COMPANION_DIR / COMPANION_SNAPSHOT_DIR_NAME
 
 
 def companion_snapshot_path(session_id: str, base_dir: Path | None = None) -> Path:

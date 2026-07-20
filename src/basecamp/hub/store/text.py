@@ -1,25 +1,11 @@
-"""Shared module-level helpers: default paths, text sanitization, status semantics."""
+"""Shared module-level helpers: text sanitization and status semantics."""
 
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any
 
 from .messages import MESSAGE_TERMINAL_DELIVERY_STATUSES
-
-
-def default_db_path() -> Path:
-    """Return the default Basecamp swarm daemon database path."""
-
-    return Path.home() / ".pi" / "basecamp" / "swarm" / "daemon.db"
-
-
-def default_tasks_dir() -> Path:
-    """Return the default Basecamp task-log directory."""
-
-    return Path.home() / ".pi" / "basecamp" / "tasks"
-
 
 RUN_SUMMARY_PREVIEW_CHARS = 160
 RUN_SUMMARY_DISPLAY_CHARS = 240

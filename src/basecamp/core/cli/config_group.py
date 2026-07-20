@@ -20,11 +20,11 @@ import rich_click as click
 
 from basecamp.core.cli.config_porcelain import alias_group, env_group, project_group, run_alias_menu
 from basecamp.core.cli.project import run_project_menu
+from basecamp.core.console import console, err_console
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import settings
 from basecamp.core.settings.document import edit_document, get_value, set_value, unset_value
 from basecamp.workspace.cli.environment import run_environments_menu
-from basecamp.workspace.ui import console, err_console
 
 
 def _guard(action: Callable[[], None]) -> None:

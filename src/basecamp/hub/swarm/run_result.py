@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
-import os
-import tempfile
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from basecamp.core.files import atomic_write_json
+from basecamp.core.paths import swarm_agents_dir
 
 BASECAMP_RUNNER_MANAGED_RESULT = "BASECAMP_RUNNER_MANAGED_RESULT"
 BASECAMP_RUN_RESULT_PATH = "BASECAMP_RUN_RESULT_PATH"
@@ -44,17 +45,12 @@ class RunResultSidecar(BaseModel):
     final: FinalRunResult | None
 
 
-def _swarm_agents_dir(home_dir: str | Path | None = None) -> Path:
-    home = Path(home_dir).expanduser() if home_dir is not None else Path.home()
-    return home / ".pi" / "basecamp" / "swarm" / "agents"
-
-
 def run_result_path(agent_id: str, run_id: str, home_dir: str | Path | None = None) -> Path:
-    return _swarm_agents_dir(home_dir) / agent_id / "runs" / run_id / "result.json"
+    return swarm_agents_dir(home_dir) / agent_id / "runs" / run_id / "result.json"
 
 
 def agent_session_file(agent_id: str, home_dir: str | Path | None = None) -> Path | None:
-    session_dir = _swarm_agents_dir(home_dir) / agent_id / "session"
+    session_dir = swarm_agents_dir(home_dir) / agent_id / "session"
     if not session_dir.is_dir():
         return None
 
@@ -75,18 +71,8 @@ def load_run_result(path: str | Path) -> RunResultSidecar | None:
 
 
 def write_run_result(path: str | Path, sidecar: RunResultSidecar) -> None:
-    file_path = Path(path)
-    file_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    fd, temp_name = tempfile.mkstemp(prefix=".result.", suffix=".tmp", dir=file_path.parent)
-    temp_path = Path(temp_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8") as file:
-            json.dump(sidecar.model_dump(mode="json"), file, indent=2)
-            file.write("\n")
-        temp_path.replace(file_path)
-    except OSError:
-        temp_path.unlink(missing_ok=True)
-        raise
+    """Persist the sidecar atomically via ``core.files`` (fsync'd, private perms)."""
+    atomic_write_json(Path(path), sidecar.model_dump(mode="json"), mode=0o600, dir_mode=0o700)
 
 
 def find_run_result_attempt(sidecar: RunResultSidecar, attempt: int) -> RunResultAttempt | None:

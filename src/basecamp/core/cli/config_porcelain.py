@@ -20,11 +20,11 @@ from basecamp.core.cli.project import (
     execute_project_remove,
     run_project_menu,
 )
+from basecamp.core.console import console, err_console
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.model_aliases import load_model_aliases, remove_alias, rename_alias, set_alias
 from basecamp.workspace import EnvironmentConfig, remove_environment, set_environment
 from basecamp.workspace.cli.environment import execute_environment_list, run_environments_menu
-from basecamp.workspace.ui import console, err_console
 
 # --- projects -----------------------------------------------------------------
 

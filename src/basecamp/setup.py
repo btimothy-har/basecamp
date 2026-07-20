@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
+from basecamp.core.console import console
 from basecamp.core.directories import to_home_relative
 from basecamp.core.paths import USER_CONTEXT_DIR, USER_PROMPTS_DIR, USER_STYLES_DIR
 from basecamp.core.prereqs import PREREQUISITES, is_available
 from basecamp.core.projects import ProjectConfig, load_projects, save_projects
 from basecamp.core.settings import settings
-from basecamp.workspace.ui import console
 
 
 def _check_prerequisites() -> bool:

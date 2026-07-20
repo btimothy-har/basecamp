@@ -2,15 +2,11 @@
 
 from __future__ import annotations
 
-from rich.console import Console
 from rich.table import Table
 
+from basecamp.core.console import console
 from basecamp.core.projects import ProjectConfig
 from basecamp.workspace.environments import EnvironmentConfig
-
-# Console instances for output
-console = Console()
-err_console = Console(stderr=True)
 
 
 def display_projects(projects: dict[str, ProjectConfig]) -> None:

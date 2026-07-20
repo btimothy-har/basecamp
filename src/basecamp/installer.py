@@ -15,12 +15,10 @@ import sys
 from pathlib import Path
 from typing import Final
 
-from rich.console import Console
 from rich.panel import Panel
 
+from basecamp.core.console import console
 from basecamp.core.settings import settings
-
-console = Console()
 
 REPO_DIR: Final = Path(__file__).resolve().parents[2]
 
