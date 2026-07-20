@@ -25,9 +25,6 @@ class CompanionTask(CompanionBaseModel):
 
     label: str
     status: str
-    notes: str | None = None
-    description: str = ""
-    criteria: str = ""
 
 
 class CompanionWorktree(CompanionBaseModel):
@@ -43,17 +40,6 @@ class CompanionProgress(CompanionBaseModel):
 
     completed: int = 0
     total: int = 0
-
-
-class CompanionGoal(CompanionBaseModel):
-    """A goal cycle (current or archived) in a companion snapshot."""
-
-    goal: str
-    tasks: list[CompanionTask] = Field(default_factory=list)
-    agent_mode: str | None = None
-    active: bool = False
-    archived_at: str | None = None
-    progress: CompanionProgress = Field(default_factory=CompanionProgress)
 
 
 class CompanionSnapshot(CompanionBaseModel):

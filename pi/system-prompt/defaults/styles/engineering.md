@@ -34,7 +34,7 @@ Use `update_goal` to set the goal at the start of every task. Use `create_tasks`
 
 When calling `complete_task` with `stop_work: true`, call it by itself as the only tool call in that assistant response. Do not batch it with any other tool call.
 
-Each task has a label and description. The description should explain what the task involves and why. Use `annotate_task` to add notes — context, decisions, blockers, relevant files. Use `get_task` to review a task's full context before or during work.
+Each task has a label and description. The description should explain what the task involves and why. Use `get_task` to review a task's full context before or during work.
 
 ### While Executing
 

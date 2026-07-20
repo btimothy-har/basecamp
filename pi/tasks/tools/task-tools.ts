@@ -1,4 +1,4 @@
-/** The seven task tools: update_goal, create_tasks, start_task, complete_task, get_task, annotate_task, delete_task. */
+/** The six task tools: update_goal, create_tasks, start_task, complete_task, get_task, delete_task. */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
@@ -72,7 +72,6 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 				label: t.label,
 				description: t.description,
 				criteria: t.criteria,
-				notes: null,
 				status: "pending" as TaskStatus,
 				review: null,
 			}));
@@ -199,7 +198,7 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 	pi.registerTool({
 		name: "get_task",
 		label: "Get Task",
-		description: "Read full task context by index — label, description, notes, and status.",
+		description: "Read full task context by index — label, description, criteria, and status.",
 		promptSnippet: "Read task context",
 		parameters: Type.Object({
 			task: Type.Number({ description: "Task index (0-based)" }),
@@ -221,43 +220,6 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 		renderResult(_result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);
 			return renderSuccess("task loaded", theme);
-		},
-	});
-
-	// --- Tool: annotate_task ---
-	pi.registerTool({
-		name: "annotate_task",
-		label: "Annotate Task",
-		description: "Set notes on a task. Replaces any existing notes.",
-		promptSnippet: "Set notes on a task",
-		parameters: Type.Object({
-			task: Type.Number({ description: "Task index (0-based)" }),
-			notes: Type.String({ description: "Free-text notes — context, decisions, blockers, relevant files" }),
-		}),
-		async execute(_id, params) {
-			const target = requireTasks(runtime.state, params.task);
-			target.notes = params.notes;
-			runtime.updateWidget();
-			runtime.persistState();
-			return {
-				content: [{ type: "text", text: buildTaskContext(target, params.task, runtime.state) }],
-				details: undefined,
-			};
-		},
-		renderCall(args, theme) {
-			const { Text } = require("@earendil-works/pi-tui");
-			const idx = args.task as number;
-			const label = runtime.state.tasks[idx]?.label ?? "...";
-			const preview = label.length > 50 ? `${label.slice(0, 50)}...` : label;
-			return new Text(
-				theme.fg("toolTitle", theme.bold("annotate_task ")) + theme.fg("dim", `[${idx}] ${preview}`),
-				0,
-				0,
-			);
-		},
-		renderResult(_result, { isPartial }, theme) {
-			if (isPartial) return renderPartial(theme);
-			return renderSuccess("notes updated", theme);
 		},
 	});
 

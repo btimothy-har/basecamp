@@ -31,7 +31,6 @@ interface HandoffTaskContext {
 	label: string;
 	description: string;
 	criteria: string;
-	notes: string | null;
 	status: TaskStatus;
 }
 
@@ -136,7 +135,6 @@ export function buildPendingImplementationHandoff(
 				label: task.label,
 				description: task.description,
 				criteria: task.criteria,
-				notes: task.notes,
 				status: task.status,
 			})),
 		},
@@ -179,7 +177,6 @@ export function buildHandoffCompactionInstructions(handoff: PendingImplementatio
 		lines.push(`- [${task.index}] ${task.label} (${task.status})`);
 		lines.push(`  Description: ${task.description}`);
 		lines.push(`  Criteria: ${task.criteria}`);
-		if (task.notes) lines.push(`  Notes: ${task.notes}`);
 	}
 
 	const nextTask =

@@ -368,9 +368,9 @@ def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) ->
                 "goal": "Verify summary",
                 "active": True,
                 "tasks": [
-                    {"label": "Done", "description": "d", "notes": None, "status": "completed"},
-                    {"label": 123, "description": "bad", "notes": None, "status": "completed"},
-                    {"label": "Current", "description": "desc", "notes": "notes", "status": "active"},
+                    {"label": "Done", "description": "d", "status": "completed"},
+                    {"label": 123, "description": "bad", "status": "completed"},
+                    {"label": "Current", "description": "desc", "status": "active"},
                 ],
             }
         ],
@@ -401,7 +401,6 @@ def test_runs_summary_endpoint_projects_task_log_and_activity(tmp_path: Path) ->
             "label": "Current",
             "status": "active",
             "description": "desc",
-            "notes": "notes",
         },
     }
     assert summary_agent["recent_activity"] == [

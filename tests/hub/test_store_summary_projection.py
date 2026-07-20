@@ -183,14 +183,13 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
                 "goal": "Ship \x1b[32mobservability\x1b[0m\x07",
                 "active": True,
                 "tasks": [
-                    {"label": "Done", "description": "d", "criteria": "c", "notes": None, "status": "completed"},
-                    {"label": 456, "description": "bad", "criteria": "bad", "notes": None, "status": "completed"},
-                    {"label": 123, "description": "bad", "criteria": "bad", "notes": None, "status": "pending"},
+                    {"label": "Done", "description": "d", "criteria": "c", "status": "completed"},
+                    {"label": 456, "description": "bad", "criteria": "bad", "status": "completed"},
+                    {"label": 123, "description": "bad", "criteria": "bad", "status": "pending"},
                     {
                         "label": "Bad status",
                         "description": "bad",
                         "criteria": "bad",
-                        "notes": None,
                         "status": "unknown",
                     },
                     "not-a-task",
@@ -198,11 +197,10 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
                         "label": "Current\x1b]0;title\x07 task",
                         "description": "Desc\x00 with controls",
                         "criteria": "c",
-                        "notes": "n" * 400,
                         "status": "active",
                     },
-                    {"label": "Deleted", "description": "d", "criteria": "c", "notes": None, "status": "deleted"},
-                    {"label": "Pending", "description": "d", "criteria": "c", "notes": None, "status": "pending"},
+                    {"label": "Deleted", "description": "d", "criteria": "c", "status": "deleted"},
+                    {"label": "Pending", "description": "d", "criteria": "c", "status": "pending"},
                 ],
             }
         ],
@@ -228,7 +226,6 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
             "label": "Current task",
             "status": "active",
             "description": "Desc with controls",
-            "notes": f"{'n' * 239}…",
         },
     }
     assert agent["recent_activity"] == [
@@ -367,6 +364,33 @@ def test_get_run_summary_tolerates_malformed_task_logs(tmp_path: Path) -> None:
     result = store.get_run_summary("root")
 
     assert result["agents"][0]["task"] is None
+
+
+def test_get_run_summary_reads_legacy_bare_array_task_log(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    task_dir = tmp_path / "tasks"
+    store = Store(db_path=db_path, task_dir=task_dir)
+    _summary_agent(store)
+    task_dir.mkdir()
+    # Legacy unversioned format: a bare array of cycles (pre-envelope).
+    (task_dir / "agent-1.json").write_text(
+        json.dumps(
+            [
+                {
+                    "goal": "Legacy goal",
+                    "active": True,
+                    "tasks": [{"label": "T1", "description": "d", "criteria": "c", "status": "active"}],
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    task = store.get_run_summary("root")["agents"][0]["task"]
+
+    assert task is not None
+    assert task["goal"] == "Legacy goal"
+    assert task["current_task"]["label"] == "T1"
 
 
 def test_get_run_summary_rejects_unsafe_task_log_paths_symlinks_and_size(tmp_path: Path) -> None:

@@ -54,7 +54,6 @@ function makeTask(label: string, status: Task["status"] = "pending"): Task {
 		label,
 		description: `Do ${label}`,
 		criteria: `${label} done`,
-		notes: null,
 		status,
 		review: null,
 	};

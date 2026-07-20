@@ -134,9 +134,6 @@ def test_swarm_renders_left_list_and_ordered_detail_sections() -> None:
             assert detail_text.index("Skills") < detail_text.index("Recent activity")
             assert "Now" in detail_text
             assert "Do current work" in detail_text
-            assert "Important note" in detail_text
-            assert "✎ note" in detail_text
-            assert detail_text.index("✎ note") < detail_text.index("Recent activity")
             assert "Latest message" not in detail_text
             assert "Agent Messages" in detail_text
             assert detail_text.index("Recent activity") < detail_text.index("Agent Messages")
@@ -211,6 +208,5 @@ def result_task() -> DaemonTaskProjection:
             label="Now",
             status="active",
             description="Do current work",
-            notes="Important note",
         ),
     )

@@ -4,7 +4,7 @@ Basecamp task lifecycle + planning — goal tracking, task state machine, the `p
 
 ## What it does
 
-- **Task tools**: `update_goal`, `create_tasks`, `start_task`, `complete_task`, `get_task`, `annotate_task`, `delete_task` — persistent goal/task tracking with a below-editor widget
+- **Task tools**: `update_goal`, `create_tasks`, `start_task`, `complete_task`, `get_task`, `delete_task` — persistent goal/task tracking with a below-editor widget
 - **Planning**: `plan()` tool with structured plan review, draft logic, plan skill guard, worktree choices for implementation handoff, and `/show-plan` to view the current plan (the `plan()` tool is hard-blocked in copilot sessions)
 - **Workflow skills**: `gather`, `planning` SKILL.md content (the `agents` skill lives in the swarm context)
 

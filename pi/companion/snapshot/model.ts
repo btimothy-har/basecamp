@@ -14,7 +14,6 @@ export function defaultCompanionSnapshotDir(homeDir = os.homedir()): string {
 export interface CompanionSnapshotTask {
 	label: string;
 	status: TaskStatus;
-	notes: string | null;
 }
 
 export interface CompanionSnapshotWorktree {

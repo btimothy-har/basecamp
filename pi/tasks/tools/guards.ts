@@ -22,7 +22,6 @@ const TASK_TOOLS = new Set([
 	"start_task",
 	"complete_task",
 	"get_task",
-	"annotate_task",
 	"delete_task",
 	"escalate",
 	"plan",

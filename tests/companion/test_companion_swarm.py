@@ -51,7 +51,6 @@ def test_daemon_parser_reads_task_and_activity() -> None:
                         "label": "Now",
                         "status": "active",
                         "description": "Do current work",
-                        "notes": "Important note",
                     },
                 },
                 "recent_activity": [
@@ -89,7 +88,6 @@ def test_daemon_parser_reads_task_and_activity() -> None:
     assert agent.task.progress.completed == 1
     assert [item.label for item in agent.task.task_plan] == ["Done", "Now"]
     assert agent.task.current_task is not None
-    assert agent.task.current_task.notes == "Important note"
     assert agent.recent_activity is not None
     activity = agent.recent_activity[0]
     assert activity.tool_name == "read"

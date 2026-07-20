@@ -181,17 +181,7 @@ def _render_swarm_current_task(agent: DaemonSummaryAgent) -> RenderableType:
     if task.description:
         header.append("\n")
         header.append(task.description)
-    if not task.notes:
-        return header
-
-    annotation = Panel(
-        Text(task.notes, style="dim italic"),
-        title=Text("✎ note", style="dim"),
-        title_align="left",
-        border_style="grey42",
-        padding=(0, 1),
-    )
-    return Group(header, annotation)
+    return header
 
 
 def _activity_label(activity: DaemonRecentActivity) -> str:

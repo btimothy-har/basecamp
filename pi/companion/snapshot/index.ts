@@ -20,7 +20,6 @@ const TRIGGER_TOOLS = new Set([
 	"create_tasks",
 	"start_task",
 	"complete_task",
-	"annotate_task",
 	"delete_task",
 	"plan",
 	"skill",
@@ -82,7 +81,6 @@ function writeNow(pi: ExtensionAPI): void {
 				tasksState?.tasks.map((task) => ({
 					label: task.label,
 					status: task.status,
-					notes: task.notes,
 				})) ?? [],
 			agentMode: getAgentMode(),
 			worktree: getWorktreeSnapshot(),

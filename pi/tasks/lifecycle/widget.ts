@@ -1,5 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
 export type TaskProgressStatus = "pending" | "active" | "completed" | "deleted";
 
@@ -7,7 +7,6 @@ export interface TaskProgressTask {
 	label: string;
 	status: TaskProgressStatus;
 	description?: string;
-	notes?: string | null;
 }
 
 export interface TaskProgressSnapshot {
@@ -22,6 +21,8 @@ export interface TaskProgressRenderTheme {
 }
 
 const WINDOW_SIZE = 3;
+const ACTIVE_DESCRIPTION_MAX_ROWS = 2;
+const DESCRIPTION_INDENT = "  ";
 const MARKERS: Record<TaskProgressStatus, string> = {
 	completed: "✓",
 	active: "→",
@@ -41,7 +42,7 @@ export function renderTaskWidgetLines(
 		inner.push(`${theme.fg("dim", "Goal")}  ${snapshot.goal}`);
 	}
 
-	const taskLines = renderTaskProgressBody(snapshot, theme);
+	const taskLines = renderTaskProgressBody(snapshot, theme, width - 4);
 	if (taskLines.length > 0) {
 		if (snapshot.goal) inner.push("");
 		inner.push(...taskLines);
@@ -50,7 +51,11 @@ export function renderTaskWidgetLines(
 	return wrapInTaskBox(inner, theme, width);
 }
 
-function renderTaskProgressBody(snapshot: TaskProgressSnapshot, theme: TaskProgressRenderTheme): string[] {
+function renderTaskProgressBody(
+	snapshot: TaskProgressSnapshot,
+	theme: TaskProgressRenderTheme,
+	contentWidth: number,
+): string[] {
 	if (snapshot.tasks.length === 0) return [];
 
 	const completedCount = snapshot.tasks.filter((t) => t.status === "completed").length;
@@ -80,14 +85,14 @@ function renderTaskProgressBody(snapshot: TaskProgressSnapshot, theme: TaskProgr
 	}
 
 	for (const task of windowTasks) {
-		const notesMark = task.notes ? theme.fg("dim", " 📝") : "";
 		const marker = MARKERS[task.status];
 		if (task.status === "deleted") {
 			lines.push(`${theme.fg("dim", marker)} ${theme.fg("dim", task.label)}`);
 		} else if (task.status === "active") {
-			lines.push(`${theme.fg("accent", marker)} ${theme.fg("accent", task.label)}${notesMark}`);
+			lines.push(`${theme.fg("accent", marker)} ${theme.fg("accent", task.label)}`);
+			lines.push(...renderActiveDescriptionLines(task.description, contentWidth, theme));
 		} else {
-			lines.push(`${theme.fg("muted", marker)} ${task.label}${notesMark}`);
+			lines.push(`${theme.fg("muted", marker)} ${task.label}`);
 		}
 	}
 
@@ -96,6 +101,24 @@ function renderTaskProgressBody(snapshot: TaskProgressSnapshot, theme: TaskProgr
 	}
 
 	return lines;
+}
+
+function renderActiveDescriptionLines(
+	description: string | undefined,
+	contentWidth: number,
+	theme: TaskProgressRenderTheme,
+): string[] {
+	const text = description?.trim();
+	if (!text) return [];
+
+	const descWidth = Math.max(1, contentWidth - DESCRIPTION_INDENT.length);
+	const wrapped = wrapTextWithAnsi(text, descWidth);
+	const shown = wrapped.slice(0, ACTIVE_DESCRIPTION_MAX_ROWS);
+	if (wrapped.length > ACTIVE_DESCRIPTION_MAX_ROWS && shown.length > 0) {
+		const lastIndex = shown.length - 1;
+		shown[lastIndex] = truncateToWidth(`${shown[lastIndex]}…`, descWidth, "…");
+	}
+	return shown.map((line) => `${DESCRIPTION_INDENT}${theme.fg("dim", line)}`);
 }
 
 function wrapInTaskBox(lines: string[], theme: TaskProgressRenderTheme, width: number): string[] {
