@@ -1,10 +1,12 @@
-"""Project configuration models and loaders for basecamp.
+"""Project-section loaders for basecamp.
 
-Projects live in the ``projects`` section of the root
-``~/.pi/basecamp/config.json``. The root :data:`settings` singleton is the sole
-writer (flock'd read-modify-write); the Pi extension reads the section
-in-process. Other top-level sections (``environments``, ``model_aliases``, …)
-are preserved on every write.
+The :class:`~basecamp.core.models.ProjectConfig` model lives in
+:mod:`basecamp.core.models`; this module owns only the IO for the ``projects``
+section of the root ``~/.pi/basecamp/config.json`` (re-exporting the model for
+back-compat). The root :data:`settings` singleton is the sole writer (flock'd
+read-modify-write); the Pi extension reads the section in-process. Other
+top-level sections (``environments``, ``model_aliases``, …) are preserved on
+every write.
 """
 
 from __future__ import annotations
@@ -12,24 +14,15 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
 from basecamp.core.exceptions import LauncherError
+from basecamp.core.models import ProjectConfig
 from basecamp.core.settings import CONFIG_VERSION, Settings, settings
 
 PROJECTS_SECTION = "projects"
 
-
-class ProjectConfig(BaseModel):
-    """Configuration for a single project."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    repo_root: str
-    additional_dirs: list[str] = Field(default_factory=list)
-    description: str = ""
-    working_style: str | None = None
-    context: str | None = None
+__all__ = ["PROJECTS_SECTION", "ProjectConfig", "load_projects", "save_projects"]
 
 
 def load_projects(config: Settings | None = None) -> dict[str, ProjectConfig]:
