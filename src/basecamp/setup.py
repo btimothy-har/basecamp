@@ -1,25 +1,27 @@
 """Setup command for basecamp — one-time environment bootstrap."""
 
-import shutil
 from pathlib import Path
 
 from basecamp.core.directories import to_home_relative
 from basecamp.core.paths import USER_CONTEXT_DIR, USER_PROMPTS_DIR, USER_STYLES_DIR
+from basecamp.core.prereqs import PREREQUISITES, is_available
 from basecamp.core.projects import ProjectConfig, load_projects, save_projects
 from basecamp.core.settings import settings
 from basecamp.workspace.ui import console
 
 
-def _check_prerequisite(name: str, command: str, hint: str | None = None) -> bool:
-    """Check if a command is available on PATH."""
-    found = shutil.which(command) is not None
-    if found:
-        console.print(f"  [green]✓[/green] {name}")
-    else:
-        console.print(f"  [red]✗[/red] {name} [dim]({command} not found on PATH)[/dim]")
-        if hint:
-            console.print(f"      [dim]{hint}[/dim]")
-    return found
+def _check_prerequisites() -> bool:
+    """Report each prerequisite's availability; return True if all are present."""
+    ok = True
+    for prereq in PREREQUISITES:
+        if is_available(prereq.command):
+            console.print(f"  [green]✓[/green] {prereq.name}")
+        else:
+            console.print(f"  [red]✗[/red] {prereq.name} [dim]({prereq.command} not found on PATH)[/dim]")
+            if prereq.hint:
+                console.print(f"      [dim]{prereq.hint}[/dim]")
+            ok = False
+    return ok
 
 
 def _scaffold_dirs() -> None:
@@ -62,17 +64,7 @@ def execute_setup() -> None:
     console.print()
 
     console.print("[bold]Checking prerequisites...[/bold]")
-    ok = True
-    ok = _check_prerequisite("pi", "pi") and ok
-    ok = _check_prerequisite("git", "git") and ok
-    ok = (
-        _check_prerequisite(
-            "delta",
-            "delta",
-            hint="git-delta powers the companion diff viewer — brew install git-delta / cargo install git-delta",
-        )
-        and ok
-    )
+    ok = _check_prerequisites()
     if not ok:
         console.print()
         console.print("[red]Missing prerequisites. Install them and try again.[/red]")
