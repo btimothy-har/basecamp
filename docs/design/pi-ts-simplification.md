@@ -1,6 +1,6 @@
 # pi/ TypeScript Simplification — Analysis & Proposal
 
-**Status:** PROPOSAL — analysis complete, no code changed. Awaiting go/no-go on the pass plan (§4).
+**Status:** IN PROGRESS — Passes 1, 2, 3 and parts of 5/6 shipped and green (see §Implementation status). Three items were dropped on inspection (the grep-level analysis over-stated them); the rest is deferred.
 **Scope:** Behavior-preserving structural simplification of the `pi/` TypeScript extension, mirroring the Python passes merged in #290 / #291 / #292 ("simplify basecamp Python boundaries"). No feature change, no protocol-version change, no on-disk path change.
 **Method:** Whole-tree audit — four parallel domain sweeps (cross-cutting primitives; `swarm`+`hub`; `project`/`session`/`git`/`model`/`ui`; the feature domains + prompt layer) plus an independent architecture map. Every finding below is line-verified; the headline items were spot-checked a second time.
 **Extends/mirrors:** [repo-consolidation.md](./repo-consolidation.md) (the boundary contract), the #290/#292 Python exercise (the template).
@@ -151,4 +151,29 @@ These embody the pattern the findings above are reaching for; touching them woul
 
 Domains correctly import `basecampRoot`/`basecampConfigPath` from `host/paths.ts`, but each spells its own `~/.pi/basecamp/<leaf>` subdir at point-of-use: `system-prompt/prompt.ts:24,28` (`prompts`, `styles`), `tasks/lifecycle/store.ts:10` (`tasks`), `companion/snapshot/model.ts:11` (`companion/snapshots`). `git/constants.ts:4` (`~/.worktrees`) and `swarm/agents/executor.ts:13` (`tmpdir`) are **intentionally separate roots** — name them in the tree for legibility, do not reparent. Centralizing the leaves in `host/paths.ts` mirrors the Python `core/paths.py` move; it is a pure `path.join` move (behavior-preserving) with a genuine cohesion tradeoff (co-locating a subdir name with its domain is defensible), hence framed as *moderate*, folded into Pass 2.
 
-*Analysis produced by a four-way parallel audit; all file:line references verified against the tree at the branch head.*
+## Implementation status
+
+Shipped as independent, green, behavior-preserving commits (each holds `npm run check` + `npm test`; the core four were adversarially cross-checked by three reviewers and found clean):
+
+- **Pass 1 — adopt existing helpers.** `getAgentDepth`/`isSubagent` (~14 sites + 3 local copies), `errorMessage` inline coercions, and the four skill-gate strings via `requireAgentsSkillMessage` (fixing `wait_for_agent`'s inaccurate message). ✅
+- **Pass 2 — home the primitives.** `isWithin`/`isStrictlyWithin` → `host/paths.ts` (6 copies); new `host/files.ts` (`isRecord` ×6, `writeJsonFileAtomic` ×3, `readJsonFile`) + test; `errorMessage` → `core/errors.ts` (deep `swarm/agents/errors.ts` deleted); `sleep` → `core/async.ts`. ✅
+- **Pass 3 — RPC round-trip.** `requestAck()` collapses the 8 request/ack methods (rpc.ts 322→299); `resolveParentSession()` unifies the `??`/`||` inconsistency (a real latent bug). Projections were **retained** — returning the raw ack leaks frame fields, which the daemon-client tests correctly caught. ✅
+- **Pass 5a — `renderIndexedTaskCall`.** 4 identical task renderCalls → 1. ✅
+- **Pass 6 (partial) — model-ref parse/lookup.** `parseProviderModelRef` + `findModelByExactId`, preserving the test-pinned fallthrough divergence. ✅
+
+**Dropped after inspection — the analysis over-stated these (no clean dedup exists):**
+
+- **Pass 4 (env registry).** The "restricted set re-declared in 3 modules" is false: it lives in one place (`executor.ts`); the run-result name constants are already shared (defined once, imported); `launch.ts:16-22` is tool names, not env vars. Extending the typed union to all vars is pure churn with empty-string-coercion risk.
+- **Herdr eligibility gate (Pass 5).** `shouldOpenWorkstreamInHerdr` returns granular per-check *skip-reasons*, so it can't delegate to a single shared boolean; only the two companion predicates return plain bools. Forcing a shared helper would muddy the reason-logic for ~no gain.
+- **`completeForcedTool` (Pass 5).** bash-reviewer's `parseGateResponse`/`resolveGateToolChoice`/`resolveGateReasoningEffort` are extensively, independently tested; extraction would either duplicate that logic or require restructuring the gate test suite — net-negative.
+
+**Deferred (genuine, but wants dedicated care):**
+
+- **Review/annotate TUI overlay (Pass 5).** `showDrillDown` ≡ `showTaskCards` really are ~90% identical (~−100 LOC) — the single biggest remaining dedup. But it's a configurable *interactive* `ctx.ui.custom` component with **no unit-test coverage**, so a subtle input/render regression wouldn't be caught. Do it with a dedicated overlay test harness.
+- **Pass 6 remainder.** Worktree-namespace table (+ `crud.ts` split), and the near-cap file splits (`ui/footer.ts`, `swarm/agents/tool/support.ts`, `swarm/agents/launch.ts`, `project/config.ts`) — low-risk structural moves, no file is currently over the 350 cap so this is proactive headroom. The agent-mode metadata registry is low value (the `Record<AgentMode,…>` maps are already compile-exhaustive — co-location only).
+
+The through-line: the clean wins were *adoption* and *byte-identical extraction*; most of the remaining "half-registries" dissolve into legitimate structural differences on close reading — a caution worth carrying into similar exercises.
+
+---
+
+*Analysis produced by a four-way parallel audit; all file:line references verified against the tree at the branch head. Implementation status updated after Passes 1–3/5a/6-partial shipped.*
