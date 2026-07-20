@@ -9,6 +9,7 @@ import rich_click as click
 
 from basecamp.companion.app import run_companion
 from basecamp.core.cli.config_group import config
+from basecamp.core.doctor import run_doctor
 from basecamp.core.exceptions import LauncherError
 from basecamp.hub.server import run_hub
 from basecamp.installer import run_interactive_install
@@ -38,6 +39,15 @@ def setup() -> None:
         execute_setup()
     except LauncherError as e:
         _handle_error(e)
+
+
+@basecamp.command()
+@click.option("--fix", is_flag=True, help="Apply lossless config repairs (off by default).")
+@click.option("--clean", is_flag=True, help="Reclaim provably-unused runtime, prompting per item.")
+@click.option("--stale-days", default=30, show_default=True, help="Idle days before runtime counts as stale.")
+def doctor(*, fix: bool, clean: bool, stale_days: int) -> None:
+    """Diagnose (and optionally repair) basecamp configuration and runtime."""
+    raise SystemExit(run_doctor(fix=fix, clean=clean, stale_days=stale_days))
 
 
 @basecamp.group()

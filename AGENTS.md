@@ -61,7 +61,7 @@ Prompts are layered (environment → working style → project context → tools
 
 `pi/browser/` exposes no custom browser tools. Primary sessions discover the Basecamp-owned `playwright-cli` skill on demand and receive one private PATH entry containing only a gated shim for the exact-pinned `@playwright/cli`; subagents receive neither, and direct shim execution rejects `BASECAMP_AGENT_DEPTH > 0`. The shim defaults to a headed persistent Playwright session using system Chrome (Brave fallback on macOS), honors `BASECAMP_BROWSER_PATH` and explicit `PLAYWRIGHT_MCP_*` overrides, blocks installation commands, and routes auto-named artifacts to the private bounded `~/.pi/basecamp/browser/playwright-output` directory. Screenshots are inspected with `read` after the CLI writes the PNG.
 
-Playwright owns a fresh managed persistent profile. The retired `~/.pi/basecamp/browser/profile` and any legacy Chrome/CDP process are never migrated, modified, or terminated by Basecamp.
+Playwright owns a fresh managed persistent profile. The retired `~/.pi/basecamp/browser/profile` and any legacy Chrome/CDP process are never migrated, modified, or terminated during normal operation. The sole exception is `basecamp doctor --clean`, which may reclaim the retired profile only when it is provably unused — superseded (Playwright's own profile is the live one), no live process holds it (its Chrome `SingletonLock` names no living pid), and cold (unmodified past the staleness threshold) — and only after explicit user confirmation. It never terminates a live process; a held or warm profile is left untouched.
 
 ### Session Modes
 

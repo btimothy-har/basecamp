@@ -35,4 +35,4 @@ The shim defaults `PLAYWRIGHT_MCP_HEADLESS=false`, `PLAYWRIGHT_MCP_ISOLATED=fals
 
 ## Legacy state
 
-The former Puppeteer profile at `~/.pi/basecamp/browser/profile` is not reused, migrated, chmodded, or deleted. The integration never attaches to or terminates a legacy Chrome process listening on port 9222. Legacy state can be handled separately after its browser is closed.
+The former Puppeteer profile at `~/.pi/basecamp/browser/profile` is not reused, migrated, chmodded, or deleted by the browser integration, and the integration never attaches to or terminates a legacy Chrome process listening on port 9222. Legacy state is handled separately after its browser is closed: `basecamp doctor --clean` is the one sanctioned path that reclaims the retired profile, and only once it is provably unused (no live `SingletonLock` holder, cold past the staleness threshold) and the user confirms.
