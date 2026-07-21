@@ -86,7 +86,7 @@ function registerEmptyTasksReader(): void {
 describe("companion/registerCompanion", () => {
 	afterEach(async () => {
 		for (const emit of activeEmitters) {
-			await emit("session_shutdown", { reason: "reload" });
+			await emit("session_shutdown", { reason: "quit" });
 		}
 		activeEmitters.clear();
 		publishRunSummary(null);
@@ -222,7 +222,7 @@ describe("companion/registerCompanion", () => {
 		assert.equal(secondCall.args[secondCall.args.indexOf("--custom-status") + 1], "Updated task");
 	});
 
-	it("reports agent waits without rewriting snapshots", async () => {
+	it("reports agent waits across reload without rewriting snapshots", async () => {
 		const home = useTempHome();
 		process.env.BASECAMP_AGENT_DEPTH = "0";
 		process.env.HERDR_ENV = "1";
@@ -268,7 +268,11 @@ describe("companion/registerCompanion", () => {
 		const callsWithTwoWaits = execCalls.length;
 		await emit("tool_execution_end", { toolName: "wait_for_agent", toolCallId: "wait-1", isError: false });
 		assert.equal(execCalls.length, callsWithTwoWaits);
+		assert.equal(fs.readFileSync(snapshotPath, "utf8"), snapshotBefore);
+		await emit("session_shutdown", { reason: "reload" });
 		publishRunSummary(null);
+		await emit("session_start", { reason: "reload" }, createContext(false));
+		const snapshotAfterReload = fs.readFileSync(snapshotPath, "utf8");
 		await emit("tool_execution_end", { toolName: "wait_for_agent", toolCallId: "wait-2", isError: false });
 		const callsBeforeBackgroundUpdate = execCalls.length;
 		publishRunSummary({
@@ -294,7 +298,7 @@ describe("companion/registerCompanion", () => {
 			"waiting on 1 agent",
 			"Active task",
 		]);
-		assert.equal(fs.readFileSync(snapshotPath, "utf8"), snapshotBefore);
+		assert.equal(fs.readFileSync(snapshotPath, "utf8"), snapshotAfterReload);
 	});
 
 	it("reports Herdr metadata when the session title changes", async () => {

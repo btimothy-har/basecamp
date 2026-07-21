@@ -34,6 +34,7 @@ interface CompanionState {
 	snapshot: CompanionSnapshot | null;
 	activeAgentCount: number | null;
 	primaryIdle: boolean;
+	// In-flight wait IDs survive /reload so the replacement handler can observe their completion.
 	waitingToolCallIds: Set<string>;
 	lastHerdrMetadataKey: string | null;
 	unsubscribeWorkspace: (() => void) | null;
@@ -166,15 +167,14 @@ export default function registerCompanion(pi: ExtensionAPI): void {
 
 	const state = getCompanionState();
 	clearSubscriptions(state);
-	state.waitingToolCallIds.clear();
 
-	pi.on("session_start", (_event, sessionCtx) => {
+	pi.on("session_start", (event, sessionCtx) => {
 		clearSubscriptions(state);
 		state.ctx = sessionCtx;
 		state.snapshot = null;
 		state.activeAgentCount = null;
 		state.primaryIdle = sessionCtx.isIdle();
-		state.waitingToolCallIds.clear();
+		if (event.reason !== "reload") state.waitingToolCallIds.clear();
 		state.lastHerdrMetadataKey = null;
 		state.unsubscribeSummary = observeRunSummary((summary) => updateRunSummary(pi, summary));
 		writeNow(pi);
@@ -217,7 +217,7 @@ export default function registerCompanion(pi: ExtensionAPI): void {
 		state.ctx = null;
 		state.snapshot = null;
 		state.activeAgentCount = null;
-		state.waitingToolCallIds.clear();
+		if (event.reason !== "reload") state.waitingToolCallIds.clear();
 		state.lastHerdrMetadataKey = null;
 	});
 }
