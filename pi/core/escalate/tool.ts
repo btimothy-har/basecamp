@@ -33,9 +33,15 @@ export function registerEscalate(pi: ExtensionAPI): void {
 				};
 			}
 
-			const result = await execCtx.ui.custom<QuestionAnswer[] | null>((tui, theme, keybindings, done) => {
-				return new EscalateDialog(params.questions, tui, theme, keybindings, done);
-			});
+			pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
+			let result: QuestionAnswer[] | null;
+			try {
+				result = await execCtx.ui.custom<QuestionAnswer[] | null>((tui, theme, keybindings, done) => {
+					return new EscalateDialog(params.questions, tui, theme, keybindings, done);
+				});
+			} finally {
+				pi.events.emit("herdr:blocked", { active: false });
+			}
 
 			if (!result) {
 				return {
