@@ -15,7 +15,14 @@ export function registerBashReviewer(pi: ExtensionAPI): void {
 			resolveModel: () => resolveGateModel(ctx),
 			recentMessages: () => recentHumanMessages(ctx.sessionManager),
 			runGate: (args) => runGate(args),
-			confirm: (title, body) => ctx.ui.confirm(title, body, { signal: ctx.signal }),
+			confirm: async (title, body) => {
+				pi.events.emit("herdr:blocked", { active: true, label: "Waiting for command approval" });
+				try {
+					return await ctx.ui.confirm(title, body, { signal: ctx.signal });
+				} finally {
+					pi.events.emit("herdr:blocked", { active: false });
+				}
+			},
 			hasUI: ctx.hasUI,
 			isSubagent: isSubagent(),
 			signal: ctx.signal,
