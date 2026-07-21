@@ -2,8 +2,8 @@
  * Worktree lifecycle primitives for dispatched mutative agents.
  *
  * Pure git verbs (create-from-ref, lock, unlock, remove) with no session state — the
- * confinement guard and the dispatch orchestration that use these live elsewhere
- * (docs/design/agent-isolation.md). `createAgentWorktree` branches an agent's own worktree
+ * confinement guard and the dispatch orchestration that use these live elsewhere.
+ * `createAgentWorktree` branches an agent's own worktree
  * from the parent's HEAD and locks it; the parent later integrates the branch by merge and
  * tears the worktree down.
  */

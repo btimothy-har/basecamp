@@ -26,8 +26,7 @@ export interface ThreadReport {
  * live owner) and no-ops if unconnected. `buildReport` is invoked lazily — only once a
  * live connection is confirmed — so a disconnected turn skips the (potentially large)
  * `getBranch()` serialization. Yields a short flush window after send. The frame codec
- * stays daemon-owned; the companion owns the policy (what/when) — see
- * docs/design/companion-daemon-broker.md.
+ * stays daemon-owned; the companion owns the policy (what/when).
  */
 export async function reportThread(
 	buildReport: () => ThreadReport,

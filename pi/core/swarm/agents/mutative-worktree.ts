@@ -3,8 +3,8 @@
  *
  * A mutative agent works in its own worktree (`agent-<id>/<name>`), branched from the parent
  * worktree's HEAD, which it commits and the parent later integrates by merge. This is the
- * dispatch-side orchestration over the stateless `lifecycle.ts` primitives
- * (docs/design/agent-isolation.md §4.1–4.5). Read-only agents provision nothing.
+ * dispatch-side orchestration over the stateless `lifecycle.ts` primitives.
+ * Read-only agents provision nothing.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

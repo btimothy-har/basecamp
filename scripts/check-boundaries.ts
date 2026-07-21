@@ -1,6 +1,5 @@
 /**
- * Import-boundary check — enforces the modularity contract from
- * docs/design/repo-consolidation.md §5:
+ * Import-boundary check — enforces the modularity contract:
  *
  *   1. A context may import #core/* freely.
  *   2. A context may import another context only via its public entry

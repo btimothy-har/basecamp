@@ -2,7 +2,7 @@
 
 The hub's second domain (beside the agent ``swarm``): it persists each top-level
 session's raw thread (``handle_thread_report``) and runs the warm analyzer over
-it (``AnalysisScheduler``). See docs/design/companion-daemon-broker.md.
+it (``AnalysisScheduler``).
 """
 
 from __future__ import annotations

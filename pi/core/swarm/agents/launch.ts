@@ -200,7 +200,7 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 	}
 
 	// Fail-closed: a mutative agent must have a provisioned worktree, or it would fall back to
-	// the shared parent worktree with write tools (docs/design/agent-isolation.md §4.2).
+	// the shared parent worktree with write tools.
 	const readOnly = agent?.readOnly ?? true;
 	if (!readOnly && !input.mutativeWorktreeDir) {
 		return {
@@ -223,7 +223,7 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 	const extensionTools = getBasecampExtensionToolNames(input.pi, input.basecampExtensionRoot);
 	const selection = resolveWorkspaceSelection(input.workspace);
 	// A mutative agent spawns directly in its own worktree (cwd=Wn, auto-adopted via
-	// isLinkedWorktree) instead of repo-root + --worktree-dir (docs/design/agent-isolation.md §4.2).
+	// isLinkedWorktree) instead of repo-root + --worktree-dir.
 	const spawnCwd = input.mutativeWorktreeDir ?? selection.cwd;
 	const worktreeDir = input.mutativeWorktreeDir ? null : selection.worktreeDir;
 

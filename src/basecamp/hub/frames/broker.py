@@ -23,7 +23,7 @@ class ThreadReportFrame(ProtocolFrame):
     The extension splits ``getBranch()`` into per-entry ``nodes`` (envelope
     extracted extension-side) so the daemon stores immutable nodes without
     parsing pi content. ``session_id``/``session_file`` are pi's own id and
-    ``.jsonl`` transcript path (see docs/design/companion-daemon-broker.md).
+    ``.jsonl`` transcript path.
     """
 
     type: Literal["thread_report"]

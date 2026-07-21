@@ -5,7 +5,7 @@
  * integrated: when the branch is merged into a non-agent branch (the parent's worktree, main,
  * …), the work is preserved elsewhere, so the worktree + branch are safe to remove. A running
  * agent's branch is never merged, so it is never swept mid-run; an unmerged worktree is left
- * for the parent to integrate (docs/design/agent-isolation.md §4.5).
+ * for the parent to integrate.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

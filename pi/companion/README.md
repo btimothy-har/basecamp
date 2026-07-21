@@ -9,7 +9,7 @@ Basecamp companion — the companion **dashboard integration**: session snapshot
 - **Herdr pane metadata**: reports display-only metadata to the current Herdr Pi pane with `herdr pane report-metadata` so Herdr can show the Basecamp title/status without Basecamp taking agent lifecycle authority
 - **Companion-active flag**: sets core's `isCompanionActive` flag for companion pane state
 
-Raw-thread reporting for the analyzer is **not** a companion job: it moved to the core hub connector (`pi/core/hub/thread-reporter.ts` — "connect + report"), because every session feeds the daemon regardless of the dashboard. The **Python companion TUI** (Textual dashboard, daemon client) lives in `src/basecamp/companion/`. Analysis is produced by the daemon (see `docs/design/companion-daemon-broker.md`) and read over `GET /analysis/{session_id}`; the dashboard renders those analysis sections (Monitor / Needs capture / Checkpoints), while the workspace panel stays snapshot-file-sourced.
+Raw-thread reporting for the analyzer is **not** a companion job: it moved to the core hub connector (`pi/core/hub/thread-reporter.ts` — "connect + report"), because every session feeds the daemon regardless of the dashboard. The **Python companion TUI** (Textual dashboard, daemon client) lives in `src/basecamp/companion/`. Analysis is produced by the daemon and read over `GET /analysis/{session_id}`; the dashboard renders those analysis sections (Monitor / Needs capture / Checkpoints), while the workspace panel stays snapshot-file-sourced.
 
 ## Dependencies
 

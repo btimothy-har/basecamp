@@ -120,8 +120,8 @@ export function validateNoSymlinkedWorktreePath(worktreeDir: string, root = WORK
 	}
 }
 
-// `agent-<id>` is the reserved namespace for dispatched mutative-agent worktrees
-// (docs/design/agent-isolation.md). Distinct `agent-` prefix ⇒ disjoint from the
+// `agent-<id>` is the reserved namespace for dispatched mutative-agent worktrees.
+// Distinct `agent-` prefix ⇒ disjoint from the
 // human-facing `wt-xx` / `copilot` namespaces, so no user label can collide.
 const NESTED_WORKTREE_NAMESPACE_RE = /^(?:wt-[a-z0-9]{2}|copilot|agent-[a-z0-9]+)$/;
 const NESTED_WORKTREE_LABEL_RE = /^(?:wt-[a-z0-9]{2}|copilot|agent-[a-z0-9]+)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;

@@ -257,7 +257,7 @@ For anything beyond a one-liner, point the command at a script you maintain outs
 
 ## Package Layout
 
-basecamp is organized by the artifacts it ships (design record: `docs/design/repo-rearchitecture.md`):
+basecamp is organized by the artifacts it ships:
 
 - `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
 - `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `swarm` (daemon), and `companion` (TUI) subpackages

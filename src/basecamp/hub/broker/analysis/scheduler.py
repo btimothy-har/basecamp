@@ -6,8 +6,7 @@ in-memory latest-seq and wakes a per-owner worker. Each worker is a single
 sequential coroutine, which gives skip-in-flight and burst coalescing for free:
 it debounces, then analyzes the newest thread only when ``latest_seq`` has advanced
 past what was last analyzed (seeded from the persisted row so a daemon restart does
-not re-run stale turns). "Laggy is fine" — nothing here blocks ingest. See
-docs/design/companion-daemon-broker.md §6.1.
+not re-run stale turns). "Laggy is fine" — nothing here blocks ingest.
 """
 
 from __future__ import annotations

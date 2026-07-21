@@ -32,7 +32,7 @@ export interface AgentConfig {
 	filePath: string;
 	// Fail-closed: read-only unless the frontmatter explicitly sets `readOnly: false`.
 	// A mutative agent gets its own worktree + write/edit; read-only shares the parent's
-	// worktree with a no-write toolset (docs/design/agent-isolation.md).
+	// worktree with a no-write toolset.
 	readOnly: boolean;
 }
 

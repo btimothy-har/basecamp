@@ -42,7 +42,7 @@ export const AGENT_TOOLS = ["read", "bash", "grep", "find", "ls"] as const;
 
 // A mutative agent additionally gets `write`/`edit`. It is confined to its OWN worktree
 // (branched from the parent's HEAD), commits its branch, and the parent integrates it by
-// merge — the worktree is the boundary, not a shared sandbox (docs/design/agent-isolation.md).
+// merge — the worktree is the boundary, not a shared sandbox.
 export const MUTATIVE_AGENT_TOOLS = ["write", "edit"] as const;
 
 export function getAgentToolAllowlist(): string[] {
