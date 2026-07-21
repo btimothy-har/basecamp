@@ -1,11 +1,10 @@
-"""Dashboard data-source wiring and daemon polling for the companion app."""
+"""Data-source wiring and daemon polling for the companion app."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.daemon import (
     DaemonAgentMessages,
     DaemonAgentMessagesError,
@@ -40,13 +39,6 @@ def apply_effective_cwd(app: CompanionApp, snapshot: CompanionSnapshot) -> bool:
     app.query_one("#files-body", FileBrowser).replace_roots(resolve_browse_roots(app._git, app.cwd, app.scratch_dir))
     app.query_one("#diff-view", DiffView).update_diff(file_path="", status_message="", diff_lines=[])
     return True
-
-
-def poll_daemon_analysis(app: CompanionApp, session_id: str) -> CompanionAnalysis | None:
-    try:
-        return app._daemon_source.poll_analysis(session_id)
-    except Exception:  # noqa: BLE001
-        return None
 
 
 def poll_daemon_summary(app: CompanionApp, root_id: str) -> DaemonSummary:

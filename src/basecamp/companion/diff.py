@@ -1,4 +1,4 @@
-"""Git-backed diff helpers for the companion dashboard."""
+"""Git-backed diff helpers for Companion."""
 
 from __future__ import annotations
 

@@ -13,7 +13,6 @@ from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, St
 from basecamp.companion.app import CompanionApp
 from basecamp.companion.delta_render import delta_path
 from basecamp.companion.diff import DiffLine
-from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
 from basecamp.companion.ui.swarm import SwarmBody
 from basecamp.companion.ui.workspace import WorkspacePanel
@@ -89,10 +88,7 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             # The file list is display-only (not focusable).
             assert app.query_one("#file-list-list", ListView).can_focus is False
 
-            # Dashboard is the default pane; one toggle reaches the diff view.
-            await pilot.press("m")
-            await pilot.pause(0.1)
-
+            # Diff is the default pane.
             file_list = app.query_one("#file-list", FileList)
             selected_before = file_list.selected_file
             assert selected_before is not None
@@ -141,7 +137,7 @@ def test_diff_bindings_are_scoped_to_diff_body() -> None:
     assert {"left", "right", "c", "d"}.isdisjoint(app_keys)
 
 
-def test_default_mode_is_dashboard_and_focused(tmp_path: Path) -> None:
+def test_default_mode_is_diff_and_focused(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     snapshot_path = tmp_path / "snapshot.json"
     _build_repo(repo)
@@ -154,10 +150,10 @@ def test_default_mode_is_dashboard_and_focused(tmp_path: Path) -> None:
             await pilot.pause()
 
             body = app.query_one("#body", ContentSwitcher)
-            dashboard = app.query_one("#dashboard-body", DashboardBody)
+            diff_view = app.query_one("#diff-view", DiffView)
 
-            assert body.current == "dashboard-body"
-            assert dashboard.has_focus
+            assert body.current == "diff-body"
+            assert diff_view.has_focus
 
     asyncio.run(run_default_mode_test())
 
@@ -175,10 +171,6 @@ def test_mode_indicator_tracks_active_mode(tmp_path: Path) -> None:
             await pilot.pause(0.2)
 
             mode_bar = app.query_one("#session-bar-mode", Static)
-            assert "Dashboard" in str(mode_bar.render())
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
             assert "Diff" in str(mode_bar.render())
 
             await pilot.press("m")
@@ -191,7 +183,7 @@ def test_mode_indicator_tracks_active_mode(tmp_path: Path) -> None:
 
             await pilot.press("m")
             await pilot.pause(0.05)
-            assert "Dashboard" in str(mode_bar.render())
+            assert "Diff" in str(mode_bar.render())
 
     asyncio.run(run_mode_indicator_test())
 
@@ -211,14 +203,7 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
             body = app.query_one("#body", ContentSwitcher)
             diff_view = app.query_one("#diff-view", DiffView)
             file_tree = app.query_one("#file-tree", DirectoryTree)
-            dashboard = app.query_one("#dashboard-body", DashboardBody)
             swarm = app.query_one("#swarm-body", SwarmBody)
-
-            assert body.current == "dashboard-body"
-            assert dashboard.has_focus
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
 
             assert body.current == "diff-body"
             assert diff_view.has_focus
@@ -238,8 +223,8 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
             await pilot.press("m")
             await pilot.pause(0.05)
 
-            assert body.current == "dashboard-body"
-            assert dashboard.has_focus
+            assert body.current == "diff-body"
+            assert diff_view.has_focus
 
     asyncio.run(run_modality_test())
 
@@ -258,14 +243,6 @@ def test_footer_binding_order_by_mode(tmp_path: Path) -> None:
     async def run_footer_order_test() -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
-
-            dashboard_descriptions = [
-                description for description in visible_descriptions() if description in {"Mode", "Quit"}
-            ]
-            assert dashboard_descriptions == ["Mode", "Quit"]
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
 
             diff_descriptions = [
                 description
@@ -299,8 +276,7 @@ def test_refresh_does_not_disturb_file_tree_focus(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
 
-            # Dashboard is the default pane; switch to files mode to focus the tree.
-            await pilot.press("m")
+            # Switch from the default diff pane to files mode.
             await pilot.press("m")
             await pilot.pause(0.05)
 
@@ -340,8 +316,6 @@ def test_diff_pane_renders_through_delta_when_available(tmp_path: Path) -> None:
     async def run() -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.3)
-            await pilot.press("m")  # dashboard -> diff
-            await pilot.pause(0.2)
 
             # b_small.txt is a small text change; navigate to it for a compact render.
             file_list = app.query_one("#file-list", FileList)
