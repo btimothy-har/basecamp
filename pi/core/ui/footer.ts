@@ -10,15 +10,14 @@
  * re-renders on `tool_result` events to pick up newly loaded skills.
  */
 
-import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "node:fs";
 import * as os from "node:os";
-import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode/index.ts";
 import { getWorkspaceEffectiveCwd, getWorkspaceState, type WorkspaceState } from "../project/workspace/state.ts";
 import { getInvokedSkills } from "../skills/tracker.ts";
 import { getModeLabel } from "./mode.ts";
+import { createFooterRepositoryStatusTracker, type RepositoryStatusTracker } from "./repository-status.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
@@ -29,91 +28,6 @@ interface LocationLineParts {
 }
 
 let requestRender: (() => void) | null = null;
-
-/**
- * Branch watcher for the exact directory represented in the footer.
- * Pi's FooterDataProvider is created from Pi's cwd; Basecamp can later override
- * the effective cwd/worktree, so we resolve and watch HEAD ourselves.
- */
-let branchCache: string | null = null;
-let branchHeadWatcher: FSWatcher | null = null;
-let branchWatcherTarget: string | null = null;
-
-function resolveGitHeadPath(startDir: string): string | null {
-	let dir = resolve(startDir);
-	while (true) {
-		try {
-			const gitPath = join(dir, ".git");
-			if (existsSync(gitPath)) {
-				const stat = statSync(gitPath);
-				if (stat.isDirectory()) {
-					const headPath = join(gitPath, "HEAD");
-					return existsSync(headPath) ? headPath : null;
-				}
-				const content = readFileSync(gitPath, "utf8").trim();
-				if (!content.startsWith("gitdir: ")) return null;
-				const gitDir = resolve(dir, content.slice(8).trim());
-				const headPath = join(gitDir, "HEAD");
-				return existsSync(headPath) ? headPath : null;
-			}
-		} catch {
-			return null;
-		}
-
-		const parent = dirname(dir);
-		if (parent === dir) return null;
-		dir = parent;
-	}
-}
-
-function readBranchFromHead(headPath: string): string | null {
-	try {
-		const content = readFileSync(headPath, "utf8").trim();
-		if (content.startsWith("ref: refs/heads/")) return content.slice(16);
-		return "detached";
-	} catch {
-		return null;
-	}
-}
-
-function syncBranchWatcher(targetDir: string): void {
-	const normalizedTarget = resolve(targetDir);
-	if (branchWatcherTarget === normalizedTarget) return;
-
-	disposeBranchWatcher();
-	branchWatcherTarget = normalizedTarget;
-
-	const headPath = resolveGitHeadPath(normalizedTarget);
-	if (!headPath) return;
-
-	branchCache = readBranchFromHead(headPath);
-
-	try {
-		branchHeadWatcher = watch(dirname(headPath), (_event, filename) => {
-			if (!filename || filename.toString() === "HEAD") {
-				const next = readBranchFromHead(headPath);
-				if (next !== branchCache) {
-					branchCache = next;
-					requestRender?.();
-				}
-			}
-		});
-	} catch {
-		// watch failed — fall back to static cache
-	}
-}
-
-function resolveFooterBranch(targetDir: string, fallbackBranch: string | null): string | null {
-	syncBranchWatcher(targetDir);
-	return branchCache ?? fallbackBranch;
-}
-
-function disposeBranchWatcher(): void {
-	branchHeadWatcher?.close();
-	branchHeadWatcher = null;
-	branchWatcherTarget = null;
-	branchCache = null;
-}
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -204,16 +118,17 @@ function layoutLocationLine(location: LocationLineParts, right: string, width: n
 
 export function registerFooter(pi: ExtensionAPI): void {
 	let ctx: ExtensionContext | null = null;
+	let repositoryStatus: RepositoryStatusTracker | null = null;
 
 	pi.on("session_start", (_event, sessionCtx) => {
 		ctx = sessionCtx;
 
-		// Replace default footer
 		if (!sessionCtx.hasUI) return;
 
 		sessionCtx.ui.setFooter((tui, theme, footerData) => {
 			requestRender = () => tui.requestRender();
-			const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
+			const footerRepositoryStatus = createFooterRepositoryStatusTracker(pi, footerData, () => tui.requestRender());
+			repositoryStatus = footerRepositoryStatus;
 			const unsubMode = onAgentModeChange(() => tui.requestRender());
 
 			return {
@@ -223,13 +138,10 @@ export function registerFooter(pi: ExtensionAPI): void {
 					const workspace = getWorkspaceState();
 					const effectiveCwd = getWorkspaceEffectiveCwd();
 
-					// ── Line 1: cwd | worktree | branch ... model ──
-					// Keep mode/worktree/branch visible; truncate cwd/model first.
-					const location = buildLocationParts(fg, workspace, effectiveCwd, footerData);
+					const location = buildLocationParts(fg, workspace, effectiveCwd, footerRepositoryStatus.getBranch());
 					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLocationLine(location, l1Right, width, fg);
 
-					// ── Line 2: skills ... context bar ──
 					let l2Left = "";
 					const skills = getInvokedSkills();
 					if (skills.length > 0) {
@@ -259,14 +171,16 @@ export function registerFooter(pi: ExtensionAPI): void {
 				},
 
 				dispose() {
-					unsubBranch();
 					unsubMode();
-					disposeBranchWatcher();
+					footerRepositoryStatus.dispose();
+					if (repositoryStatus === footerRepositoryStatus) repositoryStatus = null;
 					requestRender = null;
 				},
 			};
 		});
 	});
+
+	pi.on("agent_settled", () => repositoryStatus?.refresh());
 
 	pi.on("tool_result", async (event) => {
 		if (event.toolName === "skill" && !event.isError) {
@@ -279,7 +193,7 @@ function buildLocationParts(
 	fg: ThemeFg,
 	workspace: WorkspaceState | null,
 	effectiveCwd: string,
-	footerData: { getGitBranch(): string | null },
+	branch: string | null,
 ): LocationLineParts {
 	const metadata: string[] = [];
 	const activeWorktree = workspace?.activeWorktree ?? null;
@@ -293,8 +207,6 @@ function buildLocationParts(
 		metadata.push(fg("muted", "⌥ protected"));
 	}
 
-	const branchTarget = activeWorktree?.path ?? effectiveCwd;
-	const branch = resolveFooterBranch(branchTarget, activeWorktree?.branch ?? footerData.getGitBranch());
 	if (branch) metadata.push(fg("accent", `⎇ ${branch}`));
 
 	return {
