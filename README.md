@@ -120,7 +120,7 @@ wait_for_agent({ handles: "<agent-handle>" })
 
 Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`.
 
-Named read-only agents may fan out for parallel investigation and review. Be conservative with `worker`: do not parallelize `worker` against the same worktree until daemon mutation leases exist.
+Named read-only agents may fan out for parallel investigation and review. Mutative workers may also run in parallel because each receives its own locked, per-run worktree and branch. Basecamp gives mutating sessions one hidden reminder to commit dirty work, reclaims clean worker worktrees automatically, and preserves live or dirty trees rather than force-removing them.
 
 ## Configuration
 
@@ -224,7 +224,7 @@ The workspace service owns the `~/.worktrees/<org>/<name>/<label>/` storage conv
 - `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
 - Resumed/reloaded/forked sessions restore their last active worktree when still in the same repo
 - `/worktree [label]` switches the active worktree during a resumed session
-- Use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean up worktrees
+- Session-owned worktrees remain human-managed; outside Pi, use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean them up
 - Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories
 

@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isSubagent } from "../../host/env.ts";
 import { registerWorktreeCommand } from "./command.ts";
+import { registerDirtyWorktreeReminder } from "./dirty-reminder.ts";
 import { registerWorkspaceGuards } from "./guards.ts";
 import { registerWorkspaceRuntime } from "./runtime.ts";
 import { registerWorkspaceSession } from "./session.ts";
@@ -13,6 +14,7 @@ import { registerWorkspaceSession } from "./session.ts";
 export function registerWorkspace(pi: ExtensionAPI): void {
 	registerWorkspaceRuntime(pi);
 	registerWorkspaceSession(pi);
+	registerDirtyWorktreeReminder(pi);
 	registerWorkspaceGuards(pi);
 	if (!isSubagent()) {
 		registerWorktreeCommand(pi);
