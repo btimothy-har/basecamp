@@ -89,11 +89,29 @@ describe("playwright-cli skill", () => {
 		assert.equal(result.skills.length, 1);
 		assert.equal(result.skills[0]?.name, "playwright-cli");
 		assert.match(result.skills[0]?.description ?? "", /browser/i);
-		for (const guidance of ["snapshot", "run-code", "read", "--help", "persistent"]) {
-			assert.equal(content.includes(guidance), true, `skill should explain ${guidance}`);
+		for (const guidance of [
+			"snapshot",
+			"run-code",
+			"read",
+			"--help",
+			"persistent",
+			"playwright-cli route",
+			"playwright-cli unroute",
+			"playwright-cli reload",
+			"playwright-cli resize",
+			"playwright-cli console",
+			"playwright-cli requests",
+			"playwright-cli show --annotate",
+		]) {
+			assert.ok(content.includes(guidance), `skill should explain ${guidance}`);
 		}
 		assert.match(content, /Never use `npx`/);
 		assert.match(content, /relative `--filename` writes into the current directory/);
+		assert.match(content, /direct `file:` navigation is blocked/);
+		assert.ok(content.includes("distinct reserved `.test` hostname"));
+		assert.ok(content.includes("http://prototype.test/"));
+		assert.ok(content.includes('--content-type="text/html; charset=utf-8"'));
+		assert.ok(content.includes('--body="$(cat'));
 		assert.equal(content.includes("screenshot --filename"), false);
 		assert.equal(content.includes("npm install"), false);
 	});
