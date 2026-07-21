@@ -224,6 +224,13 @@ export function registerFooter(pi: ExtensionAPI): void {
 
 	pi.on("agent_settled", () => repositoryStatus?.refresh());
 
+	pi.on("session_shutdown", () => {
+		repositoryStatus?.dispose();
+		repositoryStatus = null;
+		requestRender = null;
+		ctx = null;
+	});
+
 	pi.on("tool_result", async (event) => {
 		if (event.toolName === "skill" && !event.isError) {
 			requestRender?.();

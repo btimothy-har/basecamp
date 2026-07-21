@@ -168,7 +168,7 @@ async function settle(): Promise<void> {
 describe("RepositoryStatusTracker", () => {
 	it("loads the initial linked checkout and refreshes on demand and polling", async (t) => {
 		const checkout = await createCheckout(t, "feature/footer", true);
-		const results = [pullRequest(10), pullRequest(11, "MERGED"), pullRequest(12, "CLOSED")];
+		const results = [pullRequest(10), pullRequest(10), pullRequest(11, "MERGED"), pullRequest(12, "CLOSED")];
 		const target = { current: { directory: checkout.directory, fallbackBranch: null } };
 		const harness = createHarness(target, async () => results.shift() ?? null);
 
@@ -178,6 +178,12 @@ describe("RepositoryStatusTracker", () => {
 		assert.equal(harness.lookupCalls[0]?.cwd, path.resolve(checkout.directory));
 		assert.equal(harness.intervalMs, 5 * 60 * 1_000);
 		assert.equal(harness.intervalUnrefed, true);
+
+		const changesAfterInitialLoad = harness.changes;
+		harness.tracker.refresh();
+		await settle();
+		assert.equal(harness.tracker.getPullRequest()?.number, 10);
+		assert.equal(harness.changes, changesAfterInitialLoad);
 
 		harness.tracker.refresh();
 		await settle();
@@ -215,6 +221,35 @@ describe("RepositoryStatusTracker", () => {
 		await settle();
 		assert.equal(harness.lookupCalls.length, 3);
 		harness.tracker.dispose();
+	});
+
+	it("uses safe fallback branches and suppresses detached or unsafe HEAD values", async (t) => {
+		const fallbackDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-repository-fallback-"));
+		t.after(() => fs.rm(fallbackDirectory, { recursive: true, force: true }));
+		const fallbackTarget = { current: { directory: fallbackDirectory, fallbackBranch: "feature/fallback" } };
+		const fallback = createHarness(fallbackTarget, async () => pullRequest(30));
+		await settle();
+		assert.equal(fallback.tracker.getBranch(), "feature/fallback");
+		assert.equal(fallback.tracker.getPullRequest()?.number, 30);
+		fallback.tracker.dispose();
+
+		const detachedCheckout = await createCheckout(t, "placeholder");
+		await fs.writeFile(detachedCheckout.headPath, "0123456789abcdef\n");
+		const detachedTarget = { current: { directory: detachedCheckout.directory, fallbackBranch: null } };
+		const detached = createHarness(detachedTarget, async () => pullRequest(31));
+		await settle();
+		assert.equal(detached.tracker.getBranch(), "detached");
+		assert.equal(detached.lookupCalls.length, 0);
+		detached.tracker.dispose();
+
+		const unsafeCheckout = await createCheckout(t, "placeholder");
+		await fs.writeFile(unsafeCheckout.headPath, "ref: refs/heads/feature/\u001b]8;;unsafe\n");
+		const unsafeTarget = { current: { directory: unsafeCheckout.directory, fallbackBranch: null } };
+		const unsafe = createHarness(unsafeTarget, async () => pullRequest(32));
+		await settle();
+		assert.equal(unsafe.tracker.getBranch(), null);
+		assert.equal(unsafe.lookupCalls.length, 0);
+		unsafe.tracker.dispose();
 	});
 
 	it("discards late results from a previous checkout", async (t) => {

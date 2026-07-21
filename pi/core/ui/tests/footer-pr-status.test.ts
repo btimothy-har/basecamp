@@ -188,6 +188,12 @@ describe("footer pull request status", () => {
 		assert.ok(line.startsWith("agent a  agent b"));
 		assert.ok(line.endsWith(hyperlink("● PR #297", response.url)));
 		assert.equal(visibleWidth(line), 60);
+
+		const truncated = harness.render(24)[2]!;
+		assert.ok(truncated.startsWith("agent"));
+		assert.ok(truncated.includes("…"));
+		assert.ok(truncated.endsWith(hyperlink("● PR #297", response.url)));
+		assert.equal(visibleWidth(truncated), 24);
 	});
 
 	it("renders plain PR text when terminal hyperlinks are unavailable", async (t) => {
@@ -244,5 +250,10 @@ describe("footer pull request status", () => {
 		assert.equal(harness.execCalls, 2);
 		assert.ok(harness.render(30)[2]!.endsWith("◆ PR #2"));
 		assert.ok(harness.requestRenders > rendersBeforeRefresh);
+
+		await harness.handlers.get("session_shutdown")?.({ type: "session_shutdown", reason: "quit" }, harness.ctx);
+		await harness.handlers.get("agent_settled")?.({ type: "agent_settled" }, harness.ctx);
+		await settle();
+		assert.equal(harness.execCalls, 2);
 	});
 });

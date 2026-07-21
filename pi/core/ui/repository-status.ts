@@ -65,10 +65,19 @@ function resolveGitHeadPath(startDir: string): string | null {
 	}
 }
 
+function safeBranchName(branch: string | null): string | null {
+	if (!branch) return null;
+	for (const character of branch) {
+		const codePoint = character.codePointAt(0);
+		if (codePoint !== undefined && (codePoint < 0x20 || codePoint === 0x7f)) return null;
+	}
+	return branch;
+}
+
 function readBranchFromHead(headPath: string): string | null {
 	try {
 		const content = readFileSync(headPath, "utf8").trim();
-		if (content.startsWith("ref: refs/heads/")) return content.slice(16);
+		if (content.startsWith("ref: refs/heads/")) return safeBranchName(content.slice(16));
 		return "detached";
 	} catch {
 		return null;
@@ -120,7 +129,7 @@ export class RepositoryStatusTracker {
 	}
 
 	getBranch(): string | null {
-		return this.branchCache ?? this.fallbackBranch;
+		return safeBranchName(this.branchCache ?? this.fallbackBranch);
 	}
 
 	getPullRequest(): PullRequestStatus | null {

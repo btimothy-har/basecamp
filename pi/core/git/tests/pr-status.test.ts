@@ -77,7 +77,7 @@ describe("lookupPullRequestStatus", () => {
 		}
 	});
 
-	it("normalizes HTTP URLs before returning them", async () => {
+	it("percent-encodes URL control characters before returning them", async () => {
 		const unsafeControl = "https://github.com/example/basecamp/pull/297\u001b]8;;https://evil.example";
 		const pi = createPi(() => execResult(response({ url: unsafeControl })));
 
@@ -86,6 +86,12 @@ describe("lookupPullRequestStatus", () => {
 		assert.ok(status);
 		assert.equal(status.url.includes("\u001b"), false);
 		assert.match(status.url, /%1B/);
+	});
+
+	it("accepts HTTP pull request URLs for GitHub Enterprise", async () => {
+		const pi = createPi(() => execResult(response({ url: "http://github.internal/org/repo/pull/297" })));
+
+		assert.equal((await lookupPullRequestStatus(pi, "/repo"))?.url, "http://github.internal/org/repo/pull/297");
 	});
 
 	it("rejects malformed or unsafe responses", async (t) => {
