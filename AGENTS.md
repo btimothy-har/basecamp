@@ -11,6 +11,8 @@ The repo is organized by the artifacts it ships:
 | Basecamp Pi extension | `pi/` (`pi/extension.ts` + `pi/<domain>/`) | The single Pi package, registered from the repo root: all session, workspace, workflow, and agent behavior, assembled from domain modules |
 | `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, `basecamp.hub` (daemon), and `basecamp.companion` (TUI) subpackages |
 
+`evals/` is deliberately outside both shipped products. It contains repository-local evaluation harness integrations and may depend on evaluator APIs that production Basecamp never imports.
+
 ## Repo Map
 
 ```
@@ -42,6 +44,9 @@ src/basecamp/                  # ② the basecamp Python package (one ordinary s
 ├── workspace/                  # per-repo worktree-setup environments + menus
 ├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
 └── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)
+
+evals/                         # non-shipping evaluation integrations
+└── terminal_bench/             # Harbor adapter: pinned Pi + committed Basecamp package in isolated task containers
 
 tests/  migrations/            # Python tests (tests/<domain>/); one-shot state migration
 ```
@@ -78,6 +83,12 @@ Agent modes are `analysis`, `planning`, `work`, and `copilot`. `work` is the def
 ### Agent Execution Posture
 
 Dispatched agents default to **read-only**, fail-closed (read-only unless a persona sets `readOnly: false`): they get a toolset without `write`/`edit`, launch `--read-only`, and share the parent's worktree so they see its live WIP. A **mutative** agent (currently only `worker`) instead gets its **own git worktree**, branched from the parent's HEAD and keyed per-run so re-tasks don't collide; it commits to a branch that the **primary integrates by merge**, and the worktree is torn down on finish (the branch kept for the merge, then deleted). That worktree is the isolation boundary, enforced by the workspace guard's `allowed_dirs` rule. `bash` is deliberately retained (scouts need `git log`, reviewers need `git diff`) and is **not** a mutation sandbox — a bash write still reaches the filesystem, so toolset + worktree confinement is defense-in-depth, not a wall. Independently, the workspace `tool_call` guard hard-blocks structured `write`/`edit` to the protected main checkout even when a subagent has no active worktree.
+
+### Evaluations
+
+Evaluation integrations live in the non-shipping top-level `evals/` package. Dependency flow is one-way: eval adapters may consume Harbor and committed Basecamp artifacts, while neither `pi/` nor `src/basecamp/` may import `evals/`. Harbor runs on the host and owns one disposable Docker container per task attempt; the evaluated Pi/Basecamp process never runs against the host checkout.
+
+The initial Terminal-Bench adapter exposes the worker-like `basecamp-pi-single` profile. It archives only `package.json`, `package-lock.json`, and `pi/` from an exact Git commit, then installs that artifact in the trial container. `BASECAMP_AGENT_DEPTH=1` and `BASECAMP_AGENT_MAX_DEPTH=1` intentionally select Basecamp's existing no-daemon, no-dispatch surface. Structured mutation requires three explicit launch signals: `--unsafe-edit` requests protected-checkout writes, `--unsafe-edit-sandboxed` permits a sandbox exception to the normal subagent/headless denial, and `BASECAMP_EXTERNAL_SANDBOX=1` marks the externally-owned isolation boundary. Read-only still wins, the flags are not inherited by daemon-spawned children, and ordinary headless/subagent launches remain protected. Interactive `plan()` is excluded because Harbor is headless. This profile produces local Harbor scores and Pi logs only: no ATIF, leaderboard claim, Podman support, or complete accounting of auxiliary bash-reviewer model calls.
 
 ### Extension Modules
 

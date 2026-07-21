@@ -9,8 +9,8 @@ export function applyUnsafeEditFlag(
 
 	if (!unsafeEditFlag) return "disabled";
 	if (constraints.readOnly) return "ignored-read-only";
-	if (constraints.isSubagent) return "ignored-subagent";
-	if (!constraints.hasUI) return "ignored-non-interactive";
+	if (!constraints.sandboxed && constraints.isSubagent) return "ignored-subagent";
+	if (!constraints.sandboxed && !constraints.hasUI) return "ignored-non-interactive";
 
 	state.unsafeEdit = true;
 	return "enabled";

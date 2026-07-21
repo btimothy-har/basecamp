@@ -36,6 +36,7 @@ export interface UnsafeEditConstraints {
 	readOnly: boolean;
 	hasUI: boolean;
 	isSubagent: boolean;
+	sandboxed: boolean;
 }
 
 export type UnsafeEditFlagResult =

@@ -255,12 +255,78 @@ basecamp ships no default — a repo with no environment is a clean no-op. When 
 
 For anything beyond a one-liner, point the command at a script you maintain outside the repo, e.g. `"bash ~/.pi/basecamp/worktree-setup.sh"`.
 
+## Terminal-Bench Evaluation
+
+Basecamp includes a repository-local [Harbor](https://harborframework.com) adapter for running Pi with Basecamp on Terminal-Bench 2.1. Harbor runs on the host and creates a fresh, disposable Docker container for every task attempt; Pi and Basecamp execute only inside that trial container.
+
+Prerequisites:
+
+- Python 3.12+ and `uv`
+- Docker installed and running (`docker info` must succeed)
+- A dedicated, scoped model-provider API key
+- A committed Basecamp revision; uncommitted and untracked files are deliberately excluded
+
+Install the pinned harness stack:
+
+```bash
+uv tool install --force --prerelease explicit \
+  --with 'litellm==1.90.2' \
+  'harbor==0.20.1.dev202607210139'
+```
+
+From the Basecamp repository root, run one task and one attempt:
+
+```bash
+export OPENAI_API_KEY='<scoped-key>'
+export PI_VERSION='0.80.7'
+export BASECAMP_REF="$(git rev-parse HEAD)"
+export BASECAMP_EVAL_JOBS="$HOME/evals/basecamp-terminal-bench/jobs"
+
+mkdir -p "$BASECAMP_EVAL_JOBS"
+
+PYTHONPATH="$PWD" harbor run \
+  --dataset terminal-bench/terminal-bench-2-1 \
+  --agent evals.terminal_bench.basecamp_pi:BasecampPiSingle \
+  --model openai/gpt-5.6-sol \
+  --agent-kwarg "version=$PI_VERSION" \
+  --agent-kwarg "basecamp_repo=$PWD" \
+  --agent-kwarg "basecamp_ref=$BASECAMP_REF" \
+  --agent-kwarg thinking=xhigh \
+  --include-task-name cancel-async-tasks \
+  --n-attempts 1 \
+  --n-concurrent 1 \
+  --jobs-dir "$BASECAMP_EVAL_JOBS"
+```
+
+Change the provider key and `--model` together when using another provider. Harbor passes the provider credential into the trial container; do not use a broad personal or organization key.
+
+The adapter installs the exact Pi version and a `git archive` of `package.json`, `package-lock.json`, and `pi/` from `BASECAMP_REF`. It verifies the archive digest, installs production dependencies from the committed lockfile without lifecycle scripts, and registers Basecamp with Pi. It never mounts host Pi auth, Basecamp configuration, worktrees, or the repository into the trial container.
+
+This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, bash reviewer, and structured file tools. It disables the Python hub, dispatched subagents, companion, browser, workstreams, code-review UI, and interactive `plan()` flow. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
+
+Harbor writes each job and trial beneath `$BASECAMP_EVAL_JOBS`. The useful per-trial files are:
+
+- `result.json` — reward, timing, and exception data
+- `agent/pi.txt` — Pi's filtered JSON event stream
+- `agent/pi/sessions/` — Pi session data
+- `agent/basecamp-eval.json` — Basecamp commit, archive digest, profile, and runtime versions
+- `verifier/` — reward and verifier output
+
+Browse completed jobs with:
+
+```bash
+harbor view "$BASECAMP_EVAL_JOBS"
+```
+
+The adapter currently targets Docker. Podman's Docker/Compose compatibility is not yet validated. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
+
 ## Package Layout
 
 basecamp is organized by the artifacts it ships:
 
 - `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
 - `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `swarm` (daemon), and `companion` (TUI) subpackages
+- `evals/` — non-shipping evaluation integrations; currently the Harbor adapter for isolated Terminal-Bench runs of Pi with Basecamp
 
 ## License
 

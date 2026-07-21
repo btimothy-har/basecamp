@@ -220,7 +220,7 @@ export async function initializeAndActivate(
 	await service.initialize({
 		launchCwd,
 		unsafeEditFlag: false,
-		unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
+		unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false, sandboxed: false },
 	});
 	await service.activateWorktree(LABEL);
 	return { service, calls };
