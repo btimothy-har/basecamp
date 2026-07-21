@@ -18,7 +18,6 @@ from basecamp.core.paths import DAEMON_DB, TASKS_DIR
 
 from ._sqlite import reading, writing
 from .agents import AgentsMixin
-from .analysis import AnalysisMixin
 from .directory import DirectoryMixin
 from .errors import (
     ActiveRunExistsError,
@@ -28,7 +27,6 @@ from .errors import (
 )
 from .messages import MessagesMixin
 from .policy import PolicyMixin
-from .raw_pi_thread import RawPiThreadMixin
 from .runs import RunsMixin
 from .summary import SummaryMixin
 from .text import (
@@ -56,8 +54,6 @@ class Store(
     DirectoryMixin,
     SummaryMixin,
     WorkstreamsMixin,
-    RawPiThreadMixin,
-    AnalysisMixin,
 ):
     """Hub daemon persistence layer backed by SQLite."""
 
@@ -89,5 +85,3 @@ class Store(
             self._init_runs_schema(connection)
             self._init_messages_schema(connection)
             self._init_workstreams_schema(connection)
-            self._init_raw_pi_thread_schema(connection)
-            self._init_analysis_schema(connection)
