@@ -9,6 +9,7 @@ import {
 	resetCurrentSessionState,
 	updateCurrentSessionState,
 } from "#core/session/state/index.ts";
+import { publishRunSummary } from "#core/swarm/agents/summary-observer.ts";
 import { registerTasksReader, type TasksState } from "#tasks/index.ts";
 import { resetHerdrMetadataSeqForTest } from "../herdr/metadata.ts";
 import registerCompanion from "../snapshot/index.ts";
@@ -25,6 +26,7 @@ interface MockContext {
 		getSessionFile(): string | null;
 	};
 	model: { id: string } | null;
+	isIdle(): boolean;
 }
 
 const originalHome = process.env.HOME;
@@ -57,13 +59,14 @@ function createMockPi(execHandler: ExecHandler = () => ({ code: 0, stdout: "", s
 	};
 }
 
-function createContext(): MockContext {
+function createContext(idle = true): MockContext {
 	return {
 		sessionManager: {
 			getSessionId: () => "session/writer:1",
 			getSessionFile: () => null,
 		},
 		model: { id: "model-live" },
+		isIdle: () => idle,
 	};
 }
 
@@ -83,9 +86,10 @@ function registerEmptyTasksReader(): void {
 describe("companion/registerCompanion", () => {
 	afterEach(async () => {
 		for (const emit of activeEmitters) {
-			await emit("session_shutdown", { reason: "reload" });
+			await emit("session_shutdown", { reason: "quit" });
 		}
 		activeEmitters.clear();
+		publishRunSummary(null);
 
 		if (originalHome === undefined) {
 			delete process.env.HOME;
@@ -197,6 +201,10 @@ describe("companion/registerCompanion", () => {
 				"w8:p1",
 				"--source",
 				"basecamp.pi",
+				"--agent",
+				"pi",
+				"--applies-to-source",
+				"herdr:pi",
 				"--display-agent",
 				"pi",
 				"--title",
@@ -212,6 +220,85 @@ describe("companion/registerCompanion", () => {
 		assert.deepEqual(secondCall.args.slice(0, 3), ["pane", "report-metadata", "w8:p1"]);
 		assert.deepEqual(secondCall.args.slice(-2), ["--seq", "2"]);
 		assert.equal(secondCall.args[secondCall.args.indexOf("--custom-status") + 1], "Updated task");
+	});
+
+	it("reports agent waits across reload without rewriting snapshots", async () => {
+		const home = useTempHome();
+		process.env.BASECAMP_AGENT_DEPTH = "0";
+		process.env.HERDR_ENV = "1";
+		process.env.HERDR_PANE_ID = "w8:p1";
+		process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
+		registerTasksReader({
+			getState: () => ({
+				goal: "Track waits",
+				tasks: [
+					{
+						label: "Active task",
+						description: "Keep this label while working",
+						criteria: "Waiting only wins for explicit or idle waits",
+						status: "active",
+						review: null,
+					},
+				],
+			}),
+		});
+		const snapshotPath = companionSnapshotPath("session/writer:1", defaultCompanionSnapshotDir(home));
+		const { pi, emit, execCalls } = createMockPi();
+		registerCompanion(pi);
+		await emit("session_start", {}, createContext(true));
+		const snapshotBefore = fs.readFileSync(snapshotPath, "utf8");
+		const statuses = () => execCalls.map((call) => call.args[call.args.indexOf("--custom-status") + 1]);
+
+		const twoAgents = {
+			counts: { pending: 1, running: 1, completed: 0, failed: 0, total: 2 },
+			agents: [],
+		};
+		publishRunSummary(twoAgents);
+		const callsWithTwoAgents = execCalls.length;
+		publishRunSummary(twoAgents);
+		assert.equal(execCalls.length, callsWithTwoAgents);
+		publishRunSummary(null);
+		publishRunSummary({
+			counts: { pending: 0, running: 2, completed: 0, failed: 0, total: 2 },
+			agents: [],
+		});
+		await emit("agent_start");
+		await emit("tool_execution_start", { toolName: "wait_for_agent", toolCallId: "wait-1" });
+		await emit("tool_execution_start", { toolName: "wait_for_agent", toolCallId: "wait-2" });
+		const callsWithTwoWaits = execCalls.length;
+		await emit("tool_execution_end", { toolName: "wait_for_agent", toolCallId: "wait-1", isError: false });
+		assert.equal(execCalls.length, callsWithTwoWaits);
+		assert.equal(fs.readFileSync(snapshotPath, "utf8"), snapshotBefore);
+		await emit("session_shutdown", { reason: "reload" });
+		publishRunSummary(null);
+		await emit("session_start", { reason: "reload" }, createContext(false));
+		const snapshotAfterReload = fs.readFileSync(snapshotPath, "utf8");
+		await emit("tool_execution_end", { toolName: "wait_for_agent", toolCallId: "wait-2", isError: false });
+		const callsBeforeBackgroundUpdate = execCalls.length;
+		publishRunSummary({
+			counts: { pending: 0, running: 1, completed: 1, failed: 0, total: 2 },
+			agents: [],
+		});
+		assert.equal(execCalls.length, callsBeforeBackgroundUpdate);
+		await emit("agent_settled");
+		publishRunSummary({
+			counts: { pending: 0, running: 0, completed: 2, failed: 0, total: 2 },
+			agents: [],
+		});
+
+		assert.deepEqual(statuses(), [
+			"Active task",
+			"waiting on 2 agents",
+			"Active task",
+			"waiting on 2 agents",
+			"Active task",
+			"waiting on 2 agents",
+			"waiting on agents",
+			"Active task",
+			"waiting on 1 agent",
+			"Active task",
+		]);
+		assert.equal(fs.readFileSync(snapshotPath, "utf8"), snapshotAfterReload);
 	});
 
 	it("reports Herdr metadata when the session title changes", async () => {

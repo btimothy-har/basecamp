@@ -32,8 +32,20 @@ interface RegisteredTool {
 	): Promise<ReviewToolResult>;
 }
 
+interface EmittedEvent {
+	channel: string;
+	data: unknown;
+}
+
 class FakePi {
 	readonly tools = new Map<string, RegisteredTool>();
+	readonly emitted: EmittedEvent[] = [];
+	readonly events = {
+		emit: (channel: string, data: unknown) => {
+			this.emitted.push({ channel, data });
+		},
+		on: () => () => {},
+	};
 	registerTool(tool: RegisteredTool): void {
 		this.tools.set(tool.name, tool);
 	}
@@ -84,8 +96,16 @@ function ctxNoUI(): ExtensionContext {
 	return { hasUI: false } as unknown as ExtensionContext;
 }
 
-function ctxWithAnnotation(result: AnnotateResult): ExtensionContext {
-	return { hasUI: true, ui: { custom: async () => result } } as unknown as ExtensionContext;
+function ctxWithAnnotation(result: AnnotateResult, onOpen: () => void = () => {}): ExtensionContext {
+	return {
+		hasUI: true,
+		ui: {
+			custom: async () => {
+				onOpen();
+				return result;
+			},
+		},
+	} as unknown as ExtensionContext;
 }
 
 function readArtifact(artifactPath: string): { json: string; findings: (Finding & { reaction: string | null })[] } {
@@ -93,11 +113,21 @@ function readArtifact(artifactPath: string): { json: string; findings: (Finding 
 	return { json, findings: JSON.parse(json).findings };
 }
 
-function register(): RegisteredTool {
+function registerHarness(): { pi: FakePi; tool: RegisteredTool } {
 	const pi = new FakePi();
 	registerReviewTool(pi as unknown as ExtensionAPI);
-	return pi.getReportFindings();
+	return { pi, tool: pi.getReportFindings() };
 }
+
+function register(): RegisteredTool {
+	return registerHarness().tool;
+}
+
+const blockedStart: EmittedEvent = {
+	channel: "herdr:blocked",
+	data: { active: true, label: "Waiting for code-review annotation" },
+};
+const blockedEnd: EmittedEvent = { channel: "herdr:blocked", data: { active: false } };
 
 describe("report_findings tool", () => {
 	it("throws when invoked in a subagent", async (t) => {
@@ -129,30 +159,53 @@ describe("report_findings tool", () => {
 		assert.equal(findings[0]?.reaction, null);
 	});
 
-	it("opens the annotation pane and persists reactions alongside author responses", async (t) => {
+	it("opens the annotation pane inside a balanced blocked interval", async (t) => {
 		withPrimaryScratch(t);
-		const tool = register();
-		const ctx = ctxWithAnnotation({ cancelled: false, reactions: ["agree", null] });
+		const { pi, tool } = registerHarness();
+		const lifecycle: string[] = [];
+		pi.events.emit = (channel, data) => {
+			lifecycle.push(`${channel}:${(data as { active: boolean }).active}`);
+			pi.emitted.push({ channel, data });
+		};
+		const ctx = ctxWithAnnotation({ cancelled: false, reactions: ["agree", null] }, () => lifecycle.push("annotate"));
 		const findings = [finding({ severity: "medium", response: "known trade-off" }), finding({ severity: "low" })];
 		const res = await tool.execute("call-1", { scope, findings }, undefined, undefined, ctx);
 		const details = res.details as ReviewDetails;
 
 		assert.equal(details.annotated, true);
+		assert.deepEqual(lifecycle, ["herdr:blocked:true", "annotate", "herdr:blocked:false"]);
+		assert.deepEqual(pi.emitted, [blockedStart, blockedEnd]);
 		const persisted = readArtifact(details.artifactPath).findings;
 		assert.equal(persisted[0]?.reaction, "agree");
 		assert.equal(persisted[0]?.response, "known trade-off");
 		assert.equal(persisted[1]?.reaction, null);
 	});
 
-	it("keeps the cancelled pane unannotated but still persists the packet", async (t) => {
+	it("keeps the cancelled pane unannotated and clears blocked state", async (t) => {
 		withPrimaryScratch(t);
-		const tool = register();
+		const { pi, tool } = registerHarness();
 		const ctx = ctxWithAnnotation({ cancelled: true, reactions: [] });
 		const res = await tool.execute("call-1", { scope, findings: [finding({})] }, undefined, undefined, ctx);
 		const details = res.details as ReviewDetails;
 
 		assert.equal(details.annotated, false);
 		assert.equal(readArtifact(details.artifactPath).findings[0]?.reaction, null);
+		assert.deepEqual(pi.emitted, [blockedStart, blockedEnd]);
+	});
+
+	it("clears blocked state when annotation fails", async (t) => {
+		withPrimaryScratch(t);
+		const { pi, tool } = registerHarness();
+		const ctx = {
+			hasUI: true,
+			ui: { custom: async () => Promise.reject(new Error("annotation failed")) },
+		} as unknown as ExtensionContext;
+
+		await assert.rejects(
+			() => tool.execute("call-1", { scope, findings: [finding({})] }, undefined, undefined, ctx),
+			/annotation failed/,
+		);
+		assert.deepEqual(pi.emitted, [blockedStart, blockedEnd]);
 	});
 
 	it("derives the verdict from severity and ignores the author response", async (t) => {
@@ -215,9 +268,9 @@ describe("report_findings tool", () => {
 		}
 	});
 
-	it("does not open the pane or mark annotated when there are no findings", async (t) => {
+	it("does not open the pane or mark blocked when there are no findings", async (t) => {
 		withPrimaryScratch(t);
-		const tool = register();
+		const { pi, tool } = registerHarness();
 		const ctx = {
 			hasUI: true,
 			ui: {
@@ -231,6 +284,7 @@ describe("report_findings tool", () => {
 
 		assert.equal(details.annotated, false);
 		assert.equal(details.decision, "approve");
+		assert.deepEqual(pi.emitted, []);
 	});
 
 	it("persists findings in merged severity order regardless of input order", async (t) => {

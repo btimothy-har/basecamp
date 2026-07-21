@@ -13,7 +13,12 @@ export {
 	type DaemonDispatchFrameOptions,
 	type DaemonDispatchResult,
 } from "./rpc.ts";
-export { fetchRunSummary, type RunSummaryAgent, type RunSummaryResult } from "./view/summary.ts";
+export {
+	fetchRunSummary,
+	type RunSummaryAgent,
+	type RunSummaryCounts,
+	type RunSummaryResult,
+} from "./view/summary.ts";
 export {
 	getWorkstream,
 	listWorkstreams,

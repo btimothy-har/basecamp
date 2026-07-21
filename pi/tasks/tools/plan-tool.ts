@@ -14,6 +14,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
+import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import { startGoalCycle } from "../lifecycle/goal-cycle.ts";
 import type { TasksRuntime } from "../lifecycle/index.ts";
 import type { PlanDraft } from "../schemas/plan.ts";
@@ -126,12 +127,10 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 
 			let reviewResult: "submit" | "decline" = "submit";
 			if (ctx.hasUI) {
-				pi.events.emit("herdr:blocked", { active: true, label: "Waiting for plan approval" });
-				try {
-					reviewResult = await showReviewOverlay(draft, ctx);
-				} finally {
-					pi.events.emit("herdr:blocked", { active: false });
-				}
+				const reviewDraft = draft;
+				reviewResult = await withHerdrBlocked(pi, "Waiting for plan approval", () =>
+					showReviewOverlay(reviewDraft, ctx),
+				);
 			}
 
 			if (reviewResult === "decline") {

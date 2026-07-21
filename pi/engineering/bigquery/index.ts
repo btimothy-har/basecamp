@@ -149,7 +149,7 @@ export function registerBqQueryTool(pi: ExtensionAPI): void {
 					};
 				}
 
-				const approvalFailure = await evaluateScanApproval(details, ctx, signal, forceNoUiSoftLock);
+				const approvalFailure = await evaluateScanApproval(pi, details, ctx, signal, forceNoUiSoftLock);
 				if (approvalFailure) return approvalFailure;
 
 				if (!outputPath) throw new Error("Internal error: missing BigQuery output path.");
