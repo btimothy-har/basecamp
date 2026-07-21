@@ -38,14 +38,18 @@ class FakePi:
     def __init__(
         self,
         *_args: Any,
+        model_name: str | None = None,
         version: str | None = None,
         extra_env: dict[str, str] | None = None,
         **_kwargs: Any,
     ) -> None:
+        self.model_name = model_name
         self._version = version
         self._extra_env = dict(extra_env or {})
         self.calls: list[tuple[str, str, dict[str, str] | None]] = []
         self.runtime_output = "node=v24.4.1\nnpm=11.4.2\npi=0.80.7\n"
+        provider, model = (model_name or "/").split("/", 1)
+        self.model_output = f"provider model context\n{provider} {model} 128K\n"
 
     @property
     def extra_env(self) -> dict[str, str]:
@@ -67,7 +71,12 @@ class FakePi:
         env: dict[str, str] | None = None,
     ) -> types.SimpleNamespace:
         self.calls.append(("agent", command, env))
-        stdout = self.runtime_output if "printf 'node=%s" in command else ""
+        if "printf 'node=%s" in command:
+            stdout = self.runtime_output
+        elif "pi --list-models" in command:
+            stdout = self.model_output
+        else:
+            stdout = ""
         return types.SimpleNamespace(stdout=stdout)
 
 
@@ -108,6 +117,26 @@ def _git(repository: Path, *args: str) -> str:
         text=True,
     )
     return result.stdout.strip()
+
+
+def _write_models(path: Path, api_key: str = "$PI_PROXY_API_KEY") -> Path:
+    path.write_text(
+        json.dumps(
+            {
+                "providers": {
+                    "openai": {"baseUrl": "https://proxy.example.test/v1"},
+                    "shopify": {
+                        "api": "openai-responses",
+                        "apiKey": api_key,
+                        "baseUrl": "https://proxy.example.test/v1",
+                        "models": [{"id": "proxy-model", "name": "Proxy Model"}],
+                    },
+                }
+            }
+        )
+        + "\n"
+    )
+    return path
 
 
 @pytest.fixture
@@ -164,6 +193,7 @@ def test_profile_identity_flags_and_environment(
 ) -> None:
     adapter = _load_adapter(monkeypatch)
     repository, commit = source_repository
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
 
     agent = adapter.BasecampPiSingle(
         logs_dir=tmp_path,
@@ -178,6 +208,7 @@ def test_profile_identity_flags_and_environment(
     assert agent.version() == f"0.80.7+basecamp.{commit[:12]}"
     assert agent.extra_env == {
         "KEEP": "yes",
+        "OPENAI_API_KEY": "openai-secret",
         "BASECAMP_AGENT_DEPTH": "1",
         "BASECAMP_AGENT_MAX_DEPTH": "1",
         "BASECAMP_EXTERNAL_SANDBOX": "1",
@@ -227,6 +258,34 @@ def test_configuration_guards_fail_before_setup(
         )
 
 
+def test_models_config_requires_environment_backed_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    source_repository: tuple[Path, str],
+    tmp_path: Path,
+) -> None:
+    adapter = _load_adapter(monkeypatch)
+    repository, commit = source_repository
+    common = {
+        "logs_dir": tmp_path,
+        "model_name": "shopify/proxy-model",
+        "basecamp_repo": repository,
+        "basecamp_ref": commit,
+        "version": "0.80.7",
+    }
+    monkeypatch.delenv("PI_PROXY_API_KEY", raising=False)
+
+    with pytest.raises(adapter.model_config.PiModelsEnvironmentError):
+        adapter.BasecampPiSingle(
+            **common,
+            pi_models_file=_write_models(tmp_path / "missing-env.json"),
+        )
+    with pytest.raises(adapter.model_config.PiModelsFileError):
+        adapter.BasecampPiSingle(
+            **common,
+            pi_models_file=_write_models(tmp_path / "literal-key.json", "literal-secret"),
+        )
+
+
 @pytest.mark.asyncio
 async def test_install_uploads_auditable_source_and_uses_task_user(
     monkeypatch: pytest.MonkeyPatch,
@@ -236,6 +295,7 @@ async def test_install_uploads_auditable_source_and_uses_task_user(
     adapter = _load_adapter(monkeypatch)
     repository, commit = source_repository
     environment = FakeEnvironment()
+    monkeypatch.setenv("OPENAI_API_KEY", "openai-secret")
     agent = adapter.BasecampPiSingle(
         logs_dir=tmp_path,
         model_name="openai/gpt-5.6-sol",
@@ -258,7 +318,9 @@ async def test_install_uploads_auditable_source_and_uses_task_user(
     assert metadata == {
         "basecamp_archive_sha256": hashlib.sha256(archive_bytes).hexdigest(),
         "basecamp_commit": commit,
+        "credential_environment_names": ["OPENAI_API_KEY"],
         "external_sandbox": True,
+        "model": "openai/gpt-5.6-sol",
         "node_major": 24,
         "pi_version": "0.80.7",
         "profile": "basecamp-pi-single",
@@ -266,7 +328,7 @@ async def test_install_uploads_auditable_source_and_uses_task_user(
         "subagents_enabled": False,
     }
 
-    assert [kind for kind, _, _ in agent.calls] == ["root", "agent", "agent", "agent"]
+    assert [kind for kind, _, _ in agent.calls] == ["root", "agent", "agent", "agent", "agent"]
     root_command = agent.calls[0][1]
     pi_command = agent.calls[1][1]
     basecamp_command = agent.calls[2][1]
@@ -279,6 +341,73 @@ async def test_install_uploads_auditable_source_and_uses_task_user(
     assert digest in basecamp_command
     assert "npm ci --omit=dev --ignore-scripts --no-audit --no-fund" in basecamp_command
     assert 'pi install "$HOME/.basecamp-eval/source"' in basecamp_command
+
+
+@pytest.mark.asyncio
+async def test_install_copies_models_config_and_referenced_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    source_repository: tuple[Path, str],
+    tmp_path: Path,
+) -> None:
+    adapter = _load_adapter(monkeypatch)
+    repository, commit = source_repository
+    models_path = _write_models(tmp_path / "models.json")
+    monkeypatch.setenv("PI_PROXY_API_KEY", "proxy-secret")
+    environment = FakeEnvironment()
+    agent = adapter.BasecampPiSingle(
+        logs_dir=tmp_path,
+        model_name="shopify/proxy-model",
+        basecamp_repo=repository,
+        basecamp_ref=commit,
+        version="0.80.7",
+        pi_models_file=models_path,
+    )
+
+    await agent.install(environment)
+
+    assert agent.extra_env["PI_PROXY_API_KEY"] == "proxy-secret"
+    assert [target for _, target, _ in environment.uploads] == [
+        "/tmp/basecamp-eval-source.tar",
+        "/tmp/basecamp-eval-models.json",
+        "/logs/agent/basecamp-eval.json",
+    ]
+    models_bytes = environment.uploads[1][2]
+    models_digest = hashlib.sha256(models_bytes).hexdigest()
+    models_command = agent.calls[3][1]
+    assert models_digest in models_command
+    assert 'install --mode 600 /tmp/basecamp-eval-models.json "$HOME/.pi/agent/models.json"' in models_command
+
+    metadata_bytes = environment.uploads[2][2]
+    metadata = json.loads(metadata_bytes)
+    assert metadata["models_config"] == {
+        "environment_names": ["PI_PROXY_API_KEY"],
+        "providers": ["openai", "shopify"],
+        "sha256": models_digest,
+    }
+    assert metadata["credential_environment_names"] == ["PI_PROXY_API_KEY"]
+    assert metadata["model"] == "shopify/proxy-model"
+    assert b"proxy-secret" not in metadata_bytes
+
+
+@pytest.mark.asyncio
+async def test_model_probe_rejects_unavailable_model(
+    monkeypatch: pytest.MonkeyPatch,
+    source_repository: tuple[Path, str],
+    tmp_path: Path,
+) -> None:
+    adapter = _load_adapter(monkeypatch)
+    repository, commit = source_repository
+    agent = adapter.BasecampPiSingle(
+        logs_dir=tmp_path,
+        model_name="shopify/missing-model",
+        basecamp_repo=repository,
+        basecamp_ref=commit,
+        version="0.80.7",
+    )
+    agent.model_output = "provider model context\n"
+
+    with pytest.raises(adapter.ModelAvailabilityError):
+        await agent._probe_model(FakeEnvironment())
 
 
 @pytest.mark.asyncio

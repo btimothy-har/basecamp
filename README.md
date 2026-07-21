@@ -262,7 +262,7 @@ Basecamp includes a repository-local [Harbor](https://harborframework.com) adapt
 Prerequisites:
 
 - Python 3.12+ and `uv`
-- Docker installed and running (`docker info` must succeed)
+- Docker, or a running Podman machine plus the Docker Compose CLI
 - A dedicated, scoped model-provider API key
 - A committed Basecamp revision; uncommitted and untracked files are deliberately excluded
 
@@ -274,11 +274,25 @@ uv tool install --force --prerelease explicit \
   'harbor==0.20.1.dev202607210139'
 ```
 
+For Podman on macOS, install the Docker Compose CLI (not `podman-compose`) and put Basecamp's compatibility wrapper first on `PATH`:
+
+```bash
+brew install docker-compose
+export DOCKER_COMPOSE_BIN="$(command -v docker-compose)"
+export PATH="$PWD/evals/terminal_bench/bin:$PATH"
+
+docker info
+docker compose version
+```
+
+The wrapper sends ordinary `docker` operations to Podman and points Docker Compose at the running Podman machine's API socket. `podman-compose` is not compatible with Harbor because it does not accept Compose's `--project-directory` option.
+
 From the Basecamp repository root, run one task and one attempt:
 
 ```bash
 export OPENAI_API_KEY='<scoped-key>'
 export PI_VERSION='0.80.7'
+export PI_MODELS_FILE="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/models.json"
 export BASECAMP_REF="$(git rev-parse HEAD)"
 export BASECAMP_EVAL_JOBS="$HOME/evals/basecamp-terminal-bench/jobs"
 
@@ -291,14 +305,17 @@ PYTHONPATH="$PWD" harbor run \
   --agent-kwarg "version=$PI_VERSION" \
   --agent-kwarg "basecamp_repo=$PWD" \
   --agent-kwarg "basecamp_ref=$BASECAMP_REF" \
+  --agent-kwarg "pi_models_file=$PI_MODELS_FILE" \
   --agent-kwarg thinking=xhigh \
-  --include-task-name cancel-async-tasks \
+  --include-task-name terminal-bench/cancel-async-tasks \
   --n-attempts 1 \
   --n-concurrent 1 \
   --jobs-dir "$BASECAMP_EVAL_JOBS"
 ```
 
-Change the provider key and `--model` together when using another provider. Harbor passes the provider credential into the trial container; do not use a broad personal or organization key.
+Change the provider key and `--model` together when using another provider. Harbor passes the provider credential into the trial container; do not use a broad personal or organization key. Add `--install-only` to the command for a no-completion setup/auth smoke: the adapter installs the runtime and requires `pi --list-models` to contain the exact configured provider/model before Harbor removes the trial container.
+
+`pi_models_file` is optional. When present, the adapter snapshots and digest-verifies that `models.json`, copies it to the trial user's Pi config with mode `0600`, and forwards host environment variables referenced by provider `apiKey` or header interpolation. Literal API keys and credential commands are rejected. `auth.json`, `settings.json`, and secret values are never copied into metadata or the Basecamp source archive.
 
 The adapter installs the exact Pi version and a `git archive` of `package.json`, `package-lock.json`, and `pi/` from `BASECAMP_REF`. It verifies the archive digest, installs production dependencies from the committed lockfile without lifecycle scripts, and registers Basecamp with Pi. It never mounts host Pi auth, Basecamp configuration, worktrees, or the repository into the trial container.
 
@@ -318,7 +335,7 @@ Browse completed jobs with:
 harbor view "$BASECAMP_EVAL_JOBS"
 ```
 
-The adapter currently targets Docker. Podman's Docker/Compose compatibility is not yet validated. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
+Docker and Podman-on-macOS through the included wrapper are supported; the Podman path is validated with a Terminal-Bench 2.1 oracle trial. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
 
 ## Package Layout
 
