@@ -14,6 +14,7 @@ import {
 	type WorkspaceWorktree,
 } from "#core/project/workspace/state.ts";
 import { shortSessionId } from "#core/session/session-id.ts";
+import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import type { PlanDraft } from "../../schemas/plan.ts";
 import type { TaskStatus } from "../../schemas/task.ts";
 import { collectApprovedNotes } from "../draft.ts";
@@ -66,6 +67,7 @@ export interface PendingImplementationHandoff {
 }
 
 export async function selectWorktreeTarget(
+	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	goal: string,
 	worktreeSlug: string | null,
@@ -83,13 +85,15 @@ export async function selectWorktreeTarget(
 	const existing = await listWorkspaceWorktrees();
 	const { choices, targetsByChoice } = buildExecutionWorktreeChoices(suggested, existing, workspace.activeWorktree);
 
-	const choice = await ctx.ui.select("Execution worktree", choices);
-	if (!choice) return null;
-	if (choice === CUSTOM_WORKTREE_CHOICE) {
-		const label = await ctx.ui.input("Custom worktree label", suggested.worktreeLabel);
-		return label?.trim() ? customWorktreeTarget(label, sessionTag) : null;
-	}
-	return targetsByChoice.get(choice) ?? null;
+	return withHerdrBlocked(pi, "Waiting for worktree selection", async () => {
+		const choice = await ctx.ui.select("Execution worktree", choices);
+		if (!choice) return null;
+		if (choice === CUSTOM_WORKTREE_CHOICE) {
+			const label = await ctx.ui.input("Custom worktree label", suggested.worktreeLabel);
+			return label?.trim() ? customWorktreeTarget(label, sessionTag) : null;
+		}
+		return targetsByChoice.get(choice) ?? null;
+	});
 }
 
 export const HANDOFF_COMPACTION_THRESHOLD_PERCENT = 30;
@@ -237,7 +241,7 @@ export async function runHandoff(
 	if (activeWorktree && shouldReuseActiveWorktreeForHandoff(activeWorktree)) {
 		worktree = workspaceWorktreeToHandoffWorktree(activeWorktree);
 	} else {
-		const target = await selectWorktreeTarget(ctx, plan.goal, plan.worktreeSlug);
+		const target = await selectWorktreeTarget(pi, ctx, plan.goal, plan.worktreeSlug);
 		if (!target) return { status: "cancelled" };
 		try {
 			worktree = workspaceWorktreeToHandoffWorktree(
