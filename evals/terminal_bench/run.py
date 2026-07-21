@@ -249,6 +249,7 @@ def run(options: LaunchOptions) -> int:
     for task in options.tasks:
         print(f"  - {task}")
     print(shlex.join(command))
+    sys.stdout.flush()
 
     if options.dry_run:
         return 0
