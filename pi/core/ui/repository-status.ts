@@ -85,8 +85,9 @@ function readBranchFromHead(headPath: string): string | null {
 }
 
 function pullRequestsEqual(left: PullRequestStatus | null, right: PullRequestStatus): boolean {
+	if (!left) return false;
 	return (
-		left?.number === right.number &&
+		left.number === right.number &&
 		left.url === right.url &&
 		left.state === right.state &&
 		left.isDraft === right.isDraft
