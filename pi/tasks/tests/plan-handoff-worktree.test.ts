@@ -55,7 +55,7 @@ async function initializeWorkspace(t: TestContext, pi: FakePi): Promise<void> {
 	await service.initialize({
 		launchCwd: "/repo",
 		unsafeEditFlag: false,
-		unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
+		unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false, sandboxed: false },
 	});
 }
 

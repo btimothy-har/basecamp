@@ -70,7 +70,7 @@ describe("unsafe-edit context", () => {
 			}),
 		);
 		assert.ok(warning?.includes("⚠ UNSAFE-EDIT MODE ACTIVE:"));
-		assert.ok(warning?.includes("Parent file `edit`/`write` calls may modify the protected checkout directly."));
+		assert.ok(warning?.includes("File `edit`/`write` calls may modify the protected checkout directly."));
 		assert.doesNotMatch(warning ?? "", /Do not edit the protected repository checkout/);
 	});
 

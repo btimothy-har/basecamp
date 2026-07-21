@@ -152,7 +152,7 @@ describe("assemblePrompt", () => {
 		});
 
 		assert.match(prompt, /⚠ UNSAFE-EDIT MODE ACTIVE:/);
-		assert.match(prompt, /Parent file `edit`\/`write` calls may modify the protected checkout directly\./);
+		assert.match(prompt, /File `edit`\/`write` calls may modify the protected checkout directly\./);
 		assert.match(prompt, /Commits and mutating git commands still require an active execution worktree\./);
 		assert.match(prompt, /Subagents do not inherit unsafe-edit authority\./);
 		assert.doesNotMatch(

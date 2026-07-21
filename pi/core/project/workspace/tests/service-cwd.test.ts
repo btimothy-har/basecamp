@@ -69,7 +69,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		const result = await service.initialize({
 			launchCwd: path.join(WORKTREE_DIR, "packages", "app"),
 			unsafeEditFlag: false,
-			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
+			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false, sandboxed: false },
 		});
 
 		assert.equal(result.state.protectedRoot, REPO_ROOT);
@@ -110,7 +110,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		const result = await service.initialize({
 			launchCwd: externalWorktree,
 			unsafeEditFlag: false,
-			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
+			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false, sandboxed: false },
 		});
 
 		assert.equal(result.state.protectedRoot, REPO_ROOT);
@@ -139,7 +139,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		const result = await service.initialize({
 			launchCwd: WORKTREE_DIR,
 			unsafeEditFlag: false,
-			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false },
+			unsafeEditConstraints: { readOnly: false, hasUI: true, isSubagent: false, sandboxed: false },
 		});
 
 		assert.equal(result.state.protectedRoot, REPO_ROOT);

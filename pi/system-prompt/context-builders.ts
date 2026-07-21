@@ -40,7 +40,7 @@ export function buildUnsafeEditGuidance(workspace: WorkspaceState | null): strin
 
 	return [
 		"⚠ UNSAFE-EDIT MODE ACTIVE:",
-		"- Parent file `edit`/`write` calls may modify the protected checkout directly.",
+		"- File `edit`/`write` calls may modify the protected checkout directly.",
 		`- ${gitRestriction}`,
 		"- Subagents do not inherit unsafe-edit authority.",
 	].join("\n");

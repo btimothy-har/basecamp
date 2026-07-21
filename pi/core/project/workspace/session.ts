@@ -9,7 +9,7 @@ import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendi
 import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
 import { sweepAgentWorktrees } from "../../git/worktrees/sweep.ts";
 import { readLogseqGraphDir } from "../../host/config.ts";
-import { getAgentDepth } from "../../host/env.ts";
+import { getAgentDepth, getBasecampEnv } from "../../host/env.ts";
 import { getCurrentSessionState } from "../../session/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "./affinity.ts";
 import { requireWorkspaceRuntime } from "./runtime.ts";
@@ -162,6 +162,10 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 		description: "Allow edit/write to target protected checkout directly (bash reviewer protections still apply)",
 		type: "boolean",
 	});
+	pi.registerFlag("unsafe-edit-sandboxed", {
+		description: "Permit --unsafe-edit in an externally sandboxed non-interactive or subagent session",
+		type: "boolean",
+	});
 
 	pi.on("session_start", async (event, ctx) => {
 		const worktreeDir = (pi.getFlag("worktree-dir") as string | undefined) ?? null;
@@ -175,6 +179,7 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 				readOnly: pi.getFlag("read-only") === true,
 				hasUI: ctx.hasUI,
 				isSubagent,
+				sandboxed: pi.getFlag("unsafe-edit-sandboxed") === true && getBasecampEnv("BASECAMP_EXTERNAL_SANDBOX") === "1",
 			},
 		});
 
