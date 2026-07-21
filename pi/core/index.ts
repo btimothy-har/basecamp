@@ -7,7 +7,6 @@ import { isSubagent } from "./host/env.ts";
 import { registerHubConnection } from "./hub/index.ts";
 import registerModelAliases from "./model/index.ts";
 import registerProject from "./project/index.ts";
-import { registerCompactionModel } from "./session/runtime/compaction.ts";
 import { registerSession } from "./session/runtime/session.ts";
 import { registerState } from "./session/state/index.ts";
 import registerSkills from "./skills/index.ts";
@@ -18,7 +17,6 @@ export default function (pi: ExtensionAPI): void {
 	// Core registries + lifecycle
 	registerState(pi);
 	registerSession(pi);
-	registerCompactionModel(pi);
 	registerSkills(pi);
 	registerCatalogProviders(pi);
 	registerModelAliases(pi);
