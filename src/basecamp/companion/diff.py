@@ -1,4 +1,4 @@
-"""Git-backed diff helpers for the companion dashboard."""
+"""Git-backed diff helpers for Companion."""
 
 from __future__ import annotations
 
@@ -10,11 +10,17 @@ from pathlib import Path
 from typing import Literal
 
 type GitRunner = Callable[[list[str]], tuple[int, str]]
-type DiffMode = Literal["all", "uncommitted", "committed"]
+type DiffScope = Literal["all", "uncommitted", "committed"]
+type DiffDensity = Literal["full", "compact"]
+type DiffLayout = Literal["stacked", "split"]
 
 MAX_DIFF_LINES = 2000
 MAX_DIFF_BYTES = 512 * 1024
-DIFF_MODES: tuple[DiffMode, ...] = ("all", "uncommitted", "committed")
+FULL_CONTEXT_LINES = 2000
+COMPACT_CONTEXT_LINES = 3
+DIFF_SCOPES: tuple[DiffScope, ...] = ("all", "uncommitted", "committed")
+DIFF_DENSITIES: tuple[DiffDensity, ...] = ("full", "compact")
+DIFF_LAYOUTS: tuple[DiffLayout, ...] = ("split", "stacked")
 
 
 @dataclass(frozen=True)
@@ -240,7 +246,7 @@ def compute_file_diff(base_text: str | None, current_text: str | None) -> list[D
     return result
 
 
-def collapse_unchanged(lines: list[DiffLine], context: int = 3) -> list[DiffLine]:
+def collapse_unchanged(lines: list[DiffLine], context: int = COMPACT_CONTEXT_LINES) -> list[DiffLine]:
     """Collapse long unchanged runs while preserving changed-line order."""
 
     if not lines:
@@ -350,7 +356,7 @@ def read_text_for_preview(path: Path) -> tuple[str, str | None]:
     return "", text
 
 
-def collect_changes(git: GitRunner, mode: DiffMode = "all") -> tuple[str | None, list[FileStatus]]:
+def collect_changes(git: GitRunner, scope: DiffScope = "all") -> tuple[str | None, list[FileStatus]]:
     """Collect base commit and changed file list for the given diff scope."""
 
     base_branch = detect_base_branch(git)
@@ -361,9 +367,9 @@ def collect_changes(git: GitRunner, mode: DiffMode = "all") -> tuple[str | None,
     if base_commit is None:
         return None, []
 
-    if mode == "uncommitted":
+    if scope == "uncommitted":
         refs, include_untracked = ["HEAD"], True
-    elif mode == "committed":
+    elif scope == "committed":
         refs, include_untracked = [base_commit, "HEAD"], False
     else:
         refs, include_untracked = [base_commit], True
@@ -437,17 +443,17 @@ def file_diff_lines(
     base_commit: str,
     file: FileStatus,
     cwd: Path,
-    mode: DiffMode = "all",
+    scope: DiffScope = "all",
 ) -> tuple[str, list[DiffLine]]:
     """Return placeholder message plus full-file diff lines for one file in the given scope."""
 
-    base_ref = "HEAD" if mode == "uncommitted" else base_commit
+    base_ref = "HEAD" if scope == "uncommitted" else base_commit
     base_path = file.old_path or file.path
     base_text = read_base_content(git, base_ref, base_path)
     if base_text is not None and "\x00" in base_text:
         return "Binary file — not shown", []
 
-    if mode == "committed":
+    if scope == "committed":
         current_text = read_base_content(git, "HEAD", file.path)
         if current_text is not None and "\x00" in current_text:
             return "Binary file — not shown", []

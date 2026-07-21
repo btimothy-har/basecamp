@@ -20,7 +20,6 @@ import type {
 } from "./peer-message.ts";
 import type { ErrorFrame, RegisteredFrame, RegisterFrame } from "./register.ts";
 import type { ResultReportFrame, TelemetryFrame } from "./telemetry.ts";
-import type { ThreadReportFrame } from "./thread-report.ts";
 import { PROTOCOL_VERSION } from "./version.ts";
 import type { WaitFrame, WaitResultFrame } from "./wait.ts";
 import type {
@@ -41,7 +40,6 @@ export type * from "./message-status.ts";
 export type * from "./peer-message.ts";
 export type * from "./register.ts";
 export type * from "./telemetry.ts";
-export type * from "./thread-report.ts";
 export type * from "./wait.ts";
 export type * from "./workstream.ts";
 export { PROTOCOL_VERSION };
@@ -53,7 +51,6 @@ export type Frame =
 	| DispatchFrame
 	| DispatchAckFrame
 	| TelemetryFrame
-	| ThreadReportFrame
 	| ResultReportFrame
 	| WaitFrame
 	| WaitResultFrame
@@ -83,7 +80,6 @@ export const FRAME_TYPES = [
 	"dispatch",
 	"dispatch_ack",
 	"telemetry",
-	"thread_report",
 	"result_report",
 	"wait",
 	"wait_result",

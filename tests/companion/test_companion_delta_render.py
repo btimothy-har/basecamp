@@ -10,7 +10,7 @@ from rich.text import Text
 
 from basecamp.companion import delta_render
 from basecamp.companion.delta_render import delta_path, render_file_diff
-from basecamp.companion.diff import FileStatus
+from basecamp.companion.diff import COMPACT_CONTEXT_LINES, FULL_CONTEXT_LINES, DiffDensity, DiffLayout, FileStatus
 
 
 def _run(cwd: Path, *args: str) -> None:
@@ -46,7 +46,9 @@ class TestRenderFileDiff:
             cwd=repo,
             base_commit="HEAD",
             file=FileStatus(path="sample.py", status="modified"),
-            mode="uncommitted",
+            scope="uncommitted",
+            density="full",
+            layout="split",
             width=100,
         )
         assert result is None
@@ -61,7 +63,9 @@ class TestRenderFileDiff:
             cwd=repo,
             base_commit="HEAD",
             file=FileStatus(path="does-not-exist.py", status="modified"),
-            mode="uncommitted",
+            scope="uncommitted",
+            density="full",
+            layout="split",
             width=100,
         )
         assert result is None
@@ -74,7 +78,9 @@ class TestRenderFileDiff:
             cwd=repo,
             base_commit="HEAD",
             file=FileStatus(path="sample.py", status="modified"),
-            mode="uncommitted",
+            scope="uncommitted",
+            density="full",
+            layout="split",
             width=120,
         )
         assert isinstance(result, Text)
@@ -83,33 +89,51 @@ class TestRenderFileDiff:
         # delta emitted styling that Rich parsed into spans.
         assert result.spans
 
-    def test_fake_delta_is_invoked_with_forcing_flags(self, repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-        """The delta invocation must force width + ansi fill for non-tty capture."""
-
-        _clear_cache()
+    @pytest.mark.parametrize(
+        ("density", "layout", "context_lines"),
+        [
+            ("full", "stacked", FULL_CONTEXT_LINES),
+            ("full", "split", FULL_CONTEXT_LINES),
+            ("compact", "stacked", COMPACT_CONTEXT_LINES),
+            ("compact", "split", COMPACT_CONTEXT_LINES),
+        ],
+    )
+    def test_density_and_layout_control_commands(
+        self,
+        repo: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        density: DiffDensity,
+        layout: DiffLayout,
+        context_lines: int,
+    ) -> None:
         monkeypatch.setattr(delta_render, "delta_path", lambda: "/usr/bin/delta")
         captured: dict[str, list[str]] = {}
-        real_run = subprocess.run
 
-        def fake_run(cmd, **kwargs):  # type: ignore[no-untyped-def]
-            if cmd and cmd[0] == "/usr/bin/delta":
-                captured["cmd"] = cmd
-                return subprocess.CompletedProcess(cmd, 0, stdout="\x1b[31mx\x1b[0m", stderr="")
-            return real_run(cmd, **kwargs)
+        def fake_run(cmd, **_kwargs):  # type: ignore[no-untyped-def]
+            if cmd[0] == "git":
+                captured["git"] = cmd
+                return subprocess.CompletedProcess(cmd, 0, stdout="patch", stderr="")
+            captured["delta"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, stdout="\x1b[31mx\x1b[0m", stderr="")
 
         monkeypatch.setattr(delta_render.subprocess, "run", fake_run)
         result = render_file_diff(
             cwd=repo,
             base_commit="HEAD",
             file=FileStatus(path="sample.py", status="modified"),
-            mode="uncommitted",
+            scope="uncommitted",
+            density=density,
+            layout=layout,
             width=90,
         )
+
         assert isinstance(result, Text)
-        assert "--width" in captured["cmd"]
-        assert "90" in captured["cmd"]
-        assert "--line-fill-method" in captured["cmd"]
-        assert "--side-by-side" in captured["cmd"]
+        assert f"--unified={context_lines}" in captured["git"]
+        assert "--no-gitconfig" in captured["delta"]
+        assert "--line-numbers" in captured["delta"]
+        assert ("--side-by-side" in captured["delta"]) is (layout == "split")
+        assert ("--line-fill-method" in captured["delta"]) is (layout == "split")
+        assert captured["delta"][-2:] == ["--width", "90"]
 
 
 class TestGitDiffRefs:
@@ -176,7 +200,9 @@ class TestRenamedFileRender:
             cwd=tmp_path,
             base_commit="HEAD",
             file=FileStatus(path="new.txt", status="renamed", old_path="old.txt"),
-            mode="uncommitted",
+            scope="uncommitted",
+            density="compact",
+            layout="split",
             width=140,
         )
         assert isinstance(result, Text)

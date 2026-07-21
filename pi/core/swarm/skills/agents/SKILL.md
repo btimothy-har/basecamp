@@ -81,10 +81,10 @@ A subagent receives no conversation history. Include:
 
 Review subagent output critically — you validate evidence, make decisions, and communicate results.
 
-Read-only agents return findings; you apply any changes yourself. A **worker** instead commits its change to its own branch (reported as `agent-<id>/worker`) and its worktree is torn down when it finishes. To integrate a finished worker:
+Read-only agents return findings; you apply any changes yourself. A **worker** instead commits its change to its own branch (reported as `agent-<id>/worker`); its worktree is torn down on finish when clean. To integrate a finished worker:
 
 1. `wait_for_agent` on its handle and read its final report (a PR-style summary of what changed).
 2. From your own worktree, `git merge agent-<id>/worker` to bring the change in, resolving any conflicts as normal.
-3. Then `git branch -d agent-<id>/worker` to delete the merged branch (allowed — it is not a `git worktree` command). The **worktree** is removed for you when the agent exits; never run `git worktree remove` (that is blocked, and worktree lifecycle is system-managed).
+3. Then `git branch -d agent-<id>/worker` to delete the merged branch (allowed — it is not a `git worktree` command). A clean worker **worktree** is removed for you when the agent exits; a dirty residual is preserved for recovery rather than force-deleted. Never run `git worktree remove` (that is blocked, and worktree lifecycle is system-managed).
 
-If a worker's change isn't wanted, just don't merge its branch — it's reclaimed either way.
+If a worker's change isn't wanted, do not merge it. A clean worktree is still reclaimed, but the unmerged branch remains until you explicitly delete it.

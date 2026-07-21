@@ -25,6 +25,9 @@ def test_store_initializes_required_tables(tmp_path: Path) -> None:
     assert "workstreams" in table_names
     assert "workstream_versions" in table_names
     assert "workstream_agents" in table_names
+    assert "analysis" not in table_names
+    assert "raw_pi_thread" not in table_names
+    assert "raw_pi_thread_node" not in table_names
 
 
 def test_store_adds_messages_table_to_existing_database(tmp_path: Path) -> None:

@@ -15,7 +15,7 @@ describe("panes/registerPanes", () => {
 		resetPaneState();
 	});
 
-	it("reuses a live existing Herdr pane without splitting or checking dashboard availability", async () => {
+	it("reuses a live existing Herdr pane without splitting or checking TUI availability", async () => {
 		withHerdrEnv();
 		setCompanionActive(false);
 		const state = getPaneState();
@@ -112,7 +112,7 @@ describe("panes/registerPanes", () => {
 		assert.equal(isCompanionActive(), true);
 	});
 
-	it("reuses a live existing pane after a liveness check without splitting or checking dashboard availability", async () => {
+	it("reuses a live existing pane after a liveness check without splitting or checking TUI availability", async () => {
 		withTmuxEnv();
 		setCompanionActive(false);
 		const state = getPaneState();

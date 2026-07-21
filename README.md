@@ -107,6 +107,12 @@ Primary sessions can load the `playwright-cli` skill to automate an installed Ch
 
 Playwright starts with a fresh managed persistent profile, and browser artifacts default to the private bounded directory `~/.pi/basecamp/browser/playwright-output`. Set `BASECAMP_BROWSER_PATH` for a custom Chromium executable; explicit `PLAYWRIGHT_MCP_*` environment overrides are also honored. Browser access is not exposed to subagents. Upgrades do not migrate or delete the former `~/.pi/basecamp/browser/profile`.
 
+### Frontend Design
+
+Basecamp ships a model-invocable `frontend-design` skill for code-first interface work—pages, components, dashboards, prototypes, responsive redesigns, and visual polish. It works in an existing project's stack or creates one self-contained HTML file with inline CSS and JavaScript for focused framework-free exploration. Runnable source is the deliverable; screenshots are reference and verification evidence, while image generation is reserved for explicitly requested assets.
+
+In primary sessions, the skill composes with `playwright-cli` for live inspection, responsive screenshots, runtime checks, and optional annotated feedback. Standalone HTML previews use an isolated route-backed origin and require no additional preview server.
+
 ### Subagents
 
 Use the `agents` skill for agent selection and async daemon dispatch guidance:
@@ -120,7 +126,7 @@ wait_for_agent({ handles: "<agent-handle>" })
 
 Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`.
 
-Named read-only agents may fan out for parallel investigation and review. Be conservative with `worker`: do not parallelize `worker` against the same worktree until daemon mutation leases exist.
+Named read-only agents may fan out for parallel investigation and review. Mutative workers may also run in parallel because each receives its own locked, per-run worktree and branch. Basecamp gives mutating sessions one hidden reminder to commit dirty work, reclaims clean worker worktrees automatically, and preserves live or dirty trees rather than force-removing them.
 
 ## Configuration
 
@@ -224,7 +230,7 @@ The workspace service owns the `~/.worktrees/<org>/<name>/<label>/` storage conv
 - `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
 - Resumed/reloaded/forked sessions restore their last active worktree when still in the same repo
 - `/worktree [label]` switches the active worktree during a resumed session
-- Use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean up worktrees
+- Session-owned worktrees remain human-managed; outside Pi, use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean them up
 - Additional directories stay on their configured checkouts throughout the session
 - Only works with git repositories
 
@@ -255,12 +261,27 @@ basecamp ships no default — a repo with no environment is a clean no-op. When 
 
 For anything beyond a one-liner, point the command at a script you maintain outside the repo, e.g. `"bash ~/.pi/basecamp/worktree-setup.sh"`.
 
+## Companion TUI
+
+Interactive primary sessions open `basecamp companion tui` in a Herdr or tmux side pane when available. The TUI starts in **Diff** and cycles through **Diff → Files → Swarm** with `m`.
+
+Diff controls are independent:
+
+| Key | Control | Values |
+|-----|---------|--------|
+| `c` | Context density | `full` (all context within display limits) / `compact` (three context lines around changes) |
+| `l` | Git layout | `split` (side-by-side) / `stacked` (unified) |
+| `d` | Git scope | `all` / `uncommitted` / `committed` |
+| `←` / `→` | Changed file | Previous / next |
+
+Git-delta powers both layouts and inline word-level highlighting. If it is unexpectedly absent from the pane runtime, Companion falls back to its built-in stacked line renderer. Display choices are local to the running TUI and are not persisted.
+
 ## Package Layout
 
 basecamp is organized by the artifacts it ships:
 
 - `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
-- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `swarm` (daemon), and `companion` (TUI) subpackages
+- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `hub` (daemon), and `companion` (TUI) subpackages
 
 ## License
 
