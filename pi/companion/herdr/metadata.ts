@@ -6,6 +6,7 @@ import type { CompanionSnapshot } from "../snapshot/model.ts";
 
 export const HERDR_METADATA_SOURCE = "basecamp.pi";
 export const HERDR_DISPLAY_AGENT = "pi";
+export const HERDR_LIFECYCLE_SOURCE = "herdr:pi";
 
 const TITLE_LIMIT = 80;
 const DISPLAY_AGENT_LIMIT = 80;
@@ -22,8 +23,28 @@ export interface HerdrMetadataEnv {
 	agentDepth: number;
 }
 
+export interface HerdrStatusContext {
+	primaryIdle: boolean;
+	waitingForAgents: boolean;
+	activeAgentCount: number | null;
+}
+
+const DEFAULT_STATUS_CONTEXT: HerdrStatusContext = {
+	primaryIdle: false,
+	waitingForAgents: false,
+	activeAgentCount: null,
+};
+
+export function createHerdrMetadataSeqBase(nowMs = Date.now(), pid = process.pid): number {
+	return Math.trunc(nowMs) * 1_000 + (Math.abs(Math.trunc(pid)) % 1_000);
+}
+
 // Surviving state: the metadata sequence outlives /reload.
-const getHerdrMetadataState = processScoped<HerdrMetadataState>("basecamp.herdr.metadata", () => ({ seq: 0 }));
+const metadataSeqBase = createHerdrMetadataSeqBase();
+const getHerdrMetadataState = processScoped<HerdrMetadataState>("basecamp.herdr.metadata", () => ({
+	seq: metadataSeqBase,
+}));
+getHerdrMetadataState().seq = Math.max(getHerdrMetadataState().seq, metadataSeqBase);
 
 export function resetHerdrMetadataSeqForTest(seq = 0): void {
 	getHerdrMetadataState().seq = seq;
@@ -58,7 +79,17 @@ function firstSanitizedMetadataField(candidates: Array<string | null | undefined
 	return "";
 }
 
-export function buildHerdrMetadata(snapshot: CompanionSnapshot): {
+function waitingOnAgentsLabel(status: HerdrStatusContext): string | null {
+	const hasActiveAgents = status.activeAgentCount !== null && status.activeAgentCount > 0;
+	if (!status.waitingForAgents && !(status.primaryIdle && hasActiveAgents)) return null;
+	if (!hasActiveAgents) return "waiting on agents";
+	return status.activeAgentCount === 1 ? "waiting on 1 agent" : `waiting on ${status.activeAgentCount} agents`;
+}
+
+export function buildHerdrMetadata(
+	snapshot: CompanionSnapshot,
+	status: HerdrStatusContext = DEFAULT_STATUS_CONTEXT,
+): {
 	title: string;
 	displayAgent: string;
 	customStatus: string;
@@ -68,20 +99,29 @@ export function buildHerdrMetadata(snapshot: CompanionSnapshot): {
 		title: firstSanitizedMetadataField([snapshot.title, snapshot.repoName, snapshot.sessionId], TITLE_LIMIT),
 		displayAgent: sanitizeHerdrMetadataField(HERDR_DISPLAY_AGENT, DISPLAY_AGENT_LIMIT),
 		customStatus: firstSanitizedMetadataField(
-			[activeTaskLabel, snapshot.worktree?.label, snapshot.agentMode, snapshot.repoName],
+			[waitingOnAgentsLabel(status), activeTaskLabel, snapshot.worktree?.label, snapshot.agentMode, snapshot.repoName],
 			CUSTOM_STATUS_LIMIT,
 		),
 	};
 }
 
-export function buildHerdrMetadataArgs(paneId: string, snapshot: CompanionSnapshot, seq: number): string[] {
-	const metadata = buildHerdrMetadata(snapshot);
+export function buildHerdrMetadataArgs(
+	paneId: string,
+	snapshot: CompanionSnapshot,
+	seq: number,
+	status: HerdrStatusContext = DEFAULT_STATUS_CONTEXT,
+): string[] {
+	const metadata = buildHerdrMetadata(snapshot, status);
 	return [
 		"pane",
 		"report-metadata",
 		paneId,
 		"--source",
 		HERDR_METADATA_SOURCE,
+		"--agent",
+		HERDR_DISPLAY_AGENT,
+		"--applies-to-source",
+		HERDR_LIFECYCLE_SOURCE,
 		"--display-agent",
 		metadata.displayAgent,
 		"--title",
@@ -93,7 +133,11 @@ export function buildHerdrMetadataArgs(paneId: string, snapshot: CompanionSnapsh
 	];
 }
 
-export async function reportHerdrMetadata(pi: ExtensionAPI, snapshot: CompanionSnapshot): Promise<void> {
+export async function reportHerdrMetadata(
+	pi: ExtensionAPI,
+	snapshot: CompanionSnapshot,
+	status: HerdrStatusContext = DEFAULT_STATUS_CONTEXT,
+): Promise<void> {
 	try {
 		const env: HerdrMetadataEnv = {
 			herdrEnv: process.env.HERDR_ENV,
@@ -102,7 +146,7 @@ export async function reportHerdrMetadata(pi: ExtensionAPI, snapshot: CompanionS
 			agentDepth: getAgentDepth(),
 		};
 		if (!shouldReportHerdrMetadata(env) || !env.herdrPaneId) return;
-		await exec(pi, "herdr", buildHerdrMetadataArgs(env.herdrPaneId, snapshot, nextHerdrMetadataSeq()));
+		await exec(pi, "herdr", buildHerdrMetadataArgs(env.herdrPaneId, snapshot, nextHerdrMetadataSeq(), status));
 	} catch {
 		// best effort
 	}

@@ -4,6 +4,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	buildHerdrMetadata,
 	buildHerdrMetadataArgs,
+	createHerdrMetadataSeqBase,
 	nextHerdrMetadataSeq,
 	reportHerdrMetadata,
 	resetHerdrMetadataSeqForTest,
@@ -120,7 +121,55 @@ describe("companion/herdr-metadata", () => {
 		assert.equal(metadata.customStatus, "planning");
 	});
 
-	it("uses active task, worktree, agent mode, then repo for custom status", () => {
+	it("uses waiting state before active task and the existing fallbacks", () => {
+		const activeTaskSnapshot = snapshot({
+			tasks: [{ label: "Active task", status: "active" }],
+			worktree: { label: "worktree-label", branch: null, path: "/tmp/wt" },
+			agentMode: "work",
+			repoName: "repo-name",
+		});
+
+		assert.equal(
+			buildHerdrMetadata(activeTaskSnapshot, {
+				primaryIdle: false,
+				waitingForAgents: false,
+				activeAgentCount: 2,
+			}).customStatus,
+			"Active task",
+		);
+		assert.equal(
+			buildHerdrMetadata(activeTaskSnapshot, {
+				primaryIdle: true,
+				waitingForAgents: false,
+				activeAgentCount: 1,
+			}).customStatus,
+			"waiting on 1 agent",
+		);
+		assert.equal(
+			buildHerdrMetadata(activeTaskSnapshot, {
+				primaryIdle: false,
+				waitingForAgents: true,
+				activeAgentCount: 2,
+			}).customStatus,
+			"waiting on 2 agents",
+		);
+		assert.equal(
+			buildHerdrMetadata(activeTaskSnapshot, {
+				primaryIdle: false,
+				waitingForAgents: true,
+				activeAgentCount: null,
+			}).customStatus,
+			"waiting on agents",
+		);
+		assert.equal(
+			buildHerdrMetadata(activeTaskSnapshot, {
+				primaryIdle: true,
+				waitingForAgents: false,
+				activeAgentCount: 0,
+			}).customStatus,
+			"Active task",
+		);
+
 		assert.equal(
 			buildHerdrMetadata(
 				snapshot({
@@ -156,6 +205,10 @@ describe("companion/herdr-metadata", () => {
 			"w8:p1",
 			"--source",
 			"basecamp.pi",
+			"--agent",
+			"pi",
+			"--applies-to-source",
+			"herdr:pi",
 			"--display-agent",
 			"pi",
 			"--title",
@@ -167,14 +220,17 @@ describe("companion/herdr-metadata", () => {
 		]);
 	});
 
-	it("increments process-scoped sequence numbers", () => {
-		resetHerdrMetadataSeqForTest(4);
+	it("uses a time- and process-based monotonic sequence", () => {
+		assert.equal(createHerdrMetadataSeqBase(1_000, 42), 1_000_042);
+		assert.notEqual(createHerdrMetadataSeqBase(1_000, 42), createHerdrMetadataSeqBase(1_000, 43));
 
+		resetHerdrMetadataSeqForTest(4);
 		assert.equal(nextHerdrMetadataSeq(), 5);
 		assert.equal(nextHerdrMetadataSeq(), 6);
 	});
 
 	it("reports to HERDR_PANE_ID and swallows exec failures", async () => {
+		resetHerdrMetadataSeqForTest();
 		process.env.HERDR_ENV = "1";
 		process.env.HERDR_PANE_ID = "w8:p1";
 		process.env.HERDR_SOCKET_PATH = "/tmp/herdr.sock";
