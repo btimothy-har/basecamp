@@ -58,6 +58,7 @@ const getStoredCompanionState = processScoped<CompanionState>("basecamp.companio
 
 function getCompanionState(): CompanionState {
 	const state = getStoredCompanionState();
+	// A live /reload can reuse state created before these fields existed.
 	state.snapshot ??= null;
 	state.activeAgentCount ??= null;
 	state.primaryIdle ??= true;
