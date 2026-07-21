@@ -26,8 +26,7 @@ def test_config_subcommands_match_new_shape() -> None:
 
 
 def test_companion_subcommands_match_new_shape() -> None:
-    assert "dashboard" in cli.companion.commands
-    assert "analyze" not in cli.companion.commands  # analysis runs in the daemon
+    assert set(cli.companion.commands) == {"tui"}
 
 
 def test_config_env_subcommands_delegate(monkeypatch) -> None:
@@ -71,7 +70,7 @@ def test_bare_config_sections_open_menus(monkeypatch) -> None:
     assert calls == ["project", "env"]
 
 
-def test_companion_dashboard_delegates(monkeypatch) -> None:
+def test_companion_tui_delegates(monkeypatch) -> None:
     calls: list[tuple[str, str, str | None]] = []
     monkeypatch.setattr(
         cli,
@@ -83,7 +82,7 @@ def test_companion_dashboard_delegates(monkeypatch) -> None:
         cli.basecamp,
         [
             "companion",
-            "dashboard",
+            "tui",
             "--snapshot",
             "/tmp/snapshot.json",
             "--cwd",

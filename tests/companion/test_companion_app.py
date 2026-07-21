@@ -7,14 +7,10 @@ import json
 import subprocess
 from pathlib import Path
 
-import pytest
 from textual.widgets import ContentSwitcher, DirectoryTree, Footer, ListView, Static
 
 from basecamp.companion.app import CompanionApp
-from basecamp.companion.delta_render import delta_path
-from basecamp.companion.diff import DiffLine
-from basecamp.companion.ui.dashboard import DashboardBody
-from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
+from basecamp.companion.ui.diff import DiffView, FileList
 from basecamp.companion.ui.swarm import SwarmBody
 from basecamp.companion.ui.workspace import WorkspacePanel
 
@@ -89,27 +85,14 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             # The file list is display-only (not focusable).
             assert app.query_one("#file-list-list", ListView).can_focus is False
 
-            # Dashboard is the default pane; one toggle reaches the diff view.
-            await pilot.press("m")
-            await pilot.pause(0.1)
-
+            # Diff is the default pane.
             file_list = app.query_one("#file-list", FileList)
             selected_before = file_list.selected_file
             assert selected_before is not None
             assert selected_before.path == "a_large.py"
 
             diff_view = app.query_one("#diff-view", DiffView)
-            full_signature = diff_view._last_signature
-            assert full_signature is not None
-            full_line_count = len(full_signature[3])
-
-            await pilot.press("c")
-            await pilot.pause(0.1)
-
-            compact_signature = diff_view._last_signature
-            assert compact_signature is not None
-            compact_line_count = len(compact_signature[3])
-            assert 0 < compact_line_count < full_line_count
+            assert diff_view._last_signature is not None
 
             diff_content = app.query_one("#diff-content", Static)
             assert str(diff_content.render()).strip() != ""
@@ -121,10 +104,20 @@ def test_companion_app_headless_smoke(tmp_path: Path) -> None:
             assert selected_after is not None
             assert selected_after.path != selected_before.path
 
-            # `d` cycles the diff scope (reflected in the diff border title).
             await pilot.press("d")
             await pilot.pause(0.1)
             assert "uncommitted" in str(diff_view.border_title)
+            assert file_list.selected_file is not None
+
+            await pilot.press("d")
+            await pilot.pause(0.1)
+            assert "committed" in str(diff_view.border_title)
+            assert file_list.selected_file is None
+
+            await pilot.press("d")
+            await pilot.pause(0.1)
+            assert "all" in str(diff_view.border_title)
+            assert file_list.selected_file is not None
 
     asyncio.run(run_smoke())
 
@@ -133,15 +126,7 @@ def test_diff_view_renders_empty_file() -> None:
     assert "(empty file)" in DiffView()._render_diff("empty.py", []).plain
 
 
-def test_diff_bindings_are_scoped_to_diff_body() -> None:
-    diff_keys = {binding.key for binding in DiffBody.BINDINGS}
-    app_keys = {binding.key for binding in CompanionApp.BINDINGS}
-
-    assert {"left", "right", "c", "d"}.issubset(diff_keys)
-    assert {"left", "right", "c", "d"}.isdisjoint(app_keys)
-
-
-def test_default_mode_is_dashboard_and_focused(tmp_path: Path) -> None:
+def test_default_mode_is_diff_and_focused(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     snapshot_path = tmp_path / "snapshot.json"
     _build_repo(repo)
@@ -154,10 +139,10 @@ def test_default_mode_is_dashboard_and_focused(tmp_path: Path) -> None:
             await pilot.pause()
 
             body = app.query_one("#body", ContentSwitcher)
-            dashboard = app.query_one("#dashboard-body", DashboardBody)
+            diff_view = app.query_one("#diff-view", DiffView)
 
-            assert body.current == "dashboard-body"
-            assert dashboard.has_focus
+            assert body.current == "diff-body"
+            assert diff_view.has_focus
 
     asyncio.run(run_default_mode_test())
 
@@ -175,10 +160,6 @@ def test_mode_indicator_tracks_active_mode(tmp_path: Path) -> None:
             await pilot.pause(0.2)
 
             mode_bar = app.query_one("#session-bar-mode", Static)
-            assert "Dashboard" in str(mode_bar.render())
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
             assert "Diff" in str(mode_bar.render())
 
             await pilot.press("m")
@@ -191,7 +172,7 @@ def test_mode_indicator_tracks_active_mode(tmp_path: Path) -> None:
 
             await pilot.press("m")
             await pilot.pause(0.05)
-            assert "Dashboard" in str(mode_bar.render())
+            assert "Diff" in str(mode_bar.render())
 
     asyncio.run(run_mode_indicator_test())
 
@@ -211,14 +192,7 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
             body = app.query_one("#body", ContentSwitcher)
             diff_view = app.query_one("#diff-view", DiffView)
             file_tree = app.query_one("#file-tree", DirectoryTree)
-            dashboard = app.query_one("#dashboard-body", DashboardBody)
             swarm = app.query_one("#swarm-body", SwarmBody)
-
-            assert body.current == "dashboard-body"
-            assert dashboard.has_focus
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
 
             assert body.current == "diff-body"
             assert diff_view.has_focus
@@ -238,8 +212,8 @@ def test_mode_toggle_switches_body_and_focus(tmp_path: Path) -> None:
             await pilot.press("m")
             await pilot.pause(0.05)
 
-            assert body.current == "dashboard-body"
-            assert dashboard.has_focus
+            assert body.current == "diff-body"
+            assert diff_view.has_focus
 
     asyncio.run(run_modality_test())
 
@@ -259,20 +233,12 @@ def test_footer_binding_order_by_mode(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
 
-            dashboard_descriptions = [
-                description for description in visible_descriptions() if description in {"Mode", "Quit"}
-            ]
-            assert dashboard_descriptions == ["Mode", "Quit"]
-
-            await pilot.press("m")
-            await pilot.pause(0.05)
-
             diff_descriptions = [
                 description
                 for description in visible_descriptions()
-                if description in {"Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"}
+                if description in {"Mode", "Prev file", "Next file", "Density", "Layout", "Diff scope", "Quit"}
             ]
-            assert diff_descriptions == ["Mode", "Prev file", "Next file", "Compact", "Diff scope", "Quit"]
+            assert diff_descriptions == ["Mode", "Prev file", "Next file", "Density", "Layout", "Diff scope", "Quit"]
 
             await pilot.press("m")
             await pilot.pause(0.05)
@@ -299,8 +265,7 @@ def test_refresh_does_not_disturb_file_tree_focus(tmp_path: Path) -> None:
         async with app.run_test() as pilot:
             await pilot.pause(0.2)
 
-            # Dashboard is the default pane; switch to files mode to focus the tree.
-            await pilot.press("m")
+            # Switch from the default diff pane to files mode.
             await pilot.press("m")
             await pilot.pause(0.05)
 
@@ -322,55 +287,3 @@ def test_refresh_is_noop_when_not_running(tmp_path: Path) -> None:
     assert app.is_running is False
 
     app._refresh()  # would raise NoMatches/ScreenStackError without the guard
-
-
-def test_diff_pane_renders_through_delta_when_available(tmp_path: Path) -> None:
-    """When delta is installed, the assembled app renders the diff via delta (styled Text)."""
-
-    if delta_path() is None:
-        pytest.skip("delta binary not installed")
-
-    repo = tmp_path / "repo"
-    snapshot_path = tmp_path / "snapshot.json"
-    _build_repo(repo)
-    _write_snapshot(snapshot_path, session_id="abcd-1234-5678-90ef")
-
-    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo)
-
-    async def run() -> None:
-        async with app.run_test() as pilot:
-            await pilot.pause(0.3)
-            await pilot.press("m")  # dashboard -> diff
-            await pilot.pause(0.2)
-
-            # b_small.txt is a small text change; navigate to it for a compact render.
-            file_list = app.query_one("#file-list", FileList)
-            for _ in range(6):
-                if file_list.selected_file and file_list.selected_file.path == "b_small.txt":
-                    break
-                await pilot.press("right")
-                await pilot.pause(0.1)
-
-            content = str(app.query_one("#diff-content", Static).render())
-            # delta renders side-by-side column separators (│) that the built-in
-            # unified renderer never emits — proof the delta path produced this.
-            assert "│" in content
-
-    asyncio.run(run())
-
-
-def test_diff_signature_tracks_width_for_delta_only() -> None:
-    """A delta render's width is part of its signature so resize invalidates it."""
-
-    view = DiffView()
-    lines = [DiffLine(kind="added", text="x", line_no=1)]
-
-    # With a delta render, differing widths yield differing signatures (resize
-    # re-renders); without one, width is ignored (Rich reflows at display time).
-    sig_w80 = view._signature("f.py", "", lines, width=80)
-    sig_w120 = view._signature("f.py", "", lines, width=120)
-    assert sig_w80 != sig_w120
-
-    sig_fallback_a = view._signature("f.py", "", lines, width=None)
-    sig_fallback_b = view._signature("f.py", "", lines, width=None)
-    assert sig_fallback_a == sig_fallback_b

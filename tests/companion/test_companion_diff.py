@@ -202,7 +202,7 @@ class TestListChangedFiles:
         ]
 
 
-class TestDiffModes:
+class TestDiffScopes:
     """Scope-aware file listing and per-file diff behavior."""
 
     def test_list_changed_files_skips_untracked_when_excluded(self) -> None:
@@ -215,19 +215,19 @@ class TestDiffModes:
         files = list_changed_files(git, ["base", "HEAD"], include_untracked=False)
         assert files == [FileStatus(path="committed.py", status="modified")]
 
-    def test_uncommitted_mode_uses_head_base_and_worktree(self, tmp_path: Path) -> None:
+    def test_uncommitted_scope_uses_head_base_and_worktree(self, tmp_path: Path) -> None:
         (tmp_path / "f.py").write_text("a\nB\n", encoding="utf-8")
         git = FakeGit({("show", "HEAD:f.py"): (0, "a\nb\n")})
         status = FileStatus(path="f.py", status="modified")
 
-        message, lines = file_diff_lines(git, "base", status, tmp_path, mode="uncommitted")
+        message, lines = file_diff_lines(git, "base", status, tmp_path, scope="uncommitted")
 
         assert message == ""
         assert DiffLine(kind="removed", text="b", line_no=None) in lines
         assert DiffLine(kind="added", text="B", line_no=2) in lines
 
-    def test_committed_mode_compares_base_to_head(self, tmp_path: Path) -> None:
-        # Worktree content is ignored in committed mode.
+    def test_committed_scope_compares_base_to_head(self, tmp_path: Path) -> None:
+        # Worktree content is ignored in committed scope.
         (tmp_path / "f.py").write_text("WORKTREE\n", encoding="utf-8")
         git = FakeGit(
             {
@@ -237,7 +237,7 @@ class TestDiffModes:
         )
         status = FileStatus(path="f.py", status="modified")
 
-        message, lines = file_diff_lines(git, "base", status, tmp_path, mode="committed")
+        message, lines = file_diff_lines(git, "base", status, tmp_path, scope="committed")
 
         assert message == ""
         assert DiffLine(kind="removed", text="b", line_no=None) in lines
@@ -249,7 +249,7 @@ class TestDiffModes:
         git = FakeGit({("show", "base:old.py"): (0, "a\nb\n")})
         status = FileStatus(path="new.py", status="renamed", old_path="old.py")
 
-        message, lines = file_diff_lines(git, "base", status, tmp_path, mode="all")
+        message, lines = file_diff_lines(git, "base", status, tmp_path, scope="all")
 
         assert message == ""
         assert DiffLine(kind="removed", text="b", line_no=None) in lines

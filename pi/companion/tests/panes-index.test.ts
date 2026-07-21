@@ -16,7 +16,7 @@ describe("panes/registerPanes", () => {
 		resetPaneState();
 	});
 
-	it("sets companion active true and launches dashboard with the live snapshot path after creating a pane", async () => {
+	it("sets companion active true and launches the TUI with the live snapshot path after creating a pane", async () => {
 		withTmuxEnv();
 		const { pi, emit, execCalls } = createMockPi((command) => {
 			if (command === "basecamp") return { code: 0, stdout: "", stderr: "" };
@@ -26,6 +26,8 @@ describe("panes/registerPanes", () => {
 
 		const ctx = await emit("session_start");
 
+		const availabilityCall = execCalls.find((call) => call.command === "basecamp");
+		assert.deepEqual(availabilityCall?.args, ["companion", "tui", "--help"]);
 		const splitCall = execCalls.find((call) => call.command === "tmux");
 		assert.ok(splitCall);
 		assert.equal(splitCall.args[0], "split-window");
@@ -132,7 +134,7 @@ describe("panes/registerPanes", () => {
 		assert.deepEqual(ctx.ui.statusCalls.at(-1), { key: "basecamp.daemon.pane", value: "muted:companion off" });
 	});
 
-	it("clears stale pane state and publishes companion off when companion dashboard is unavailable", async () => {
+	it("clears stale pane state and publishes companion off when companion TUI is unavailable", async () => {
 		withTmuxEnv();
 		setCompanionActive(true);
 		const { pi, emit } = createMockPi((command) => {

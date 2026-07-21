@@ -112,12 +112,12 @@ describe("panes/herdr-provider", () => {
 			]);
 		});
 
-		it("builds run argv with the dashboard command as a single argument", () => {
-			assert.deepEqual(buildHerdrRunArgs("w8:p2", "basecamp companion dashboard --snapshot '/tmp/snap.json'"), [
+		it("builds run argv with the TUI command as a single argument", () => {
+			assert.deepEqual(buildHerdrRunArgs("w8:p2", "basecamp companion tui --snapshot '/tmp/snap.json'"), [
 				"pane",
 				"run",
 				"w8:p2",
-				"basecamp companion dashboard --snapshot '/tmp/snap.json'",
+				"basecamp companion tui --snapshot '/tmp/snap.json'",
 			]);
 		});
 
@@ -160,7 +160,7 @@ describe("panes/herdr-provider", () => {
 	});
 
 	describe("createHerdrPaneProvider", () => {
-		it("splits from the env pane, runs the dashboard command, and returns the new pane id", async () => {
+		it("splits from the env pane, runs the TUI command, and returns the new pane id", async () => {
 			const provider = createHerdrPaneProvider({
 				herdrEnv: "1",
 				herdrPaneId: "w8:p1",
@@ -174,16 +174,16 @@ describe("panes/herdr-provider", () => {
 				return { code: 0, stdout: "", stderr: "" };
 			});
 
-			const paneId = await provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion dashboard" });
+			const paneId = await provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion tui" });
 
 			assert.equal(paneId, "w8:p2");
 			assert.deepEqual(execCalls, [
 				{ command: "herdr", args: buildHerdrSplitArgs("w8:p1", "/tmp/worktree") },
-				{ command: "herdr", args: buildHerdrRunArgs("w8:p2", "basecamp companion dashboard") },
+				{ command: "herdr", args: buildHerdrRunArgs("w8:p2", "basecamp companion tui") },
 			]);
 		});
 
-		it("returns null and does not run the dashboard command when split output has no pane id", async () => {
+		it("returns null and does not run the TUI command when split output has no pane id", async () => {
 			const provider = createHerdrPaneProvider({
 				herdrEnv: "1",
 				herdrPaneId: "w8:p1",
@@ -194,7 +194,7 @@ describe("panes/herdr-provider", () => {
 			assert.ok(provider);
 			const { pi, execCalls } = createMockPi(() => ({ code: 0, stdout: JSON.stringify({ pane: {} }), stderr: "" }));
 
-			const paneId = await provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion dashboard" });
+			const paneId = await provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion tui" });
 
 			assert.equal(paneId, null);
 			assert.deepEqual(execCalls, [{ command: "herdr", args: buildHerdrSplitArgs("w8:p1", "/tmp/worktree") }]);
@@ -212,13 +212,13 @@ describe("panes/herdr-provider", () => {
 			const { pi, execCalls } = createMockPi(() => ({ code: 1, stdout: "", stderr: "split failed" }));
 
 			await assert.rejects(
-				() => provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion dashboard" }),
+				() => provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion tui" }),
 				/herdr pane split failed with exit code 1/,
 			);
 			assert.deepEqual(execCalls, [{ command: "herdr", args: buildHerdrSplitArgs("w8:p1", "/tmp/worktree") }]);
 		});
 
-		it("closes the split pane when running the dashboard exits non-zero", async () => {
+		it("closes the split pane when running the TUI exits non-zero", async () => {
 			const provider = createHerdrPaneProvider({
 				herdrEnv: "1",
 				herdrPaneId: "w8:p1",
@@ -234,12 +234,12 @@ describe("panes/herdr-provider", () => {
 			});
 
 			await assert.rejects(
-				() => provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion dashboard" }),
+				() => provider.createPane(pi, { cwd: "/tmp/worktree", command: "basecamp companion tui" }),
 				/herdr pane run failed with exit code 1/,
 			);
 			assert.deepEqual(execCalls, [
 				{ command: "herdr", args: buildHerdrSplitArgs("w8:p1", "/tmp/worktree") },
-				{ command: "herdr", args: buildHerdrRunArgs("w8:p2", "basecamp companion dashboard") },
+				{ command: "herdr", args: buildHerdrRunArgs("w8:p2", "basecamp companion tui") },
 				{ command: "herdr", args: buildHerdrCloseArgs("w8:p2") },
 			]);
 		});

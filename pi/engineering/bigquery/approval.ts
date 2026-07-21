@@ -2,7 +2,8 @@
  * Scan-approval policy for the bq_query tool: thresholds, metadata, status text, and the execution gate.
  */
 
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import { formatScanBytes, safeApprovalPromptValue } from "./format.ts";
 import { isNonAuthoritativeDryRunStatementType, parseDryRunEstimatedBytes } from "./job-summary.ts";
 import {
@@ -200,6 +201,7 @@ function buildApprovalGateFailureText(details: BqQueryDetails, headline: string)
 }
 
 export async function evaluateScanApproval(
+	pi: ExtensionAPI,
 	details: BqQueryDetails,
 	ctx: ExtensionContext,
 	signal: AbortSignal | undefined,
@@ -252,7 +254,9 @@ export async function evaluateScanApproval(
 	}
 
 	if (approval.reason === "over_threshold" || approval.reason === "estimate_non_authoritative") {
-		const approved = await ctx.ui.confirm("Approve BigQuery execution?", buildScanApprovalPrompt(details), { signal });
+		const approved = await withHerdrBlocked(pi, "Waiting for BigQuery approval", () =>
+			ctx.ui.confirm("Approve BigQuery execution?", buildScanApprovalPrompt(details), { signal }),
+		);
 		if (!approved) {
 			details.approval = withScanApprovalDecision(details.approval, false, false);
 			return {

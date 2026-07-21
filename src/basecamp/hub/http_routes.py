@@ -1,14 +1,13 @@
 """Read-only HTTP projection routes for the daemon.
 
-The daemon's GET surface — health plus the run/workstream/analysis projections the
-companion polls. Split out of ``app.py`` to keep each file within the length cap;
+The daemon's GET surface — health plus the run and workstream projections clients
+poll. Split out of ``app.py`` to keep each file within the length cap;
 the WebSocket coordinator stays in ``app.py``.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -58,13 +57,3 @@ def register_http_routes(app: FastAPI, *, store: Store, registry: Registry) -> N
         if ws is None:
             raise HTTPException(status_code=404)
         return ws
-
-    @app.get("/analysis/{session_id}")
-    async def get_analysis(session_id: str) -> dict[str, Any]:
-        # Thin read: the analyzer already wrote the final shape. Return the stored
-        # sections (camelCase) flattened with the session's provenance/metadata.
-        row = await asyncio.to_thread(store.get_analysis, session_id)
-        if row is None:
-            raise HTTPException(status_code=404)
-        sections = json.loads(row.sections_json)
-        return {**sections, "sessionId": session_id, "model": row.model, "updatedAt": row.updated_at}

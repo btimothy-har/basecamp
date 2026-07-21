@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isSubagent } from "#core/host/env.ts";
+import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import { annotateFindings } from "./annotate-pane.ts";
 import { persistReviewArtifact, type ReviewResult } from "./artifact.ts";
 import { ReportFindingsParams } from "./findings.ts";
@@ -53,7 +54,9 @@ export function registerReviewTool(pi: ExtensionAPI): void {
 			let reactions: (string | null)[] | null = null;
 			let annotated = false;
 			if (ctx.hasUI && findings.length > 0) {
-				const annotation = await annotateFindings(ctx.ui, findings);
+				const annotation = await withHerdrBlocked(pi, "Waiting for code-review annotation", () =>
+					annotateFindings(ctx.ui, findings),
+				);
 				if (!annotation.cancelled) {
 					reactions = annotation.reactions;
 					annotated = true;

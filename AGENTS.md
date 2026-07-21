@@ -25,12 +25,12 @@ pi/                            # ① the Pi extension (TypeScript)
 ├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
 ├── core/                       # agent-mode/ (+copilot·toggle) · session/ (+state) · project/ (config·context·injection·logseq · workspace/ runtime+guards+/worktree) ·
 │                               #   git/ (worktrees/ crud·target·migrate · repo · /create-pr) · skills/ · catalog/ · model/ · ui/ (framework chrome) · escalate/ (+dialog/) · host/ (env·exec·paths·config) ·
-│                               #   hub/ (hub-daemon connector: protocol/ TS↔Python contract · connection · ensure · identity · status · report-thread) ·
+│                               #   hub/ (hub-daemon connector: protocol/ TS↔Python contract · connection · ensure · identity · status) ·
 │                               #   swarm/ (the agent-dispatch primitive: agents/ = tools·catalog·launch·hub client·reporter·widget·observability·skills) · global-registry.ts
 ├── system-prompt/              # before_agent_start prompt assembly: prompt.ts · context-builders.ts · defaults/ (modes·styles·environment)
 ├── code-review/                # /skill:code-review feature domain (user-invoked skill + report_findings tool: findings·synthesis·annotate-pane·artifact)
 ├── workstreams/                # durable repo-neutral workstream coordination (create·edit·launch·list·status·start·herdr) over #core/swarm
-├── companion/                  # dashboard integration (pure consumer): snapshot/, panes/, herdr/ + tmux/ adapters
+├── companion/                  # Companion TUI integration: snapshot/ + panes/ over Herdr/tmux adapters
 ├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
 ├── engineering/                # bigquery/ (bq_query tool + bq-CLI adapter, one module), skills/ + prompts/
@@ -42,8 +42,8 @@ src/basecamp/                  # ② the basecamp Python package (one ordinary s
 ├── config_cli/                 # `basecamp config` CLI shell (plumbing + project/env/alias porcelain); composition layer over core + workspace, so it lives beside cli.py (core imports no other domain)
 ├── core/                       # settings/ package (store = locked config.json primitive · schema = section registry · document = generic get/set/edit) + models (config record types: project/env/logseq) + paths (the ~/.pi/basecamp tree, incl. the swarm/companion runtime layout) · console (the shared rich pair) · files · exceptions · doctor
 ├── workspace/                  # per-repo worktree-setup environments + menus
-├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents) + broker/ (companion analysis)
-└── companion/                   # Textual TUI (ui/) + daemon observability client; analysis is daemon-sourced (raw thread reported by core/hub)
+├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents)
+└── companion/                   # Textual TUI (Diff · Files · Swarm) + daemon observability client
 
 evals/                         # non-shipping evaluation integrations
 └── terminal_bench/             # Harbor adapter: pinned Pi + committed Basecamp package in isolated task containers
@@ -82,7 +82,7 @@ Agent modes are `analysis`, `planning`, `work`, and `copilot`. `work` is the def
 
 ### Agent Execution Posture
 
-Dispatched agents default to **read-only**, fail-closed (read-only unless a persona sets `readOnly: false`): they get a toolset without `write`/`edit`, launch `--read-only`, and share the parent's worktree so they see its live WIP. A **mutative** agent (currently only `worker`) instead gets its **own git worktree**, branched from the parent's HEAD and keyed per-run so re-tasks don't collide; it commits to a branch that the **primary integrates by merge**, and the worktree is torn down on finish (the branch kept for the merge, then deleted). That worktree is the isolation boundary, enforced by the workspace guard's `allowed_dirs` rule. `bash` is deliberately retained (scouts need `git log`, reviewers need `git diff`) and is **not** a mutation sandbox — a bash write still reaches the filesystem, so toolset + worktree confinement is defense-in-depth, not a wall. Independently, the workspace `tool_call` guard hard-blocks structured `write`/`edit` to the protected main checkout even when a subagent has no active worktree.
+Dispatched agents default to **read-only**, fail-closed (read-only unless a persona sets `readOnly: false`): they get a toolset without `write`/`edit`, launch `--read-only`, and share the parent's worktree so they see its live WIP. A **mutative** agent (currently only `worker`) instead gets its **own git worktree**, branched from the parent's HEAD and keyed per-run so re-tasks don't collide; it commits to a branch that the **primary integrates by merge**. Worker worktrees are atomically locked while live, and the daemon removes them on finish only when clean; a dirty residual stays recoverable, while the session-start sweep skips locks and never force-removes post-execution work. The Git lock is a cleanup/liveness guard, not a mutation lease. Mutating sessions with active dirty worktrees receive one hidden, advisory commit reminder before settling. The worktree is the isolation boundary, enforced by the workspace guard's `allowed_dirs` rule. `bash` is deliberately retained (scouts need `git log`, reviewers need `git diff`) and is **not** a mutation sandbox — a bash write still reaches the filesystem, so toolset + worktree confinement is defense-in-depth, not a wall. Independently, the workspace `tool_call` guard hard-blocks structured `write`/`edit` to the protected main checkout even when a subagent has no active worktree.
 
 ### Evaluations
 
@@ -94,7 +94,7 @@ The initial Terminal-Bench adapter exposes the worker-like `basecamp-pi-single` 
 
 All TypeScript ships as **one** Pi extension (`pi/extension.ts`; manifest = the repo-root `package.json`). It composes the domain modules in a **fixed order, core first**, so init is deterministic and identical on `/reload`. Each domain exposes a `register*` default export; cross-domain imports go only through `#`-subpath aliases and are boundary-checked (core imports no other domain).
 
-Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/` — every session connects through it and ships its raw thread at `agent_end`, so "connect + report" is one core responsibility), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `code-review` and `workstreams` consume `#core/swarm`, and `companion` is a pure downstream consumer of the derived analysis (no `#core/hub` dependency). The Python daemon is `src/basecamp/hub/`.
+Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `code-review` and `workstreams` consume `#core/swarm`; Companion independently owns its snapshot and pane integration while its Python TUI reads safe run projections from the daemon. The Python daemon is `src/basecamp/hub/`.
 
 ### Code Review
 

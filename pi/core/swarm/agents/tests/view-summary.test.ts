@@ -16,6 +16,7 @@ describe("run summary view", () => {
 		const result = parseRunSummaryResponse({
 			root_id: "root",
 			session_active: true,
+			counts: { pending: 1, running: 2, completed: 3, failed: 4, total: 10 },
 			agents: [
 				"bad",
 				{ agent_handle: 123, session_name: "bad", status: "running" },
@@ -62,6 +63,7 @@ describe("run summary view", () => {
 		assert.ok(result);
 		assert.equal(result.root_id, "root");
 		assert.equal(result.session_active, true);
+		assert.deepEqual(result.counts, { pending: 1, running: 2, completed: 3, failed: 4, total: 10 });
 		assert.equal(result.agents.length, 1);
 		const [agent] = result.agents;
 		assert.equal(agent?.agent_handle, "worker-1");
@@ -101,6 +103,17 @@ describe("run summary view", () => {
 		);
 		assert.deepEqual(agent?.task?.current_task, { index: 1, label: "Now", status: "active" });
 		assert.equal(Object.hasOwn(agent ?? {}, "latest_message"), false);
+	});
+
+	it("ignores malformed aggregate counts", () => {
+		const incomplete = parseRunSummaryResponse({ counts: { pending: 1, running: 2 }, agents: [] });
+		const fractional = parseRunSummaryResponse({
+			counts: { pending: 0, running: 1.5, completed: 0, failed: 0, total: 1 },
+			agents: [],
+		});
+
+		assert.equal(incomplete?.counts, undefined);
+		assert.equal(fractional?.counts, undefined);
 	});
 
 	it("returns null for non-object summary payloads", () => {

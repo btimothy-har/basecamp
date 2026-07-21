@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import asynccontextmanager
-from typing import Any, Literal
+from typing import Literal
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
-from .broker import AnalysisScheduler, handle_thread_report
 from .frames import (
     PROTOCOL_VERSION,
     AttachWorkstreamAgentFrame,
@@ -28,7 +26,6 @@ from .frames import (
     ResultReportFrame,
     ReviseWorkstreamFrame,
     TelemetryFrame,
-    ThreadReportFrame,
     UpdateWorkstreamFrame,
     WaitFrame,
     WaitResultFrame,
@@ -58,47 +55,10 @@ from .swarm.service import (
 )
 
 
-class _NoAnalysisScheduler:
-    """Null scheduler: ``create_app``'s default when none is injected.
+def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
+    """Create and configure the daemon FastAPI app."""
 
-    A bare ``create_app(store)`` must never silently wire a live, network-backed
-    analyzer — that would let a test (or embedder) fire a real LLM call just by
-    sending a ``thread_report``. Production builds a real ``AnalysisScheduler``
-    explicitly (see ``server.create_server``); everything else gets this no-op.
-    """
-
-    def notify(self, owner_id: str, seq: int) -> None:  # noqa: ARG002
-        return None
-
-    def forget(self, owner_id: str) -> None:  # noqa: ARG002
-        return None
-
-    async def stop(self) -> None:
-        return None
-
-
-def create_app(
-    store: Store,
-    *,
-    daemon_uds: str | None = None,
-    scheduler: AnalysisScheduler | None = None,
-) -> FastAPI:
-    """Create and configure the daemon FastAPI app.
-
-    ``scheduler`` must be supplied for analysis to run; when omitted the app uses a
-    no-op scheduler so it never fires an LLM on its own (see ``_NoAnalysisScheduler``).
-    """
-
-    analysis_scheduler: Any = scheduler if scheduler is not None else _NoAnalysisScheduler()
-
-    @asynccontextmanager
-    async def lifespan(_app: FastAPI) -> Any:
-        try:
-            yield
-        finally:
-            await analysis_scheduler.stop()
-
-    app = FastAPI(lifespan=lifespan)
+    app = FastAPI()
     registry = Registry()
     daemon_socket_path = daemon_uds or ""
     reapers: set[asyncio.Task[None]] = set()
@@ -222,10 +182,6 @@ def create_app(
                         registry=registry,
                     )
                     continue
-                if isinstance(inbound, ThreadReportFrame):
-                    seq = await handle_thread_report(frame=inbound, node_id=parsed.node_id, store=store)
-                    analysis_scheduler.notify(parsed.node_id, seq)
-                    continue
                 if isinstance(inbound, WaitFrame):
                     await _handle_wait(
                         frame=inbound,
@@ -347,7 +303,6 @@ def create_app(
             if node_id is not None and registry.get_connection(node_id) is websocket:
                 registry.remove_connection(node_id)
                 schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
-                analysis_scheduler.forget(node_id)
 
     return app
 

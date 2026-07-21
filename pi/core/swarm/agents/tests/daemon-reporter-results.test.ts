@@ -132,6 +132,43 @@ describe("daemon reporter results", () => {
 		}
 	});
 
+	it("replaces a runner-managed attempt with the post-reminder result", async () => {
+		const connection = new MockConnection();
+		const runResultPath = await tempRunResultPath();
+		const priorReportToken = process.env.BASECAMP_REPORT_TOKEN;
+		try {
+			process.env.BASECAMP_REPORT_TOKEN = "token-for-tests";
+			process.env[BASECAMP_RUNNER_MANAGED_RESULT] = "1";
+			process.env[BASECAMP_RUN_RESULT_PATH] = runResultPath;
+			process.env[BASECAMP_RUN_ATTEMPT] = "1";
+			const pi = new MockPi();
+			registerDaemonReporter(pi as unknown as any, {
+				awaitConnection: () => Promise.resolve(connection),
+				runId: "run-1",
+				agentId: "agent-1",
+			});
+
+			await pi.emit("agent_end", {
+				type: "agent_end",
+				messages: [{ role: "assistant", content: [{ type: "text", text: "initial result" }] }],
+			});
+			await pi.emit("agent_end", {
+				type: "agent_end",
+				messages: [{ role: "assistant", content: [{ type: "text", text: "committed result" }] }],
+			});
+
+			assert.deepEqual(await readRunResultSidecar(runResultPath), {
+				run_id: "run-1",
+				agent_id: "agent-1",
+				attempts: [{ attempt: 1, status: "ok", result: "committed result", error: null }],
+				final: null,
+			});
+		} finally {
+			if (priorReportToken === undefined) delete process.env.BASECAMP_REPORT_TOKEN;
+			else process.env.BASECAMP_REPORT_TOKEN = priorReportToken;
+		}
+	});
+
 	it("writes runner-managed empty final result sidecar without result report", async () => {
 		const connection = new MockConnection();
 

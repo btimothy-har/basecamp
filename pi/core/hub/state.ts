@@ -2,10 +2,8 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { processScoped } from "../global-registry.ts";
 import type { DaemonConnection } from "./connection.ts";
 
-// Connection state + accessors + the connect seam. Split out of index.ts so the
-// raw-thread transport (report-thread.ts) can read awaitDaemonConnection without
-// importing the registration barrel — which would form an index↔report-thread
-// import cycle (index → thread-reporter → report-thread → index).
+// Connection state + accessors + the connect seam. Split out of index.ts so
+// consumers can depend on connection state without importing registration wiring.
 
 export interface HubConnectionState {
 	connection: DaemonConnection | null;

@@ -14,7 +14,7 @@ import { processScoped } from "../global-registry.ts";
 // Runtime session state (set as panes open/close) — must survive /reload.
 const getCompanionActiveState = processScoped("basecamp.companionActive", () => ({ active: false }));
 
-/** Returns true if the companion dashboard is active in this session. */
+/** Returns true if the Companion TUI pane is active in this session. */
 export function isCompanionActive(): boolean {
 	return getCompanionActiveState().active;
 }

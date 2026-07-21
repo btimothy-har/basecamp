@@ -1,4 +1,4 @@
-"""Tests for the analysis-only companion dashboard and app daemon polling."""
+"""Tests for Companion daemon polling."""
 
 from __future__ import annotations
 
@@ -8,10 +8,8 @@ import subprocess
 from pathlib import Path
 
 from rich.console import Console
-from textual.app import App, ComposeResult
 from textual.widgets import Static
 
-from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.app import CompanionApp
 from basecamp.companion.daemon import (
     DaemonAgentMessages,
@@ -21,9 +19,7 @@ from basecamp.companion.daemon import (
     DaemonSummaryCounts,
     DaemonSummaryError,
     DaemonSummaryOk,
-    DaemonSummaryUnavailable,
 )
-from basecamp.companion.ui.dashboard import DashboardBody
 
 
 def _to_text(renderable: object) -> str:
@@ -59,11 +55,9 @@ class _FakeDaemonSource:
         self,
         summary: DaemonSummary | None,
         messages: DaemonAgentMessages | None = None,
-        analysis: CompanionAnalysis | None = None,
     ) -> None:
         self.summary = summary
         self.messages = messages
-        self.analysis = analysis
         self.poll_calls: list[str] = []
         self.message_poll_calls: list[tuple[str, str, int | None]] = []
 
@@ -71,9 +65,6 @@ class _FakeDaemonSource:
         self.poll_calls.append(root_id)
         assert limit is None or isinstance(limit, int)
         return self.summary
-
-    def poll_analysis(self, session_id: str) -> CompanionAnalysis | None:  # noqa: ARG002
-        return self.analysis
 
     def poll_messages(self, root_id: str, agent_handle: str, limit: int | None = None) -> DaemonAgentMessages:
         self.message_poll_calls.append((root_id, agent_handle, limit))
@@ -89,15 +80,6 @@ class _DaemonPollError(Exception):
 class _FailingDaemonSource:
     def poll(self, root_id: str) -> DaemonSummary:
         raise _DaemonPollError(root_id)
-
-
-class _DashboardHostApp(App[None]):
-    def __init__(self, dashboard: DashboardBody) -> None:
-        super().__init__()
-        self._dashboard = dashboard
-
-    def compose(self) -> ComposeResult:
-        yield self._dashboard
 
 
 def _daemon_summary_ok(*, total: int, agents: list[DaemonSummaryAgent]) -> DaemonSummaryOk:
@@ -136,65 +118,6 @@ def test_poll_daemon_summary_converts_unexpected_source_errors(tmp_path: Path) -
 
     assert isinstance(result, DaemonSummaryError)
     assert "session-123" in result.error
-
-
-def test_dashboard_renders_daemon_analysis(tmp_path: Path) -> None:
-    repo = tmp_path / "repo"
-    _build_repo(repo)
-    snapshot_path = tmp_path / "snapshot.json"
-    session_id = "abcd-1234-5678-90ef"
-    _write_snapshot(snapshot_path, session_id, repo)
-    daemon_source = _FakeDaemonSource(
-        DaemonSummaryUnavailable(error="unavailable in test"),
-        analysis=CompanionAnalysis(
-            monitor=["watch the tests"],
-            needs_capture=["capture a decision"],
-            checkpoints=["checkpoint one"],
-        ),
-    )
-    app = CompanionApp(snapshot_path=snapshot_path, cwd=repo, daemon_source=daemon_source)
-
-    async def run() -> None:
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            dash = app.query_one("#dashboard-body", DashboardBody)
-
-            assert app.query_one("#dashboard-monitor", Static).border_title == "Monitor"
-            assert app.query_one("#dashboard-capture", Static).border_title == "Needs capture"
-            assert app.query_one("#dashboard-checkpoints", Static).border_title == "Checkpoints"
-            assert not app.query("#dashboard-goals")
-            assert not app.query("#dashboard-task")
-
-            for _ in range(100):
-                if dash._analysis is not None:
-                    break
-                await pilot.pause(0.02)
-            else:
-                raise AssertionError
-
-            assert "watch the tests" in _to_text(app.query_one("#dashboard-monitor", Static).content)
-            assert "capture a decision" in _to_text(app.query_one("#dashboard-capture", Static).content)
-            assert "checkpoint one" in _to_text(app.query_one("#dashboard-checkpoints", Static).content)
-            assert daemon_source.poll_calls[-1] == session_id
-
-    asyncio.run(run())
-
-
-def test_dashboard_update_retains_last_analysis_on_none() -> None:
-    dashboard = DashboardBody()
-    app = _DashboardHostApp(dashboard)
-    analysis = CompanionAnalysis(monitor=["keep me"], needs_capture=[], checkpoints=[])
-
-    async def run() -> None:
-        async with app.run_test():
-            dashboard.update(analysis)
-            assert dashboard._analysis is analysis
-
-            dashboard.update(None)
-            assert dashboard._analysis is analysis
-            assert "keep me" in _to_text(app.query_one("#dashboard-monitor", Static).content)
-
-    asyncio.run(run())
 
 
 def test_swarm_receives_daemon_summary_when_session_active(tmp_path: Path) -> None:

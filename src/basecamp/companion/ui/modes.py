@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-BODY_MODES = ("dashboard-body", "diff-body", "files-body", "swarm-body")
+BODY_MODES = ("diff-body", "files-body", "swarm-body")
 
 
 def next_body_mode(current: str) -> str:

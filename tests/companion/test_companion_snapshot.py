@@ -33,8 +33,8 @@ class TestLoadSnapshot:
                     "progress": {"completed": 1, "total": 3},
                     "agentMode": "work",
                     "worktree": {
-                        "label": "c266-companion-dashboard",
-                        "branch": "wt/c266-companion-dashboard",
+                        "label": "c266-companion-tui",
+                        "branch": "wt/c266-companion-tui",
                         "path": "/tmp/worktree",
                     },
                     "repoName": "basecamp",

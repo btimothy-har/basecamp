@@ -4,21 +4,21 @@
  * Three-line layout:
  *   Line 1: cwd | worktree | branch ... model
  *   Line 2: invoked skills ... context bar
- *   Line 3: extension statuses
+ *   Line 3: extension statuses ... pull request
  *
  * Skills are tracked by the skill tool itself (skill.ts). The footer
  * re-renders on `tool_result` events to pick up newly loaded skills.
  */
 
-import { existsSync, type FSWatcher, readFileSync, statSync, watch } from "node:fs";
 import * as os from "node:os";
-import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { getCapabilities, hyperlink, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode/index.ts";
+import type { PullRequestStatus } from "../git/pr-status.ts";
 import { getWorkspaceEffectiveCwd, getWorkspaceState, type WorkspaceState } from "../project/workspace/state.ts";
 import { getInvokedSkills } from "../skills/tracker.ts";
 import { getModeLabel } from "./mode.ts";
+import { createFooterRepositoryStatusTracker, type RepositoryStatusTracker } from "./repository-status.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 
@@ -29,91 +29,6 @@ interface LocationLineParts {
 }
 
 let requestRender: (() => void) | null = null;
-
-/**
- * Branch watcher for the exact directory represented in the footer.
- * Pi's FooterDataProvider is created from Pi's cwd; Basecamp can later override
- * the effective cwd/worktree, so we resolve and watch HEAD ourselves.
- */
-let branchCache: string | null = null;
-let branchHeadWatcher: FSWatcher | null = null;
-let branchWatcherTarget: string | null = null;
-
-function resolveGitHeadPath(startDir: string): string | null {
-	let dir = resolve(startDir);
-	while (true) {
-		try {
-			const gitPath = join(dir, ".git");
-			if (existsSync(gitPath)) {
-				const stat = statSync(gitPath);
-				if (stat.isDirectory()) {
-					const headPath = join(gitPath, "HEAD");
-					return existsSync(headPath) ? headPath : null;
-				}
-				const content = readFileSync(gitPath, "utf8").trim();
-				if (!content.startsWith("gitdir: ")) return null;
-				const gitDir = resolve(dir, content.slice(8).trim());
-				const headPath = join(gitDir, "HEAD");
-				return existsSync(headPath) ? headPath : null;
-			}
-		} catch {
-			return null;
-		}
-
-		const parent = dirname(dir);
-		if (parent === dir) return null;
-		dir = parent;
-	}
-}
-
-function readBranchFromHead(headPath: string): string | null {
-	try {
-		const content = readFileSync(headPath, "utf8").trim();
-		if (content.startsWith("ref: refs/heads/")) return content.slice(16);
-		return "detached";
-	} catch {
-		return null;
-	}
-}
-
-function syncBranchWatcher(targetDir: string): void {
-	const normalizedTarget = resolve(targetDir);
-	if (branchWatcherTarget === normalizedTarget) return;
-
-	disposeBranchWatcher();
-	branchWatcherTarget = normalizedTarget;
-
-	const headPath = resolveGitHeadPath(normalizedTarget);
-	if (!headPath) return;
-
-	branchCache = readBranchFromHead(headPath);
-
-	try {
-		branchHeadWatcher = watch(dirname(headPath), (_event, filename) => {
-			if (!filename || filename.toString() === "HEAD") {
-				const next = readBranchFromHead(headPath);
-				if (next !== branchCache) {
-					branchCache = next;
-					requestRender?.();
-				}
-			}
-		});
-	} catch {
-		// watch failed — fall back to static cache
-	}
-}
-
-function resolveFooterBranch(targetDir: string, fallbackBranch: string | null): string | null {
-	syncBranchWatcher(targetDir);
-	return branchCache ?? fallbackBranch;
-}
-
-function disposeBranchWatcher(): void {
-	branchHeadWatcher?.close();
-	branchHeadWatcher = null;
-	branchWatcherTarget = null;
-	branchCache = null;
-}
 
 function shortenPath(p: string): string {
 	const home = os.homedir();
@@ -172,6 +87,45 @@ function joinSegments(parts: Array<string | null | undefined>, fg: ThemeFg): str
 	return parts.filter((part): part is string => Boolean(part)).join(fg("dim", "  "));
 }
 
+function pullRequestStyle(pullRequest: PullRequestStatus): {
+	color: Parameters<ThemeFg>[0];
+	glyph: string;
+} {
+	if (pullRequest.state === "OPEN") {
+		return pullRequest.isDraft ? { color: "muted", glyph: "○" } : { color: "success", glyph: "●" };
+	}
+	if (pullRequest.state === "MERGED") return { color: "accent", glyph: "◆" };
+	return { color: "error", glyph: "×" };
+}
+
+function renderPullRequestSegment(fg: ThemeFg, pullRequest: PullRequestStatus | null, maxWidth: number): string {
+	if (!pullRequest || maxWidth <= 0) return "";
+	const style = pullRequestStyle(pullRequest);
+	const candidates = [
+		`${style.glyph} PR #${pullRequest.number}`,
+		`PR #${pullRequest.number}`,
+		`#${pullRequest.number}`,
+	];
+	const label = candidates.find((candidate) => visibleWidth(candidate) <= maxWidth);
+	if (!label) return "";
+
+	const text = fg(style.color, label);
+	return getCapabilities().hyperlinks ? hyperlink(text, pullRequest.url) : text;
+}
+
+function layoutStatusLine(left: string, pullRequest: PullRequestStatus | null, width: number, fg: ThemeFg): string {
+	if (width <= 0) return "";
+	const right = renderPullRequestSegment(fg, pullRequest, width);
+	if (!right) return truncateToWidth(left, width, fg("dim", "…"));
+
+	const rightWidth = visibleWidth(right);
+	if (!left || rightWidth + 2 >= width) return " ".repeat(width - rightWidth) + right;
+
+	const availableLeft = width - rightWidth - 2;
+	const truncatedLeft = truncateToWidth(left, availableLeft, fg("dim", "…"));
+	return truncatedLeft + " ".repeat(width - visibleWidth(truncatedLeft) - rightWidth) + right;
+}
+
 function layoutLocationLine(location: LocationLineParts, right: string, width: number, fg: ThemeFg): string {
 	const fullLeft = joinSegments([location.mode, location.cwd, ...location.metadata], fg);
 	if (visibleWidth(fullLeft) + 2 + visibleWidth(right) <= width) return layoutLine(fullLeft, right, width, fg);
@@ -204,16 +158,17 @@ function layoutLocationLine(location: LocationLineParts, right: string, width: n
 
 export function registerFooter(pi: ExtensionAPI): void {
 	let ctx: ExtensionContext | null = null;
+	let repositoryStatus: RepositoryStatusTracker | null = null;
 
 	pi.on("session_start", (_event, sessionCtx) => {
 		ctx = sessionCtx;
 
-		// Replace default footer
 		if (!sessionCtx.hasUI) return;
 
 		sessionCtx.ui.setFooter((tui, theme, footerData) => {
 			requestRender = () => tui.requestRender();
-			const unsubBranch = footerData.onBranchChange(() => tui.requestRender());
+			const footerRepositoryStatus = createFooterRepositoryStatusTracker(pi, footerData, () => tui.requestRender());
+			repositoryStatus = footerRepositoryStatus;
 			const unsubMode = onAgentModeChange(() => tui.requestRender());
 
 			return {
@@ -223,13 +178,10 @@ export function registerFooter(pi: ExtensionAPI): void {
 					const workspace = getWorkspaceState();
 					const effectiveCwd = getWorkspaceEffectiveCwd();
 
-					// ── Line 1: cwd | worktree | branch ... model ──
-					// Keep mode/worktree/branch visible; truncate cwd/model first.
-					const location = buildLocationParts(fg, workspace, effectiveCwd, footerData);
+					const location = buildLocationParts(fg, workspace, effectiveCwd, footerRepositoryStatus.getBranch());
 					const l1Right = buildModelSegment(fg, ctx, pi);
 					const line1 = layoutLocationLine(location, l1Right, width, fg);
 
-					// ── Line 2: skills ... context bar ──
 					let l2Left = "";
 					const skills = getInvokedSkills();
 					if (skills.length > 0) {
@@ -253,19 +205,30 @@ export function registerFooter(pi: ExtensionAPI): void {
 						.sort(([a], [b]) => a.localeCompare(b))
 						.map(([, text]) => text.replace(/[\r\n\t]/g, " ").trim())
 						.filter((text) => text.length > 0);
-					lines.push(truncateToWidth(line3Parts.join(fg("dim", "  ")), width, fg("dim", "…")));
+					lines.push(
+						layoutStatusLine(line3Parts.join(fg("dim", "  ")), footerRepositoryStatus.getPullRequest(), width, fg),
+					);
 
 					return lines;
 				},
 
 				dispose() {
-					unsubBranch();
 					unsubMode();
-					disposeBranchWatcher();
+					footerRepositoryStatus.dispose();
+					if (repositoryStatus === footerRepositoryStatus) repositoryStatus = null;
 					requestRender = null;
 				},
 			};
 		});
+	});
+
+	pi.on("agent_settled", () => repositoryStatus?.refresh());
+
+	pi.on("session_shutdown", () => {
+		repositoryStatus?.dispose();
+		repositoryStatus = null;
+		requestRender = null;
+		ctx = null;
 	});
 
 	pi.on("tool_result", async (event) => {
@@ -279,7 +242,7 @@ function buildLocationParts(
 	fg: ThemeFg,
 	workspace: WorkspaceState | null,
 	effectiveCwd: string,
-	footerData: { getGitBranch(): string | null },
+	branch: string | null,
 ): LocationLineParts {
 	const metadata: string[] = [];
 	const activeWorktree = workspace?.activeWorktree ?? null;
@@ -293,8 +256,6 @@ function buildLocationParts(
 		metadata.push(fg("muted", "⌥ protected"));
 	}
 
-	const branchTarget = activeWorktree?.path ?? effectiveCwd;
-	const branch = resolveFooterBranch(branchTarget, activeWorktree?.branch ?? footerData.getGitBranch());
 	if (branch) metadata.push(fg("accent", `⎇ ${branch}`));
 
 	return {
