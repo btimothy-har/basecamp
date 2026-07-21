@@ -4,7 +4,7 @@
  * Pure git verbs (create-from-ref, lock, unlock, remove) with no session state — the
  * confinement guard and the dispatch orchestration that use these live elsewhere.
  * `createAgentWorktree` branches an agent's own worktree
- * from the parent's HEAD and locks it; the parent later integrates the branch by merge and
+ * from the parent's HEAD and locks it atomically; the parent later integrates the branch by merge and
  * tears the worktree down.
  */
 
@@ -47,14 +47,14 @@ export async function unlockWorktree(pi: ExtensionAPI, repoRoot: string, worktre
 	}
 }
 
-/** Remove a worktree (unlocking first). `force` drops uncommitted changes. */
+/** Remove a worktree, unlocking first unless disabled. `force` drops uncommitted changes. */
 export async function removeWorktree(
 	pi: ExtensionAPI,
 	repoRoot: string,
 	worktreeDir: string,
-	opts: { force?: boolean } = {},
+	opts: { force?: boolean; unlock?: boolean } = {},
 ): Promise<void> {
-	await unlockWorktree(pi, repoRoot, worktreeDir).catch(() => {});
+	if (opts.unlock !== false) await unlockWorktree(pi, repoRoot, worktreeDir).catch(() => {});
 	const args = ["-C", repoRoot, "worktree", "remove", ...(opts.force ? ["--force"] : []), worktreeDir];
 	const result = await pi.exec("git", args, { timeout: GIT_TIMEOUT_MS });
 	if (result.code !== 0) {
@@ -75,7 +75,8 @@ export async function deleteBranch(pi: ExtensionAPI, repoRoot: string, branch: s
  * Create a dispatched agent's own worktree, branched from `baseRef` (the parent's HEAD) on
  * a branch equal to `label` (`agent-<id>/<name>`), then lock it. Unlike `getOrCreateWorktree`,
  * this does NOT run `validateProtectedCheckout`: an agent worktree branches from the parent's
- * tree, not from a clean protected checkout.
+ * tree, not from a clean protected checkout. Creation and locking use one git command so no
+ * cleanup process can observe an unlocked live worktree.
  */
 export async function createAgentWorktree(
 	pi: ExtensionAPI,
@@ -98,21 +99,23 @@ export async function createAgentWorktree(
 	}
 
 	fs.mkdirSync(path.dirname(worktreeDir), { recursive: true });
-	const result = await pi.exec("git", ["-C", repoRoot, "worktree", "add", "-b", label, worktreeDir, baseRef], {
-		timeout: GIT_TIMEOUT_MS,
-	});
+	const result = await pi.exec(
+		"git",
+		["-C", repoRoot, "worktree", "add", "--lock", "--reason", lockReason, "-b", label, worktreeDir, baseRef],
+		{ timeout: GIT_TIMEOUT_MS },
+	);
 	if (result.code !== 0) {
-		throw new Error(`Failed to create agent worktree: ${result.stderr}`);
+		try {
+			const partial = findWorktreeRecord(await gitWorktreeRecords(pi, repoRoot), worktreeDir);
+			if (partial) {
+				await removeWorktree(pi, repoRoot, worktreeDir, { force: true }).catch(() => {});
+				await deleteBranch(pi, repoRoot, label).catch(() => {});
+			}
+		} catch {
+			// Git normally rolls back a failed atomic add; leave any unprovable residue untouched.
+		}
+		throw new Error(`Failed to create and lock agent worktree: ${result.stderr}`);
 	}
 
-	try {
-		await lockWorktree(pi, repoRoot, worktreeDir, lockReason);
-	} catch (error) {
-		// Keep creation atomic: if the lock fails, remove the worktree (and its branch) we just
-		// added so a partial failure doesn't leak an unreferenced tree that nothing reaps.
-		await removeWorktree(pi, repoRoot, worktreeDir, { force: true }).catch(() => {});
-		await deleteBranch(pi, repoRoot, label).catch(() => {});
-		throw error;
-	}
 	return { worktreeDir, label, branch: label, created: true };
 }

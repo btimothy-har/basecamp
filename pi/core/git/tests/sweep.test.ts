@@ -5,9 +5,15 @@ import { sweepAgentWorktrees } from "../worktrees/sweep.ts";
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 
-function porcelain(entries: Array<{ path: string; branch: string | null }>): string {
+function porcelain(entries: Array<{ path: string; branch: string | null; locked?: boolean }>): string {
 	return `${entries
-		.map((e) => `worktree ${e.path}\n${e.branch ? `branch refs/heads/${e.branch}` : "detached"}`)
+		.map((entry) =>
+			[
+				`worktree ${entry.path}`,
+				entry.branch ? `branch refs/heads/${entry.branch}` : "detached",
+				...(entry.locked ? ["locked basecamp agent run"] : []),
+			].join("\n"),
+		)
 		.join("\n\n")}\n\n`;
 }
 
@@ -56,6 +62,73 @@ describe("sweepAgentWorktrees", () => {
 			!calls.some((a) => a.includes("remove") && a.includes("/wt/agent-open")),
 			"leaves the unmerged agent worktree",
 		);
+		assert.equal(
+			calls.some((args) => args.includes("--force")),
+			false,
+		);
+		assert.equal(
+			calls.some((args) => args.includes("unlock")),
+			false,
+		);
+	});
+
+	it("never inspects or removes a locked agent worktree", async () => {
+		const list = porcelain([
+			{ path: "/repo", branch: "main" },
+			{ path: "/wt/agent-live", branch: "agent-live/worker", locked: true },
+		]);
+		const pi = execPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
+			throw new Error(`locked worktree should be untouched: ${args.join(" ")}`);
+		});
+
+		const result = await sweepAgentWorktrees(pi, "/repo");
+
+		assert.deepEqual(result, { removed: [], kept: 1 });
+	});
+
+	it("preserves a dirty merged worktree and its branch", async () => {
+		const list = porcelain([
+			{ path: "/repo", branch: "main" },
+			{ path: "/wt/agent-dirty", branch: "agent-dirty/worker" },
+		]);
+		const calls: string[][] = [];
+		const pi = execPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
+			if (args.includes("merge-base")) return { code: 0, stdout: "", stderr: "" };
+			if (args.includes("remove")) return { code: 1, stdout: "", stderr: "worktree contains modified files" };
+			return { code: 0, stdout: "", stderr: "" };
+		}, calls);
+
+		const result = await sweepAgentWorktrees(pi, "/repo");
+
+		assert.deepEqual(result, { removed: [], kept: 1 });
+		assert.ok(calls.some((args) => args.includes("remove") && args.includes("/wt/agent-dirty")));
+		assert.equal(
+			calls.some((args) => args.includes("--force") || args.includes("unlock")),
+			false,
+		);
+		assert.equal(
+			calls.some((args) => args.includes("-D") && args.includes("agent-dirty/worker")),
+			false,
+		);
+	});
+
+	it("reports a removed worktree even when branch cleanup fails", async () => {
+		const list = porcelain([
+			{ path: "/repo", branch: "main" },
+			{ path: "/wt/agent-merged", branch: "agent-merged/worker" },
+		]);
+		const pi = execPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
+			if (args.includes("merge-base")) return { code: 0, stdout: "", stderr: "" };
+			if (args.includes("-D")) return { code: 1, stdout: "", stderr: "branch cleanup failed" };
+			return { code: 0, stdout: "", stderr: "" };
+		});
+
+		const result = await sweepAgentWorktrees(pi, "/repo");
+
+		assert.deepEqual(result, { removed: ["/wt/agent-merged"], kept: 0 });
 	});
 
 	it("reaps nothing when there are no non-agent branches to merge into", async () => {
