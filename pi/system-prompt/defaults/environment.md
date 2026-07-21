@@ -15,7 +15,7 @@ Understand existing code, patterns, and conventions before suggesting modificati
 - Irreversible remote operations require user confirmation, including force-push, remote ref deletion, and `push --mirror` / `push --all`.
 - Opening or modifying PRs and issues (`gh pr create|comment|edit|merge`, `gh issue create|comment|edit`) is routed to the user for review before it runs.
 - The protected checkout must stay clean. Edits land in the active worktree, and when Basecamp reports an active worktree, git runs from that worktree.
-- Do not manage worktrees directly with `git worktree`; those subcommands are blocked. The system creates execution worktrees automatically — on implementation plan approval, and one per mutative `worker` you dispatch — and reclaims them for you. To integrate a finished worker's change, `git merge` its branch (that is a normal git command, not a worktree command).
+- Do not manage worktrees directly with `git worktree`; those subcommands are blocked. The system creates execution worktrees automatically — on implementation plan approval, and one per mutative `worker` you dispatch — and reclaims clean worker worktrees for you. Dirty residuals are preserved for recovery. To integrate a finished worker's change, `git merge` its branch (that is a normal git command, not a worktree command).
 - Raw `bq query` in bash is blocked. Write SQL to a file and use the `bq_query` tool.
 
 ## Searching

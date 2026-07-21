@@ -118,14 +118,12 @@ describe("createAgentWorktree", () => {
 		}, calls);
 
 		await assert.rejects(() => createAgentWorktree(pi, repoRoot, repoName, label, "HEAD"), /atomic add failed/);
-		assert.ok(
-			calls.some((args) => args.includes("remove")),
-			"removes the partial worktree",
-		);
-		assert.ok(
-			calls.some((args) => args.includes("-D")),
-			"deletes the partial branch",
-		);
+		const removeIndex = calls.findIndex((args) => args.includes("remove"));
+		const deleteIndex = calls.findIndex((args) => args.includes("-D"));
+		assert.notEqual(removeIndex, -1, "removes the partial worktree");
+		assert.ok(calls[removeIndex]?.includes("--force"), "force-removes pre-execution residue");
+		assert.notEqual(deleteIndex, -1, "deletes the partial branch");
+		assert.ok(removeIndex < deleteIndex, "removes the worktree before deleting its branch");
 	});
 });
 

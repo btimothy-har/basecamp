@@ -17,7 +17,7 @@ function createHarness(
 	options: {
 		state?: WorkspaceState;
 		readOnly?: boolean;
-		status?: { code: number; stdout: string; stderr: string };
+		status?: { code: number; stdout: string; stderr: string; killed?: boolean };
 		execError?: Error;
 		sendError?: Error;
 	} = {},
@@ -74,9 +74,10 @@ function createHarness(
 	assert.equal(registeredEnd, true);
 	assert.equal(registeredSettled, true);
 
+	const startMessage = (role: string, customType?: string) => messageStartHandler({ message: { role, customType } });
 	return {
-		startReminder: () =>
-			messageStartHandler({ message: { role: "custom", customType: "basecamp-dirty-worktree-reminder" } }),
+		startMessage,
+		startReminder: () => startMessage("custom", "basecamp-dirty-worktree-reminder"),
 		end: endHandler,
 		settle: settledHandler,
 		sent,
@@ -103,6 +104,8 @@ describe("dirty worktree reminder", () => {
 		const harness = createHarness();
 
 		await harness.end();
+		harness.startMessage("assistant");
+		harness.startMessage("custom", "another-extension");
 		await harness.end();
 		assert.equal(harness.sent.length, 1);
 
@@ -134,6 +137,16 @@ describe("dirty worktree reminder", () => {
 		assert.deepEqual(harness.sent, []);
 	});
 
+	it("does nothing when git status is killed", async () => {
+		const harness = createHarness({
+			status: { code: 0, stdout: " M src/file.ts\n", stderr: "", killed: true },
+		});
+
+		await harness.end();
+
+		assert.deepEqual(harness.sent, []);
+	});
+
 	it("does not inspect worktrees for read-only agents", async () => {
 		const harness = createHarness({ readOnly: true });
 
@@ -155,7 +168,8 @@ describe("dirty worktree reminder", () => {
 	it("fails open when git status or reminder delivery fails", async () => {
 		const gitFailure = createHarness({ execError: new Error("git unavailable") });
 		const statusFailure = createHarness({ status: { code: 1, stdout: "", stderr: "not a repo" } });
-		const sendFailure = createHarness({ sendError: new Error("delivery failed") });
+		const sendOptions: { sendError?: Error } = { sendError: new Error("delivery failed") };
+		const sendFailure = createHarness(sendOptions);
 
 		await assert.doesNotReject(() => Promise.resolve(gitFailure.end()));
 		await assert.doesNotReject(() => Promise.resolve(statusFailure.end()));
@@ -164,5 +178,9 @@ describe("dirty worktree reminder", () => {
 		assert.deepEqual(gitFailure.sent, []);
 		assert.deepEqual(statusFailure.sent, []);
 		assert.deepEqual(sendFailure.sent, []);
+
+		delete sendOptions.sendError;
+		await sendFailure.end();
+		assert.equal(sendFailure.sent.length, 1);
 	});
 });
