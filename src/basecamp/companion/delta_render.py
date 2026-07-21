@@ -1,8 +1,8 @@
 """Render file diffs via the external `delta` viewer, captured as Rich text.
 
 This is an optional, higher-fidelity renderer: when the `delta` binary is
-available it produces side-by-side, word-level syntax-highlighted diffs that we
-capture as ANSI and parse back into a Rich ``Text`` for display in the TUI.
+available it produces stacked or split, word-level syntax-highlighted diffs that
+we capture as ANSI and parse back into a Rich ``Text`` for display in the TUI.
 When `delta` is absent (or produces nothing) the caller falls back to the
 built-in ``difflib``-based renderer in :mod:`basecamp.companion.diff`.
 """
@@ -16,17 +16,20 @@ from pathlib import Path
 
 from rich.text import Text
 
-from basecamp.companion.diff import MAX_DIFF_BYTES, DiffMode, FileStatus
-
-# delta emits ANSI background fills as spaces on a non-tty unless forced; a fixed
-# width plus line-fill=ansi is required for faithful side-by-side capture.
-_DELTA_ARGS = (
-    "--paging",
-    "never",
-    "--side-by-side",
-    "--line-fill-method",
-    "ansi",
+from basecamp.companion.diff import (
+    COMPACT_CONTEXT_LINES,
+    MAX_DIFF_BYTES,
+    MAX_DIFF_LINES,
+    DiffDensity,
+    DiffLayout,
+    DiffScope,
+    FileStatus,
 )
+
+# Companion owns layout; ignoring git config prevents a global side-by-side=true
+# from overriding the selected stacked layout.
+_DELTA_ARGS = ("--paging", "never", "--no-gitconfig", "--line-numbers")
+_DELTA_SPLIT_ARGS = ("--side-by-side", "--line-fill-method", "ansi")
 MIN_DELTA_WIDTH = 40
 
 
@@ -37,7 +40,7 @@ def delta_path() -> str | None:
     return shutil.which("delta")
 
 
-def _git_diff_refs(base_commit: str, file: FileStatus, mode: DiffMode) -> list[str]:
+def _git_diff_refs(base_commit: str, file: FileStatus, scope: DiffScope) -> list[str]:
     """Build the `git diff` ref/path arguments matching the given scope.
 
     Mirrors the ref selection in :func:`basecamp.companion.diff.file_diff_lines`
@@ -50,9 +53,9 @@ def _git_diff_refs(base_commit: str, file: FileStatus, mode: DiffMode) -> list[s
     paths = [file.old_path, file.path] if file.old_path else [file.path]
     pathspec = ["--", *paths]
 
-    if mode == "uncommitted":
+    if scope == "uncommitted":
         return ["-M", "HEAD", *pathspec]
-    if mode == "committed":
+    if scope == "committed":
         return ["-M", base_commit, "HEAD", *pathspec]
     return ["-M", base_commit, *pathspec]
 
@@ -62,7 +65,9 @@ def render_file_diff(
     cwd: Path,
     base_commit: str,
     file: FileStatus,
-    mode: DiffMode,
+    scope: DiffScope,
+    density: DiffDensity,
+    layout: DiffLayout,
     width: int,
 ) -> Text | None:
     """Render one file's diff through `delta`, returned as Rich ``Text``.
@@ -75,10 +80,20 @@ def render_file_diff(
     if delta is None:
         return None
 
-    refs = _git_diff_refs(base_commit, file, mode)
+    refs = _git_diff_refs(base_commit, file, scope)
+    context_lines = COMPACT_CONTEXT_LINES if density == "compact" else MAX_DIFF_LINES
     try:
         git = subprocess.run(  # noqa: S603
-            ["git", "-C", str(cwd), "--no-pager", "diff", "--color=always", *refs],
+            [
+                "git",
+                "-C",
+                str(cwd),
+                "--no-pager",
+                "diff",
+                "--color=always",
+                f"--unified={context_lines}",
+                *refs,
+            ],
             capture_output=True,
             text=True,
             check=False,
@@ -92,9 +107,14 @@ def render_file_diff(
     if len(git.stdout.encode("utf-8", errors="ignore")) > MAX_DIFF_BYTES:
         return None
 
+    delta_args = [delta, *_DELTA_ARGS]
+    if layout == "split":
+        delta_args.extend(_DELTA_SPLIT_ARGS)
+    delta_args.extend(("--width", str(max(width, MIN_DELTA_WIDTH))))
+
     try:
         proc = subprocess.run(  # noqa: S603
-            [delta, *_DELTA_ARGS, "--width", str(max(width, MIN_DELTA_WIDTH))],
+            delta_args,
             input=git.stdout,
             capture_output=True,
             text=True,

@@ -12,10 +12,13 @@ from textual.containers import Vertical, VerticalScroll
 from textual.message import Message
 from textual.widgets import Label, ListItem, ListView, Static
 
-from basecamp.companion.diff import DiffLine, FileStatus
+from basecamp.companion.diff import DiffDensity, DiffLayout, DiffLine, FileStatus
 from basecamp.companion.ui.syntax import lexer_for_filename
 
 type DeltaFactory = Callable[[int], Text | None]
+type DiffRenderKey = tuple[DiffDensity, DiffLayout]
+type DiffLineSignature = tuple[str, str, int | None]
+type DiffSignature = tuple[str, str, int | None, tuple[DiffLineSignature, ...], DiffRenderKey | None]
 
 
 class FileList(Vertical):
@@ -143,7 +146,7 @@ class DiffView(VerticalScroll):
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
-        self._last_signature: tuple[str, str, int | None, tuple[tuple[str, str, int | None], ...]] | None = None
+        self._last_signature: DiffSignature | None = None
 
     def compose(self) -> ComposeResult:
         """Compose content holder."""
@@ -156,7 +159,8 @@ class DiffView(VerticalScroll):
         status_message: str,
         diff_lines: list[DiffLine],
         width: int | None,
-    ) -> tuple[str, str, int | None, tuple[tuple[str, str, int | None], ...]]:
+        render_key: DiffRenderKey | None,
+    ) -> DiffSignature:
         # width is tracked only for the width-baked delta render; it is None for
         # the built-in renderer, whose Rich Text reflows at display time.
         return (
@@ -164,6 +168,7 @@ class DiffView(VerticalScroll):
             status_message,
             width,
             tuple((line.kind, line.text, line.line_no) for line in diff_lines),
+            render_key,
         )
 
     def _render_diff(self, file_path: str, diff_lines: list[DiffLine]) -> Text:
@@ -210,6 +215,7 @@ class DiffView(VerticalScroll):
         file_path: str,
         status_message: str,
         diff_lines: list[DiffLine],
+        render_key: DiffRenderKey | None = None,
         delta_factory: DeltaFactory | None = None,
     ) -> None:
         """Update diff rendering when content has changed.
@@ -226,6 +232,7 @@ class DiffView(VerticalScroll):
             status_message=status_message,
             diff_lines=diff_lines,
             width=delta_width if delta_factory is not None else None,
+            render_key=render_key if delta_factory is not None else None,
         )
         if signature == self._last_signature:
             return
@@ -251,8 +258,9 @@ class DiffBody(Vertical):
         Binding("m", "app.toggle_mode", "Mode", priority=True),
         Binding("left", "prev_file", "Prev file", priority=True),
         Binding("right", "next_file", "Next file", priority=True),
-        Binding("c", "toggle_compact", "Compact", priority=True),
-        Binding("d", "cycle_diff_mode", "Diff scope", priority=True),
+        Binding("c", "toggle_diff_density", "Density", priority=True),
+        Binding("l", "toggle_diff_layout", "Layout", priority=True),
+        Binding("d", "cycle_diff_scope", "Diff scope", priority=True),
     ]
 
     def compose(self) -> ComposeResult:
@@ -267,8 +275,11 @@ class DiffBody(Vertical):
     def action_next_file(self) -> None:
         self.app.action_next_file()
 
-    def action_toggle_compact(self) -> None:
-        self.app.action_toggle_compact()
+    def action_toggle_diff_density(self) -> None:
+        self.app.action_toggle_diff_density()
 
-    def action_cycle_diff_mode(self) -> None:
-        self.app.action_cycle_diff_mode()
+    def action_toggle_diff_layout(self) -> None:
+        self.app.action_toggle_diff_layout()
+
+    def action_cycle_diff_scope(self) -> None:
+        self.app.action_cycle_diff_scope()

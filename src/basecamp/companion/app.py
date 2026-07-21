@@ -18,8 +18,12 @@ from basecamp.companion.daemon import (
 )
 from basecamp.companion.delta_render import render_file_diff
 from basecamp.companion.diff import (
-    DIFF_MODES,
-    DiffMode,
+    DIFF_DENSITIES,
+    DIFF_LAYOUTS,
+    DIFF_SCOPES,
+    DiffDensity,
+    DiffLayout,
+    DiffScope,
     FileStatus,
     collapse_unchanged,
     collect_changes,
@@ -165,8 +169,9 @@ class CompanionApp(App[None]):
         self._snapshot: CompanionSnapshot | None = None
         self._base_commit: str | None = None
         self._files: list[FileStatus] = []
-        self._compact = False
-        self._diff_mode: DiffMode = "all"
+        self._diff_scope: DiffScope = "all"
+        self._diff_density: DiffDensity = "full"
+        self._diff_layout: DiffLayout = "split"
 
     def compose(self) -> ComposeResult:
         """Compose companion widgets."""
@@ -195,9 +200,7 @@ class CompanionApp(App[None]):
         self.query_one("#diff-view", DiffView).focus()
 
     def _set_diff_title(self) -> None:
-        parts = ["Diff", self._diff_mode]
-        if self._compact:
-            parts.append("compact")
+        parts = ["Diff", self._diff_scope, self._diff_density, self._diff_layout]
         self.query_one("#diff-view", DiffView).border_title = " · ".join(parts)
 
     def _update_session_bar(self) -> None:
@@ -225,18 +228,27 @@ class CompanionApp(App[None]):
 
         self.query_one("#file-list", FileList).select_next()
 
-    def action_toggle_compact(self) -> None:
-        """Toggle compact unchanged-line collapsing for the active diff."""
+    def action_toggle_diff_density(self) -> None:
+        """Toggle full or compact context for the active diff."""
 
-        self._compact = not self._compact
+        index = DIFF_DENSITIES.index(self._diff_density)
+        self._diff_density = DIFF_DENSITIES[(index + 1) % len(DIFF_DENSITIES)]
         self._set_diff_title()
         self._update_selected_file_diff()
 
-    def action_cycle_diff_mode(self) -> None:
+    def action_toggle_diff_layout(self) -> None:
+        """Toggle stacked or split rendering for the active diff."""
+
+        index = DIFF_LAYOUTS.index(self._diff_layout)
+        self._diff_layout = DIFF_LAYOUTS[(index + 1) % len(DIFF_LAYOUTS)]
+        self._set_diff_title()
+        self._update_selected_file_diff()
+
+    def action_cycle_diff_scope(self) -> None:
         """Cycle the diff scope between all, uncommitted, and committed."""
 
-        index = DIFF_MODES.index(self._diff_mode)
-        self._diff_mode = DIFF_MODES[(index + 1) % len(DIFF_MODES)]
+        index = DIFF_SCOPES.index(self._diff_scope)
+        self._diff_scope = DIFF_SCOPES[(index + 1) % len(DIFF_SCOPES)]
         self._set_diff_title()
         self._refresh()
 
@@ -285,13 +297,13 @@ class CompanionApp(App[None]):
                 base_commit=self._base_commit,
                 file=selected_file,
                 cwd=self.cwd,
-                mode=self._diff_mode,
+                scope=self._diff_scope,
             )
         except Exception:
             diff_view.update_diff(file_path=selected_file.path, status_message="Unable to load diff", diff_lines=[])
             return
 
-        if self._compact and not status_message and diff_lines:
+        if self._diff_density == "compact" and not status_message and diff_lines:
             diff_lines = collapse_unchanged(diff_lines)
 
         delta_factory = None
@@ -302,7 +314,9 @@ class CompanionApp(App[None]):
                     cwd=self.cwd,
                     base_commit=self._base_commit,
                     file=_file,
-                    mode=self._diff_mode,
+                    scope=self._diff_scope,
+                    density=self._diff_density,
+                    layout=self._diff_layout,
                     width=width,
                 )
 
@@ -310,6 +324,7 @@ class CompanionApp(App[None]):
             file_path=selected_file.path,
             status_message=status_message,
             diff_lines=diff_lines,
+            render_key=(self._diff_density, self._diff_layout),
             delta_factory=delta_factory,
         )
 
@@ -356,7 +371,7 @@ class CompanionApp(App[None]):
             swarm_body.update_agent_messages(None)
 
         try:
-            base_commit, files = collect_changes(self._git, self._diff_mode)
+            base_commit, files = collect_changes(self._git, self._diff_scope)
         except Exception:
             base_commit, files = None, []
 
