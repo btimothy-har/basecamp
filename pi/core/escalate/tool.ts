@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
+import { withHerdrBlocked } from "../ui/herdr.ts";
 import { EscalateDialog } from "./dialog/index.ts";
 import { renderCall, renderResult } from "./render.ts";
 import type { QuestionAnswer } from "./types.ts";
@@ -33,15 +34,11 @@ export function registerEscalate(pi: ExtensionAPI): void {
 				};
 			}
 
-			pi.events.emit("herdr:blocked", { active: true, label: "Waiting for user response" });
-			let result: QuestionAnswer[] | null;
-			try {
-				result = await execCtx.ui.custom<QuestionAnswer[] | null>((tui, theme, keybindings, done) => {
+			const result = await withHerdrBlocked(pi, "Waiting for user response", () =>
+				execCtx.ui.custom<QuestionAnswer[] | null>((tui, theme, keybindings, done) => {
 					return new EscalateDialog(params.questions, tui, theme, keybindings, done);
-				});
-			} finally {
-				pi.events.emit("herdr:blocked", { active: false });
-			}
+				}),
+			);
 
 			if (!result) {
 				return {
