@@ -29,7 +29,7 @@ function execPi(handler: (args: string[]) => ExecResult, calls: string[][] = [])
 }
 
 describe("createAgentWorktree", () => {
-	it("branches from baseRef onto the agent-<id>/<name> branch and locks the worktree", async (t) => {
+	it("atomically branches from baseRef and locks the worktree", async (t) => {
 		const repoRoot = "/repo";
 		const repoName = `repo-agent-${process.pid}-${Date.now()}`;
 		const label = "agent-3f9a2c/worker";
@@ -37,27 +37,35 @@ describe("createAgentWorktree", () => {
 		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-3f9a2c", "worker");
 		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
 
-		const addArgs = ["-C", repoRoot, "worktree", "add", "-b", label, worktreeDir, baseRef];
-		const lockArgs = ["-C", repoRoot, "worktree", "lock", "--reason", "basecamp agent run", worktreeDir];
+		const addArgs = [
+			"-C",
+			repoRoot,
+			"worktree",
+			"add",
+			"--lock",
+			"--reason",
+			"basecamp agent run",
+			"-b",
+			label,
+			worktreeDir,
+			baseRef,
+		];
 		const calls: string[][] = [];
 		const pi = execPi((args) => {
 			if (argsEqual(args, ["-C", repoRoot, "worktree", "list", "--porcelain"])) {
 				return { code: 0, stdout: `worktree ${repoRoot}\nbranch refs/heads/main\n\n`, stderr: "" };
 			}
-			if (argsEqual(args, addArgs) || argsEqual(args, lockArgs)) return { code: 0, stdout: "", stderr: "" };
+			if (argsEqual(args, addArgs)) return { code: 0, stdout: "", stderr: "" };
 			throw new Error(`Unexpected git args: ${JSON.stringify(args)}`);
 		}, calls);
 
 		const result = await createAgentWorktree(pi, repoRoot, repoName, label, baseRef);
 
 		assert.deepEqual(result, { worktreeDir, label, branch: label, created: true });
-		assert.ok(
-			calls.some((a) => argsEqual(a, addArgs)),
-			"branches from baseRef",
-		);
-		assert.ok(
-			calls.some((a) => argsEqual(a, lockArgs)),
-			"locks after create",
+		assert.equal(calls.filter((args) => argsEqual(args, addArgs)).length, 1);
+		assert.equal(
+			calls.some((args) => args.includes("lock") && !args.includes("--lock")),
+			false,
 		);
 	});
 
@@ -68,31 +76,55 @@ describe("createAgentWorktree", () => {
 		await assert.rejects(() => createAgentWorktree(pi, "/repo", "repo", "bad label", "HEAD"), /Invalid worktree label/);
 	});
 
-	it("removes the worktree and branch if the lock fails, then rethrows", async (t) => {
+	it("does not clean unrelated state when git rolls back a failed add", async (t) => {
 		const repoRoot = "/repo";
-		const repoName = `repo-lf-${process.pid}-${Date.now()}`;
-		const label = "agent-deadbe/worker";
+		const repoName = `repo-clean-failure-${process.pid}-${Date.now()}`;
 		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
 
 		const calls: string[][] = [];
 		const pi = execPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: `worktree ${repoRoot}\n\n`, stderr: "" };
+			if (args.includes("add")) return { code: 1, stdout: "", stderr: "fatal: atomic add failed" };
+			throw new Error(`Unexpected git args: ${JSON.stringify(args)}`);
+		}, calls);
+
+		await assert.rejects(
+			() => createAgentWorktree(pi, repoRoot, repoName, "agent-cleanup/worker", "HEAD"),
+			/atomic add failed/,
+		);
+		assert.equal(
+			calls.some((args) => args.includes("remove") || args.includes("-D")),
+			false,
+		);
+	});
+
+	it("rolls back a registered partial worktree when atomic creation fails", async (t) => {
+		const repoRoot = "/repo";
+		const repoName = `repo-lf-${process.pid}-${Date.now()}`;
+		const label = "agent-deadbe/worker";
+		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-deadbe", "worker");
+		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+
+		let listCalls = 0;
+		const calls: string[][] = [];
+		const pi = execPi((args) => {
 			if (argsEqual(args, ["-C", repoRoot, "worktree", "list", "--porcelain"])) {
-				return { code: 0, stdout: `worktree ${repoRoot}\n\n`, stderr: "" };
+				listCalls++;
+				const partial = `worktree ${worktreeDir}\nbranch refs/heads/${label}\nlocked basecamp agent run\n\n`;
+				return { code: 0, stdout: listCalls === 1 ? `worktree ${repoRoot}\n\n` : partial, stderr: "" };
 			}
-			if (args.includes("lock")) {
-				return { code: 1, stdout: "", stderr: "fatal: some lock error" };
-			}
+			if (args.includes("add")) return { code: 1, stdout: "", stderr: "fatal: atomic add failed" };
 			return { code: 0, stdout: "", stderr: "" };
 		}, calls);
 
-		await assert.rejects(() => createAgentWorktree(pi, repoRoot, repoName, label, "HEAD"), /some lock error/);
+		await assert.rejects(() => createAgentWorktree(pi, repoRoot, repoName, label, "HEAD"), /atomic add failed/);
 		assert.ok(
-			calls.some((a) => a.includes("remove")),
-			"removes the worktree after a lock failure",
+			calls.some((args) => args.includes("remove")),
+			"removes the partial worktree",
 		);
 		assert.ok(
-			calls.some((a) => a.includes("-D")),
-			"deletes the branch after a lock failure",
+			calls.some((args) => args.includes("-D")),
+			"deletes the partial branch",
 		);
 	});
 });
@@ -124,6 +156,18 @@ describe("worktree lock/unlock/remove", () => {
 		assert.notEqual(removeIdx, -1, "removes");
 		assert.ok(unlockIdx < removeIdx, "unlock precedes remove");
 		assert.ok(calls[removeIdx]?.includes("--force"), "force remove");
+	});
+
+	it("can remove without unlocking first", async () => {
+		const calls: string[][] = [];
+		const pi = execPi(() => ({ code: 0, stdout: "", stderr: "" }), calls);
+		await removeWorktree(pi, "/repo", "/wt", { unlock: false });
+
+		assert.equal(
+			calls.some((args) => args.includes("unlock")),
+			false,
+		);
+		assert.ok(calls.some((args) => args.includes("remove")));
 	});
 
 	it("deleteBranch is idempotent when the branch is missing", async () => {

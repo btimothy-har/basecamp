@@ -20,6 +20,7 @@ export interface WorktreeSummary {
 interface GitWorktreeRecord {
 	path: string;
 	branch: string | null;
+	locked: boolean;
 }
 
 export function parseWorktreeList(output: string): GitWorktreeRecord[] {
@@ -34,10 +35,12 @@ export function parseWorktreeList(output: string): GitWorktreeRecord[] {
 		}
 		if (line.startsWith("worktree ")) {
 			if (current) records.push(current);
-			current = { path: line.slice("worktree ".length), branch: null };
+			current = { path: line.slice("worktree ".length), branch: null, locked: false };
 		} else if (current && line.startsWith("branch ")) {
 			const ref = line.slice("branch ".length);
 			current.branch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
+		} else if (current && (line === "locked" || line.startsWith("locked "))) {
+			current.locked = true;
 		}
 	}
 

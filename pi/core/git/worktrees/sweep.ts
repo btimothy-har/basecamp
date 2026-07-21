@@ -1,11 +1,10 @@
 /**
  * Session-start sweep of finished mutative-agent worktrees.
  *
- * A dispatched worker's worktree (`agent-<id>/<name>`) is reclaimed once its branch has been
- * integrated: when the branch is merged into a non-agent branch (the parent's worktree, main,
- * …), the work is preserved elsewhere, so the worktree + branch are safe to remove. A running
- * agent's branch is never merged, so it is never swept mid-run; an unmerged worktree is left
- * for the parent to integrate.
+ * A dispatched worker's residual worktree (`agent-<id>/<name>`) is reclaimed once its branch
+ * has been integrated into a non-agent branch. Locked worktrees are live and never touched.
+ * Dirty unlocked worktrees are preserved because removal is non-force; the branch is deleted
+ * only after the worktree removal succeeds.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -44,7 +43,7 @@ export async function sweepAgentWorktrees(pi: ExtensionAPI, repoRoot: string): P
 	const removed: string[] = [];
 	for (const record of agentWorktrees) {
 		const branch = record.branch;
-		if (!branch) continue;
+		if (!branch || record.locked) continue;
 
 		let merged = false;
 		for (const candidate of integrationBranches) {
@@ -56,12 +55,13 @@ export async function sweepAgentWorktrees(pi: ExtensionAPI, repoRoot: string): P
 		if (!merged) continue;
 
 		try {
-			await removeWorktree(pi, repoRoot, record.path, { force: true });
-			await deleteBranch(pi, repoRoot, branch);
-			removed.push(record.path);
+			await removeWorktree(pi, repoRoot, record.path, { unlock: false });
 		} catch {
-			// best-effort; leave it for the next sweep.
+			continue;
 		}
+
+		removed.push(record.path);
+		await deleteBranch(pi, repoRoot, branch).catch(() => {});
 	}
 
 	return { removed, kept: agentWorktrees.length - removed.length };
