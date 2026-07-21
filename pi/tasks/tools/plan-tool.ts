@@ -126,7 +126,12 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 
 			let reviewResult: "submit" | "decline" = "submit";
 			if (ctx.hasUI) {
-				reviewResult = await showReviewOverlay(draft, ctx);
+				pi.events.emit("herdr:blocked", { active: true, label: "Waiting for plan approval" });
+				try {
+					reviewResult = await showReviewOverlay(draft, ctx);
+				} finally {
+					pi.events.emit("herdr:blocked", { active: false });
+				}
 			}
 
 			if (reviewResult === "decline") {
