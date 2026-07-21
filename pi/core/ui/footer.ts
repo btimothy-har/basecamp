@@ -4,7 +4,7 @@
  * Three-line layout:
  *   Line 1: cwd | worktree | branch ... model
  *   Line 2: invoked skills ... context bar
- *   Line 3: extension statuses
+ *   Line 3: extension statuses ... pull request
  *
  * Skills are tracked by the skill tool itself (skill.ts). The footer
  * re-renders on `tool_result` events to pick up newly loaded skills.
@@ -12,8 +12,9 @@
 
 import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { getCapabilities, hyperlink, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode/index.ts";
+import type { PullRequestStatus } from "../git/pr-status.ts";
 import { getWorkspaceEffectiveCwd, getWorkspaceState, type WorkspaceState } from "../project/workspace/state.ts";
 import { getInvokedSkills } from "../skills/tracker.ts";
 import { getModeLabel } from "./mode.ts";
@@ -84,6 +85,45 @@ function layoutLine(left: string, right: string, width: number, fg: ThemeFg): st
 
 function joinSegments(parts: Array<string | null | undefined>, fg: ThemeFg): string {
 	return parts.filter((part): part is string => Boolean(part)).join(fg("dim", "  "));
+}
+
+function pullRequestStyle(pullRequest: PullRequestStatus): {
+	color: Parameters<ThemeFg>[0];
+	glyph: string;
+} {
+	if (pullRequest.state === "OPEN") {
+		return pullRequest.isDraft ? { color: "muted", glyph: "○" } : { color: "success", glyph: "●" };
+	}
+	if (pullRequest.state === "MERGED") return { color: "accent", glyph: "◆" };
+	return { color: "error", glyph: "×" };
+}
+
+function renderPullRequestSegment(fg: ThemeFg, pullRequest: PullRequestStatus | null, maxWidth: number): string {
+	if (!pullRequest || maxWidth <= 0) return "";
+	const style = pullRequestStyle(pullRequest);
+	const candidates = [
+		`${style.glyph} PR #${pullRequest.number}`,
+		`PR #${pullRequest.number}`,
+		`#${pullRequest.number}`,
+	];
+	const label = candidates.find((candidate) => visibleWidth(candidate) <= maxWidth);
+	if (!label) return "";
+
+	const text = fg(style.color, label);
+	return getCapabilities().hyperlinks ? hyperlink(text, pullRequest.url) : text;
+}
+
+function layoutStatusLine(left: string, pullRequest: PullRequestStatus | null, width: number, fg: ThemeFg): string {
+	if (width <= 0) return "";
+	const right = renderPullRequestSegment(fg, pullRequest, width);
+	if (!right) return truncateToWidth(left, width, fg("dim", "…"));
+
+	const rightWidth = visibleWidth(right);
+	if (!left || rightWidth + 2 >= width) return " ".repeat(width - rightWidth) + right;
+
+	const availableLeft = width - rightWidth - 2;
+	const truncatedLeft = truncateToWidth(left, availableLeft, fg("dim", "…"));
+	return truncatedLeft + " ".repeat(width - visibleWidth(truncatedLeft) - rightWidth) + right;
 }
 
 function layoutLocationLine(location: LocationLineParts, right: string, width: number, fg: ThemeFg): string {
@@ -165,7 +205,9 @@ export function registerFooter(pi: ExtensionAPI): void {
 						.sort(([a], [b]) => a.localeCompare(b))
 						.map(([, text]) => text.replace(/[\r\n\t]/g, " ").trim())
 						.filter((text) => text.length > 0);
-					lines.push(truncateToWidth(line3Parts.join(fg("dim", "  ")), width, fg("dim", "…")));
+					lines.push(
+						layoutStatusLine(line3Parts.join(fg("dim", "  ")), footerRepositoryStatus.getPullRequest(), width, fg),
+					);
 
 					return lines;
 				},
