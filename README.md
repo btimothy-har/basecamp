@@ -287,33 +287,45 @@ docker compose version
 
 The wrapper sends ordinary `docker` operations to Podman and points Docker Compose at the running Podman machine's API socket. `podman-compose` is not compatible with Harbor because it does not accept Compose's `--project-directory` option.
 
-From the Basecamp repository root, run one task and one attempt:
+From the Basecamp repository root, export the scoped provider credentials referenced by your Pi configuration, then use the Make targets:
 
 ```bash
 export OPENAI_API_KEY='<scoped-key>'
-export PI_VERSION='0.80.7'
-export PI_MODELS_FILE="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}/models.json"
-export BASECAMP_REF="$(git rev-parse HEAD)"
-export BASECAMP_EVAL_JOBS="$HOME/evals/basecamp-terminal-bench/jobs"
+export PI_PROXY_API_KEY='<scoped-proxy-key>'
 
-mkdir -p "$BASECAMP_EVAL_JOBS"
-
-PYTHONPATH="$PWD" harbor run \
-  --dataset terminal-bench/terminal-bench-2-1 \
-  --agent evals.terminal_bench.basecamp_pi:BasecampPiSingle \
-  --model openai/gpt-5.6-sol \
-  --agent-kwarg "version=$PI_VERSION" \
-  --agent-kwarg "basecamp_repo=$PWD" \
-  --agent-kwarg "basecamp_ref=$BASECAMP_REF" \
-  --agent-kwarg "pi_models_file=$PI_MODELS_FILE" \
-  --agent-kwarg thinking=xhigh \
-  --include-task-name terminal-bench/cancel-async-tasks \
-  --n-attempts 1 \
-  --n-concurrent 1 \
-  --jobs-dir "$BASECAMP_EVAL_JOBS"
+make eval-dry       # print the resolved tasks and Harbor command
+make eval-install   # install/config/auth smoke without model completions
+make eval           # run the selected tasks (paid model calls)
 ```
 
-Change the provider key and `--model` together when using another provider. Harbor passes the provider credential into the trial container; do not use a broad personal or organization key. Add `--install-only` to the command for a no-completion setup/auth smoke: the adapter installs the runtime and requires `pi --list-models` to contain the exact configured provider/model before Harbor removes the trial container.
+The default `podman-arm64` preset runs the three native-arm64 tasks whose 2 GiB limits fit the local Podman machine:
+
+- `terminal-bench/hf-model-inference`
+- `terminal-bench/mteb-retrieve`
+- `terminal-bench/pytorch-model-recovery`
+
+Useful overrides:
+
+```bash
+# Include the fourth native-arm64 task (8 GiB limit)
+make eval EVAL_SELECTION=podman-arm64-all
+
+# Choose arbitrary tasks
+make eval EVAL_SELECTION="hf-model-inference pytorch-model-recovery"
+
+# Repeat tasks and control parallelism
+make eval EVAL_ATTEMPTS=3 EVAL_CONCURRENCY=2
+
+# Change model/runtime settings
+make eval EVAL_MODEL=shopify/fireworks:accounts/fireworks/models/glm-5p2 \
+  EVAL_THINKING=high EVAL_PI_VERSION=0.80.7
+
+# Use Docker, omit models.json, or change the result root
+make eval EVAL_ENGINE=docker EVAL_EXTRA=--no-models \
+  EVAL_JOBS_DIR="$HOME/evals/other-terminal-bench-jobs"
+```
+
+`make eval` is the explicit paid-run action. `make eval-dry` permits a dirty worktree because it does not launch Harbor; executable runs require a clean worktree so the printed Git commit identifies the exact Basecamp source. Change the provider key and `EVAL_MODEL` together when using another provider. Harbor passes provider credentials into each trial container; do not use a broad personal or organization key. `make eval-install` requires `pi --list-models` to contain the exact configured provider/model before Harbor removes each trial container.
 
 `pi_models_file` is optional. When present, the adapter snapshots and digest-verifies that `models.json`, copies it to the trial user's Pi config with mode `0600`, and forwards host environment variables referenced by provider `apiKey` or header interpolation. Literal API keys and credential commands are rejected. `auth.json`, `settings.json`, and secret values are never copied into metadata or the Basecamp source archive.
 
@@ -321,7 +333,7 @@ The adapter installs the exact Pi version and a `git archive` of `package.json`,
 
 This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, bash reviewer, and structured file tools. It disables the Python hub, dispatched subagents, companion, browser, workstreams, code-review UI, and interactive `plan()` flow. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
 
-Harbor writes each job and trial beneath `$BASECAMP_EVAL_JOBS`. The useful per-trial files are:
+Harbor writes each job and trial beneath `EVAL_JOBS_DIR` (default: `~/evals/basecamp-terminal-bench/jobs`). The useful per-trial files are:
 
 - `result.json` — reward, timing, and exception data
 - `agent/pi.txt` — Pi's filtered JSON event stream
@@ -332,10 +344,10 @@ Harbor writes each job and trial beneath `$BASECAMP_EVAL_JOBS`. The useful per-t
 Browse completed jobs with:
 
 ```bash
-harbor view "$BASECAMP_EVAL_JOBS"
+harbor view "$HOME/evals/basecamp-terminal-bench/jobs"
 ```
 
-Docker and Podman-on-macOS through the included wrapper are supported; the Podman path is validated with a Terminal-Bench 2.1 oracle trial. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
+Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
 
 ## Package Layout
 
