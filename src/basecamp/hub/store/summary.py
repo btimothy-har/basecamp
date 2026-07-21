@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
-import json
-import os
+import sqlite3
 from typing import Any
 
 from ._sqlite import load_json_column
-from .text import _agent_id_short, _display_text, _is_valid_agent_id, _message_text, _preview_text
+from .text import _agent_id_short, _display_text, _message_text, _preview_text
 
 RUN_SUMMARY_DEFAULT_LIMIT = 5
 RUN_SUMMARY_MAX_LIMIT = 100
-RUN_SUMMARY_TASK_PLAN_LIMIT = 20
 RUN_MESSAGES_DEFAULT_LIMIT = 3
 RUN_MESSAGES_MAX_LIMIT = 3
 RUN_SUMMARY_ACTIVITY_LIMIT = 10
 RUN_SUMMARY_SKILLS_LIMIT = 20
-RUN_SUMMARY_TASK_LOG_MAX_BYTES = 256 * 1024
+RUN_SUMMARY_SKILL_EVENT_LIMIT = 1000
 _ACTIVITY_KINDS = {
     "tool_call",
     "tool_result",
@@ -33,102 +31,28 @@ _ACTIVITY_PAYLOAD_KEYS = ("category", "label", "snippet", "toolName", "isError",
 class SummaryMixin:
     """Sanitized run summary, activity, skills, and message projections."""
 
-    def _read_task_cycles(self, agent_id: str) -> list[dict[str, Any]]:
-        """Safely read task cycles for an internal agent id."""
-
-        if not _is_valid_agent_id(agent_id):
-            return []
-
-        task_path = self.task_dir / f"{agent_id}.json"
-        try:
-            root = self.task_dir.resolve(strict=False)
-            candidate = task_path.resolve(strict=False)
-            if root != candidate.parent:
-                return []
-
-            metadata = os.lstat(task_path)
-            if not os.path.isfile(task_path) or os.path.islink(task_path):
-                return []
-            if metadata.st_size > RUN_SUMMARY_TASK_LOG_MAX_BYTES:
-                return []
-
-            with task_path.open("r", encoding="utf-8") as file:
-                parsed = json.load(file)
-        except (OSError, json.JSONDecodeError):
-            return []
-
-        if isinstance(parsed, dict):
-            parsed = parsed.get("cycles")
-        if not isinstance(parsed, list):
-            return []
-        return [cycle for cycle in parsed if isinstance(cycle, dict)]
-
-    def _project_task_log(self, agent_id: str) -> dict[str, Any] | None:
-        cycles = self._read_task_cycles(agent_id)
-        active = next((cycle for cycle in cycles if cycle.get("active") is True), None)
-        if active is None:
-            return None
-
-        raw_tasks = active.get("tasks")
-        if not isinstance(raw_tasks, list):
-            return None
-
-        tasks: list[dict[str, Any]] = []
-        current_task: dict[str, Any] | None = None
-        deleted = 0
-        completed = 0
-        total = 0
-        for index, raw_task in enumerate(raw_tasks):
-            if not isinstance(raw_task, dict):
-                continue
-            status = raw_task.get("status")
-            if status not in {"pending", "active", "completed", "deleted"}:
-                continue
-            if status == "deleted":
-                deleted += 1
-                continue
-
-            label = _display_text(raw_task.get("label"))
-            if label is None:
-                continue
-            if status == "completed":
-                completed += 1
-            total += 1
-            task_row = {"index": index, "label": label, "status": status}
-            if len(tasks) < RUN_SUMMARY_TASK_PLAN_LIMIT:
-                tasks.append(task_row)
-            if status == "active" and current_task is None:
-                current_task = {
-                    **task_row,
-                    "description": _display_text(raw_task.get("description")),
-                }
-
-        return {
-            "goal": _display_text(active.get("goal")),
-            "progress": {
-                "completed": completed,
-                "deleted": deleted,
-                "total": total,
-            },
-            "task_plan": tasks,
-            "current_task": current_task,
-        }
-
-    def _project_recent_activity(self, run_id: str | None) -> list[dict[str, Any]]:
+    def _project_recent_activity(
+        self,
+        run_id: str | None,
+        *,
+        connection: sqlite3.Connection | None = None,
+    ) -> list[dict[str, Any]]:
         if not run_id:
             return []
+        if connection is None:
+            with self._reading() as owned_connection:
+                return self._project_recent_activity(run_id, connection=owned_connection)
 
-        with self._reading() as connection:
-            rows = connection.execute(
-                """
-                SELECT seq, kind, payload_json, ts
-                FROM run_events
-                WHERE run_id = ?
-                ORDER BY seq DESC
-                LIMIT ?
-                """,
-                (run_id, RUN_SUMMARY_ACTIVITY_LIMIT),
-            ).fetchall()
+        rows = connection.execute(
+            """
+            SELECT seq, kind, payload_json, ts
+            FROM run_events
+            WHERE run_id = ?
+            ORDER BY seq DESC
+            LIMIT ?
+            """,
+            (run_id, RUN_SUMMARY_ACTIVITY_LIMIT),
+        ).fetchall()
 
         activity: list[dict[str, Any]] = []
         for row in reversed(rows):
@@ -154,24 +78,32 @@ class SummaryMixin:
             activity.append({key: value for key, value in event.items() if value is not None})
         return activity
 
-    def _project_skills(self, run_id: str | None) -> list[dict[str, Any]]:
+    def _project_skills(
+        self,
+        run_id: str | None,
+        *,
+        connection: sqlite3.Connection | None = None,
+    ) -> list[dict[str, Any]]:
         if not run_id:
             return []
+        if connection is None:
+            with self._reading() as owned_connection:
+                return self._project_skills(run_id, connection=owned_connection)
 
-        with self._reading() as connection:
-            rows = connection.execute(
-                """
-                SELECT seq, payload_json, ts
-                FROM run_events
-                WHERE run_id = ?
-                  AND kind = 'tool_call'
-                ORDER BY seq ASC
-                """,
-                (run_id,),
-            ).fetchall()
+        rows = connection.execute(
+            """
+            SELECT seq, payload_json, ts
+            FROM run_events
+            WHERE run_id = ?
+              AND kind = 'tool_call'
+            ORDER BY seq DESC
+            LIMIT ?
+            """,
+            (run_id, RUN_SUMMARY_SKILL_EVENT_LIMIT),
+        ).fetchall()
 
         skills: dict[str, dict[str, Any]] = {}
-        for row in rows:
+        for row in reversed(rows):
             payload: Any = load_json_column(row["payload_json"], {})
             if not isinstance(payload, dict) or payload.get("toolName") != "skill":
                 continue

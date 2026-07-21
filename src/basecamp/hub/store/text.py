@@ -54,6 +54,10 @@ def _is_valid_agent_id(agent_id: str) -> bool:
     return bool(_AGENT_ID_PATTERN.fullmatch(agent_id))
 
 
+def _is_valid_agent_handle(agent_handle: str) -> bool:
+    return bool(_AGENT_ID_PATTERN.fullmatch(agent_handle))
+
+
 def _agent_id_short(agent_id: Any) -> str | None:
     if not isinstance(agent_id, str):
         return None

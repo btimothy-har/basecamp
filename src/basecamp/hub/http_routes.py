@@ -8,13 +8,15 @@ the WebSocket coordinator stays in ``app.py``.
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 
 from .frames import PROTOCOL_VERSION
 from .registry import Registry
 from .store import Store
+
+PublicAgentHandle = Annotated[str, Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")]
 
 
 def register_http_routes(app: FastAPI, *, store: Store, registry: Registry) -> None:
@@ -33,6 +35,18 @@ def register_http_routes(app: FastAPI, *, store: Store, registry: Registry) -> N
     @app.get("/runs/messages")
     async def runs_messages(root_id: str, agent_handle: str, limit: int = 3) -> dict[str, Any]:
         return await asyncio.to_thread(store.get_run_messages, root_id, agent_handle=agent_handle, limit=limit)
+
+    @app.get("/dashboard/snapshot")
+    async def dashboard_snapshot() -> dict[str, Any]:
+        return await asyncio.to_thread(store.get_dashboard_snapshot, live_node_ids=registry.live_node_ids())
+
+    @app.get("/dashboard/messages")
+    async def dashboard_messages(root_handle: PublicAgentHandle, agent_handle: PublicAgentHandle) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            store.get_dashboard_messages,
+            root_handle=root_handle,
+            agent_handle=agent_handle,
+        )
 
     @app.get("/workstreams")
     async def list_workstreams(
