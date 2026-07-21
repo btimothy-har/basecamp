@@ -18,8 +18,8 @@ from rich.text import Text
 
 from basecamp.companion.diff import (
     COMPACT_CONTEXT_LINES,
+    FULL_CONTEXT_LINES,
     MAX_DIFF_BYTES,
-    MAX_DIFF_LINES,
     DiffDensity,
     DiffLayout,
     DiffScope,
@@ -81,7 +81,7 @@ def render_file_diff(
         return None
 
     refs = _git_diff_refs(base_commit, file, scope)
-    context_lines = COMPACT_CONTEXT_LINES if density == "compact" else MAX_DIFF_LINES
+    context_lines = COMPACT_CONTEXT_LINES if density == "compact" else FULL_CONTEXT_LINES
     try:
         git = subprocess.run(  # noqa: S603
             [

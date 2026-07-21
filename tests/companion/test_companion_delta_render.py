@@ -10,7 +10,7 @@ from rich.text import Text
 
 from basecamp.companion import delta_render
 from basecamp.companion.delta_render import delta_path, render_file_diff
-from basecamp.companion.diff import COMPACT_CONTEXT_LINES, MAX_DIFF_LINES, DiffDensity, DiffLayout, FileStatus
+from basecamp.companion.diff import COMPACT_CONTEXT_LINES, FULL_CONTEXT_LINES, DiffDensity, DiffLayout, FileStatus
 
 
 def _run(cwd: Path, *args: str) -> None:
@@ -92,8 +92,8 @@ class TestRenderFileDiff:
     @pytest.mark.parametrize(
         ("density", "layout", "context_lines"),
         [
-            ("full", "stacked", MAX_DIFF_LINES),
-            ("full", "split", MAX_DIFF_LINES),
+            ("full", "stacked", FULL_CONTEXT_LINES),
+            ("full", "split", FULL_CONTEXT_LINES),
             ("compact", "stacked", COMPACT_CONTEXT_LINES),
             ("compact", "split", COMPACT_CONTEXT_LINES),
         ],

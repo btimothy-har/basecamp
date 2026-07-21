@@ -16,6 +16,7 @@ type DiffLayout = Literal["stacked", "split"]
 
 MAX_DIFF_LINES = 2000
 MAX_DIFF_BYTES = 512 * 1024
+FULL_CONTEXT_LINES = 2000
 COMPACT_CONTEXT_LINES = 3
 DIFF_SCOPES: tuple[DiffScope, ...] = ("all", "uncommitted", "committed")
 DIFF_DENSITIES: tuple[DiffDensity, ...] = ("full", "compact")
