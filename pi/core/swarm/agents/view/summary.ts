@@ -49,10 +49,36 @@ export interface RunSummaryAgent {
 	recent_activity?: RunSummaryActivity[];
 }
 
+export interface RunSummaryCounts {
+	pending: number;
+	running: number;
+	completed: number;
+	failed: number;
+	total: number;
+}
+
 export interface RunSummaryResult {
 	root_id?: string | null;
 	session_active?: boolean;
+	counts?: RunSummaryCounts;
 	agents: RunSummaryAgent[];
+}
+
+function parseRunSummaryCount(value: unknown): number | null {
+	const count = optionalNumber(value);
+	return count !== null && Number.isInteger(count) && count >= 0 ? count : null;
+}
+
+function parseRunSummaryCounts(value: unknown): RunSummaryCounts | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const record = value as Record<string, unknown>;
+	const pending = parseRunSummaryCount(record.pending);
+	const running = parseRunSummaryCount(record.running);
+	const completed = parseRunSummaryCount(record.completed);
+	const failed = parseRunSummaryCount(record.failed);
+	const total = parseRunSummaryCount(record.total);
+	if (pending === null || running === null || completed === null || failed === null || total === null) return undefined;
+	return { pending, running, completed, failed, total };
 }
 
 function parseRunSummaryActivity(value: unknown): RunSummaryActivity | null {
@@ -144,6 +170,7 @@ export function parseRunSummaryResponse(parsed: unknown): RunSummaryResult | nul
 	return {
 		root_id: optionalString(record.root_id),
 		session_active: typeof record.session_active === "boolean" ? record.session_active : undefined,
+		counts: parseRunSummaryCounts(record.counts),
 		agents: rawAgents.map(parseRunSummaryAgent).filter((agent): agent is RunSummaryAgent => agent !== null),
 	};
 }

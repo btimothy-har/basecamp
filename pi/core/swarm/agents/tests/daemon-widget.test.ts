@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { RunSummaryAgent, RunSummaryResult } from "../client.ts";
+import { observeRunSummary } from "../summary-observer.ts";
 import {
 	ACTIVE_AGENTS_WIDGET_ID,
 	activeRunningAgents,
@@ -151,6 +152,7 @@ describe("active agents widget lifecycle", () => {
 		const widgetCalls: WidgetSetCall[] = [];
 		const ctx = widgetContext(widgetCalls);
 		const timers: Array<() => void> = [];
+		let shouldThrow = false;
 		let summary: RunSummaryResult | null = {
 			agents: [
 				runningAgent({ agent_handle: "live-1" }),
@@ -162,6 +164,8 @@ describe("active agents widget lifecycle", () => {
 			],
 		};
 
+		const observed: Array<RunSummaryResult | null> = [];
+		const stopObserving = observeRunSummary((value) => observed.push(value));
 		const controller = startActiveAgentsWidget(ctx, {
 			rootId: "root-1",
 			socketPath: "/tmp/daemon.sock",
@@ -171,6 +175,7 @@ describe("active agents widget lifecycle", () => {
 				assert.equal(socketPath, "/tmp/daemon.sock");
 				assert.equal(rootId, "root-1");
 				assert.equal(limit, 50);
+				if (shouldThrow) throw new Error("summary unavailable");
 				return summary;
 			},
 			setIntervalFn: (handler) => {
@@ -181,6 +186,7 @@ describe("active agents widget lifecycle", () => {
 		});
 
 		await controller.refresh();
+		assert.equal(observed.at(-1), summary);
 		assert.equal(widgetCalls.at(-1)?.key, ACTIVE_AGENTS_WIDGET_ID);
 		assert.equal(typeof widgetCalls.at(-1)?.value, "function");
 		const factory = widgetCalls.at(-1)?.value as (
@@ -194,6 +200,7 @@ describe("active agents widget lifecycle", () => {
 
 		summary = null;
 		await controller.refresh();
+		assert.equal(observed.at(-1), null);
 		assert.equal(widgetCalls.at(-1)?.value, undefined);
 
 		summary = { agents: [runningAgent({ agent_handle: "timer" })] };
@@ -202,7 +209,13 @@ describe("active agents widget lifecycle", () => {
 		await Promise.resolve();
 		assert.equal(typeof widgetCalls.at(-1)?.value, "function");
 
+		shouldThrow = true;
+		await controller.refresh();
+		assert.equal(observed.at(-1), null);
+
 		controller.stop();
+		stopObserving();
+		assert.equal(observed.at(-1), null);
 		assert.equal(widgetCalls.at(-1)?.value, undefined);
 	});
 });
