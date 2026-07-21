@@ -261,12 +261,27 @@ basecamp ships no default — a repo with no environment is a clean no-op. When 
 
 For anything beyond a one-liner, point the command at a script you maintain outside the repo, e.g. `"bash ~/.pi/basecamp/worktree-setup.sh"`.
 
+## Companion TUI
+
+Interactive primary sessions open `basecamp companion tui` in a Herdr or tmux side pane when available. The TUI starts in **Diff** and cycles through **Diff → Files → Swarm** with `m`.
+
+Diff controls are independent:
+
+| Key | Control | Values |
+|-----|---------|--------|
+| `c` | Context density | `full` (all context within display limits) / `compact` (three context lines around changes) |
+| `l` | Git layout | `split` (side-by-side) / `stacked` (unified) |
+| `d` | Git scope | `all` / `uncommitted` / `committed` |
+| `←` / `→` | Changed file | Previous / next |
+
+Git-delta powers both layouts and inline word-level highlighting. If it is unexpectedly absent from the pane runtime, Companion falls back to its built-in stacked line renderer. Display choices are local to the running TUI and are not persisted.
+
 ## Package Layout
 
 basecamp is organized by the artifacts it ships:
 
 - `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
-- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `swarm` (daemon), and `companion` (TUI) subpackages
+- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `hub` (daemon), and `companion` (TUI) subpackages
 
 ## License
 

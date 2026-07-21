@@ -1,1 +1,1 @@
-"""Companion dashboard package for basecamp CLI."""
+"""Companion TUI package for the Basecamp CLI."""

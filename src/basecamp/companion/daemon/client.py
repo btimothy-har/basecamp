@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import json
-import logging
 import socket
 from http.client import HTTPConnection, HTTPException
 from pathlib import Path
-from urllib.parse import quote, urlencode
+from urllib.parse import urlencode
 
-from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.daemon.models import (
     DaemonAgentMessage,
     DaemonAgentMessages,
@@ -38,8 +36,6 @@ DEFAULT_DAEMON_SOCKET_PATH = DAEMON_SOCK
 DEFAULT_DAEMON_MESSAGES_LIMIT = 3
 DEFAULT_DAEMON_SUMMARY_LIMIT = 5
 DEFAULT_DAEMON_TIMEOUT_SECONDS = 0.5
-
-logger = logging.getLogger(__name__)
 
 
 class UnixHTTPConnection(HTTPConnection):
@@ -121,32 +117,6 @@ class DaemonSummarySource:
             return _parse_payload(json.loads(body.decode("utf-8")))
         except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError):
             return DaemonSummaryError(error="daemon returned an invalid summary response")
-
-    def poll_analysis(self, session_id: str) -> CompanionAnalysis | None:
-        """Fetch the daemon's stored analysis for a session; None if absent/unreachable.
-
-        Best-effort: any non-200 (e.g. 404 when no analysis exists yet), a daemon-down
-        socket error, or an invalid body yields ``None`` and the dashboard shows "—".
-        """
-
-        if not isinstance(session_id, str):
-            return None
-
-        try:
-            status, body = self._get(f"/analysis/{quote(session_id, safe='')}")
-        except (OSError, HTTPException):
-            return None  # daemon down / unreachable — expected, stay quiet
-
-        if status != 200:
-            return None  # e.g. 404 before the first analysis exists
-
-        try:
-            return CompanionAnalysis.model_validate(json.loads(body.decode("utf-8")))
-        except (json.JSONDecodeError, UnicodeDecodeError, TypeError, ValueError) as error:
-            # A 200 that won't parse means the daemon and companion analysis schemas drifted;
-            # surface it (once, at warning) instead of silently blanking the panel forever.
-            logger.warning("daemon /analysis returned an unparseable payload: %s", error)
-            return None
 
     def poll_messages(
         self,

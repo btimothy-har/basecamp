@@ -1,4 +1,4 @@
-"""Textual app shell for the basecamp companion dashboard."""
+"""Textual app shell for the Basecamp companion TUI."""
 
 from __future__ import annotations
 
@@ -11,7 +11,6 @@ from textual.containers import Horizontal
 from textual.screen import Screen
 from textual.widgets import ContentSwitcher, Footer, Static
 
-from basecamp.companion.analysis import CompanionAnalysis
 from basecamp.companion.daemon import (
     DaemonAgentMessages,
     DaemonSummary,
@@ -19,8 +18,12 @@ from basecamp.companion.daemon import (
 )
 from basecamp.companion.delta_render import render_file_diff
 from basecamp.companion.diff import (
-    DIFF_MODES,
-    DiffMode,
+    DIFF_DENSITIES,
+    DIFF_LAYOUTS,
+    DIFF_SCOPES,
+    DiffDensity,
+    DiffLayout,
+    DiffScope,
     FileStatus,
     collapse_unchanged,
     collect_changes,
@@ -29,14 +32,8 @@ from basecamp.companion.diff import (
     make_git_runner,
     resolve_browse_roots,
 )
-from basecamp.companion.poll import (
-    apply_effective_cwd,
-    poll_daemon_analysis,
-    poll_daemon_messages,
-    poll_daemon_summary,
-)
+from basecamp.companion.poll import apply_effective_cwd, poll_daemon_messages, poll_daemon_summary
 from basecamp.companion.snapshot import CompanionSnapshot, load_snapshot
-from basecamp.companion.ui.dashboard import DashboardBody
 from basecamp.companion.ui.diff import DiffBody, DiffView, FileList
 from basecamp.companion.ui.files import FileBrowser
 from basecamp.companion.ui.modes import next_body_mode
@@ -45,7 +42,7 @@ from basecamp.companion.ui.workspace import WorkspacePanel, _MenuOrderedScreen
 
 
 class CompanionApp(App[None]):
-    """Companion dashboard app."""
+    """Live session companion."""
 
     BINDINGS = [Binding("q", "quit", "Quit")]
 
@@ -98,38 +95,6 @@ class CompanionApp(App[None]):
     #files-body {
         height: 1fr;
         layout: horizontal;
-    }
-
-    #dashboard-body {
-        layout: vertical;
-        height: 1fr;
-        padding: 0 1;
-    }
-
-    .dashboard-box {
-        border: round $accent;
-        padding: 0 1;
-    }
-
-    #dashboard-monitor {
-        height: 1fr;
-        width: 100%;
-        margin-bottom: 1;
-    }
-
-    #dashboard-bottom {
-        height: 1fr;
-    }
-
-    #dashboard-capture {
-        width: 1fr;
-        height: 1fr;
-        margin-right: 1;
-    }
-
-    #dashboard-checkpoints {
-        width: 1fr;
-        height: 1fr;
     }
 
     #swarm-body {
@@ -204,20 +169,20 @@ class CompanionApp(App[None]):
         self._snapshot: CompanionSnapshot | None = None
         self._base_commit: str | None = None
         self._files: list[FileStatus] = []
-        self._compact = False
-        self._diff_mode: DiffMode = "all"
+        self._diff_scope: DiffScope = "all"
+        self._diff_density: DiffDensity = "full"
+        self._diff_layout: DiffLayout = "split"
 
     def compose(self) -> ComposeResult:
-        """Compose dashboard widgets."""
+        """Compose companion widgets."""
 
         yield WorkspacePanel(id="workspace-panel")
         yield ContentSwitcher(
             DiffBody(id="diff-body"),
             FileBrowser(resolve_browse_roots(self._git, self.cwd, self.scratch_dir), id="files-body"),
-            DashboardBody(id="dashboard-body"),
             SwarmBody(id="swarm-body"),
             id="body",
-            initial="dashboard-body",
+            initial="diff-body",
         )
         with Horizontal(id="session-bar"):
             yield Static(id="session-bar-mode")
@@ -232,12 +197,10 @@ class CompanionApp(App[None]):
         self._refresh()
         self._update_mode_indicator()
         self.set_interval(1.0, self._refresh)
-        self.query_one("#dashboard-body", DashboardBody).focus()
+        self.query_one("#diff-view", DiffView).focus()
 
     def _set_diff_title(self) -> None:
-        parts = ["Diff", self._diff_mode]
-        if self._compact:
-            parts.append("compact")
+        parts = ["Diff", self._diff_scope, self._diff_density, self._diff_layout]
         self.query_one("#diff-view", DiffView).border_title = " · ".join(parts)
 
     def _update_session_bar(self) -> None:
@@ -249,7 +212,6 @@ class CompanionApp(App[None]):
     def _update_mode_indicator(self) -> None:
         current = self.query_one("#body", ContentSwitcher).current
         labels = {
-            "dashboard-body": "Dashboard",
             "diff-body": "Diff",
             "files-body": "Files",
             "swarm-body": "Swarm",
@@ -266,18 +228,27 @@ class CompanionApp(App[None]):
 
         self.query_one("#file-list", FileList).select_next()
 
-    def action_toggle_compact(self) -> None:
-        """Toggle compact unchanged-line collapsing for the active diff."""
+    def action_toggle_diff_density(self) -> None:
+        """Toggle full or compact context for the active diff."""
 
-        self._compact = not self._compact
+        index = DIFF_DENSITIES.index(self._diff_density)
+        self._diff_density = DIFF_DENSITIES[(index + 1) % len(DIFF_DENSITIES)]
         self._set_diff_title()
         self._update_selected_file_diff()
 
-    def action_cycle_diff_mode(self) -> None:
+    def action_toggle_diff_layout(self) -> None:
+        """Toggle stacked or split rendering for the active diff."""
+
+        index = DIFF_LAYOUTS.index(self._diff_layout)
+        self._diff_layout = DIFF_LAYOUTS[(index + 1) % len(DIFF_LAYOUTS)]
+        self._set_diff_title()
+        self._update_selected_file_diff()
+
+    def action_cycle_diff_scope(self) -> None:
         """Cycle the diff scope between all, uncommitted, and committed."""
 
-        index = DIFF_MODES.index(self._diff_mode)
-        self._diff_mode = DIFF_MODES[(index + 1) % len(DIFF_MODES)]
+        index = DIFF_SCOPES.index(self._diff_scope)
+        self._diff_scope = DIFF_SCOPES[(index + 1) % len(DIFF_SCOPES)]
         self._set_diff_title()
         self._refresh()
 
@@ -293,8 +264,6 @@ class CompanionApp(App[None]):
             self.query_one("#files-body", FileBrowser).focus_tree()
         elif switcher.current == "swarm-body":
             self.query_one("#swarm-body", SwarmBody).focus()
-        else:
-            self.query_one("#dashboard-body", DashboardBody).focus()
 
         self._update_mode_indicator()
 
@@ -328,13 +297,13 @@ class CompanionApp(App[None]):
                 base_commit=self._base_commit,
                 file=selected_file,
                 cwd=self.cwd,
-                mode=self._diff_mode,
+                scope=self._diff_scope,
             )
         except Exception:
             diff_view.update_diff(file_path=selected_file.path, status_message="Unable to load diff", diff_lines=[])
             return
 
-        if self._compact and not status_message and diff_lines:
+        if self._diff_density == "compact" and not status_message and diff_lines:
             diff_lines = collapse_unchanged(diff_lines)
 
         delta_factory = None
@@ -345,7 +314,9 @@ class CompanionApp(App[None]):
                     cwd=self.cwd,
                     base_commit=self._base_commit,
                     file=_file,
-                    mode=self._diff_mode,
+                    scope=self._diff_scope,
+                    density=self._diff_density,
+                    layout=self._diff_layout,
                     width=width,
                 )
 
@@ -353,6 +324,7 @@ class CompanionApp(App[None]):
             file_path=selected_file.path,
             status_message=status_message,
             diff_lines=diff_lines,
+            render_key=(self._diff_density, self._diff_layout),
             delta_factory=delta_factory,
         )
 
@@ -385,12 +357,9 @@ class CompanionApp(App[None]):
 
         cwd_changed = snapshot_changed and self._snapshot is not None and self._apply_effective_cwd(self._snapshot)
 
-        dashboard_body = self.query_one("#dashboard-body", DashboardBody)
         swarm_body = self.query_one("#swarm-body", SwarmBody)
 
         if self._snapshot is not None:
-            dashboard_body.update(self._poll_daemon_analysis(self._snapshot.session_id))
-
             swarm_body.update_daemon(self._poll_daemon_summary(self._snapshot.session_id))
             agent_handle = swarm_body.selected_agent_handle()
             if agent_handle is None:
@@ -402,7 +371,7 @@ class CompanionApp(App[None]):
             swarm_body.update_agent_messages(None)
 
         try:
-            base_commit, files = collect_changes(self._git, self._diff_mode)
+            base_commit, files = collect_changes(self._git, self._diff_scope)
         except Exception:
             base_commit, files = None, []
 
@@ -419,9 +388,6 @@ class CompanionApp(App[None]):
 
         self._update_selected_file_diff()
 
-    def _poll_daemon_analysis(self, session_id: str) -> CompanionAnalysis | None:
-        return poll_daemon_analysis(self, session_id)
-
     def _poll_daemon_summary(self, root_id: str) -> DaemonSummary:
         return poll_daemon_summary(self, root_id)
 
@@ -430,7 +396,7 @@ class CompanionApp(App[None]):
 
 
 def run_companion(snapshot_path: Path, cwd: Path, scratch_dir: Path | None = None) -> None:
-    """Run the companion dashboard app."""
+    """Run the companion TUI."""
 
     app = CompanionApp(snapshot_path=snapshot_path, cwd=cwd, scratch_dir=scratch_dir)
     app.run()

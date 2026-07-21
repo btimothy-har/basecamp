@@ -78,8 +78,8 @@ def companion() -> None:
     type=click.Path(path_type=Path),
     help="Path to the basecamp scratch directory.",
 )
-def dashboard(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
-    """Live session companion dashboard (runs in a tmux pane)."""
+def tui(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
+    """Live session companion TUI (runs in a side pane)."""
     run_companion(snapshot_path, cwd, scratch_dir)
 
 

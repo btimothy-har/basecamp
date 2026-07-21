@@ -11,13 +11,12 @@ import { resolveDaemonPaths } from "./paths.ts";
 import { ensureDaemon } from "./spawn.ts";
 import { getConnectListeners, getHubConnectionState, type HubConnectionState } from "./state.ts";
 import { publishDaemonStatus } from "./status.ts";
-import { registerThreadReporter } from "./thread-reporter.ts";
 
 // The hub connection is core-owned: core/hub is the adapter for the hub daemon
 // (a peer of core/git, core/host, core/model). Every Pi session plugs into the
-// hub through here; swarm (agent tools/reporting/ui) and companion (analysis
-// consumer) ride on this connection via #core/hub. State + accessors live in
-// state.ts; this file owns the connect/report lifecycle and the public barrel.
+// hub through here; swarm (agent tools/reporting/ui) rides on this connection
+// via #core/hub. State + accessors live in state.ts; this file owns the connection
+// lifecycle and the public barrel.
 
 function trackDaemonConnection(
 	state: HubConnectionState,
@@ -60,11 +59,6 @@ export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps
 
 	// Only top-level sessions and daemon-spawned agents connect to the hub.
 	if (!isTopLevel && !isDaemonSpawnedAgent) return;
-
-	// Connect + report: a session that opens the hub connection also ships its raw
-	// thread at agent_end (the daemon's analysis ingestion). Self-gates on subagents,
-	// so this is a no-op for daemon-spawned agents.
-	registerThreadReporter(pi);
 
 	const state = getHubConnectionState();
 	let sessionCtx: ExtensionContext | null = null;

@@ -1,8 +1,7 @@
 """Protocol frame models for the basecamp hub daemon.
 
-Split by concern: ``version`` (the leaf ``PROTOCOL_VERSION``), ``swarm``
-(agent-coordination frames), and ``broker`` (companion analysis frames). This
-package owns the connection-envelope frames and the discriminated ``Frame``
+Split by concern: ``version`` (the leaf ``PROTOCOL_VERSION``) and ``swarm``
+(agent-coordination frames). This package owns the connection-envelope frames and the discriminated ``Frame``
 union, and re-exports every frame so ``from ..frames import X`` keeps working.
 """
 
@@ -12,7 +11,6 @@ from typing import Annotated, Any, Literal
 
 from pydantic import Field, TypeAdapter
 
-from .broker import ThreadReportFrame, ThreadReportNode
 from .swarm import (
     AttachWorkstreamAgentAckFrame,
     AttachWorkstreamAgentFrame,
@@ -86,7 +84,6 @@ Frame = Annotated[
     | DispatchFrame
     | DispatchAckFrame
     | TelemetryFrame
-    | ThreadReportFrame
     | ResultReportFrame
     | WaitFrame
     | WaitResultFrame
@@ -163,8 +160,6 @@ __all__ = [
     "ReviseWorkstreamAckFrame",
     "ReviseWorkstreamFrame",
     "TelemetryFrame",
-    "ThreadReportFrame",
-    "ThreadReportNode",
     "UpdateWorkstreamAckFrame",
     "UpdateWorkstreamFrame",
     "WaitFrame",

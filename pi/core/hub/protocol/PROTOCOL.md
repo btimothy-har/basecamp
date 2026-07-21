@@ -1,32 +1,34 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `22`
+Protocol version: `24`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":22,...}
+{"type":"<frame_type>","v":24,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 22`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 24`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 - v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
 - v17 adds safe current-task previews to `list_agents_result` rows.
 - v18 adds cancel-agent request/ack frames and dispatched-run lifecycle hardening: process-group spawn, dispatcher-disconnect grace reaping, and startup reconciliation of orphaned runs.
 - v19 adds workstream management frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` read endpoints.
-- v20 adds the `thread_report` frame: a top-level session ships its raw `getBranch()` thread to the daemon at end of turn for the companion analyzer.
+- v20 added the `thread_report` raw-thread upload for the Companion analyzer; v24 removed both.
 - v21 adds first-class node-identity facets (`repo`, `worktree_label`) to `register`, renames node roles to `agent` (user-facing) / `worker` (backgrounded) derived from `BASECAMP_USER_FACING`, and removes the retired `product_role` (register display role) and `run_kind` (dispatch/list mutative kind) fields along with the agent-role and mutative seams.
 - v22 adds the `revise_workstream`/`revise_workstream_ack` frames for in-place workstream content versioning: a revision bumps the workstream's `version`, snapshots the new content into a `workstream_versions` history table (the prior version is retained), and leaves identity/dossier/attached agents unchanged. `GET /workstreams/{id_or_slug}` now also returns the workstream's `version` and a `versions` history array.
+- v23 adds `owned_worktree` to dispatch specs so the daemon can reclaim mutative-agent worktrees on run exit.
+- v24 removes the retired Companion-analysis `thread_report` frame.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":22}`
-  - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for the companion dashboard.
-  - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for the companion dashboard.
+  - `GET /health` → `{"status":"ok","protocol":24}`
+  - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for Companion's Swarm view.
+  - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for Companion's Swarm view.
   - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
   - `GET /workstreams/{id_or_slug}` returns a single workstream (including its `version`) with its joined agent rows and `versions` content-history array.
 - WebSocket over UDS:
@@ -112,27 +114,6 @@ Reports progress events for a private run. Authorized by `run_id`, private `agen
 
 Reports terminal execution result for a private run. Authorized the same way as telemetry.
 
-### `thread_report` client → daemon
-
-Ships the top-level session's raw thread to the daemon at end of turn, for the companion analyzer. Authorized by the connection's registered `node_id` (a session identity), not a per-run report token. Fire-and-forget (no ack).
-
-The extension splits `getBranch()` into per-entry `nodes` — `id`, `parent_id`, and the verbatim serialized entry as `entry_json` — so the daemon stores immutable nodes (keyed by `id`, inserting only new ones) without parsing pi content. `session_id` and `session_file` are pi's own session id and `.jsonl` transcript path; the daemon records them on the per-session head alongside `leaf_id`, and reconstructs the active branch by walking `parent_id` from `leaf_id`.
-
-```json
-{
-  "type": "thread_report",
-  "v": 22,
-  "node_id": "00000000-0000-4000-8000-000000000042",
-  "session_id": "session-abc",
-  "session_file": "/home/u/.pi/sessions/session-abc.jsonl",
-  "leaf_id": "entry-002",
-  "nodes": [
-    {"id": "entry-001", "parent_id": null, "entry_json": "{…}"},
-    {"id": "entry-002", "parent_id": "entry-001", "entry_json": "{…}"}
-  ]
-}
-```
-
 ### `wait` client → daemon
 
 Waits for one or more public agent handles:
@@ -140,7 +121,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 22,
+  "v": 24,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -171,7 +152,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 22,
+  "v": 24,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -423,6 +404,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 22`.
+2. Send `register` with `v: 24`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

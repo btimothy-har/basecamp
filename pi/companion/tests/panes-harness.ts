@@ -78,6 +78,9 @@ export function createMockPi(execHandler: ExecHandler = () => ({ code: 0, stdout
 export function withTmuxEnv(): void {
 	process.env.TMUX = "/tmp/tmux.sock,123,0";
 	process.env.TMUX_PANE = "%1";
+	delete process.env.HERDR_ENV;
+	delete process.env.HERDR_PANE_ID;
+	delete process.env.HERDR_SOCKET_PATH;
 	process.env.BASECAMP_AGENT_DEPTH = "0";
 }
 
