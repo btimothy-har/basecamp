@@ -107,6 +107,12 @@ Primary sessions can load the `playwright-cli` skill to automate an installed Ch
 
 Playwright starts with a fresh managed persistent profile, and browser artifacts default to the private bounded directory `~/.pi/basecamp/browser/playwright-output`. Set `BASECAMP_BROWSER_PATH` for a custom Chromium executable; explicit `PLAYWRIGHT_MCP_*` environment overrides are also honored. Browser access is not exposed to subagents. Upgrades do not migrate or delete the former `~/.pi/basecamp/browser/profile`.
 
+### Frontend Design
+
+Basecamp ships a model-invocable `frontend-design` skill for code-first interface work—pages, components, dashboards, prototypes, responsive redesigns, and visual polish. It works in an existing project's stack or creates one self-contained HTML file with inline CSS and JavaScript for focused framework-free exploration. Runnable source is the deliverable; screenshots are reference and verification evidence, while image generation is reserved for explicitly requested assets.
+
+In primary sessions, the skill composes with `playwright-cli` for live inspection, responsive screenshots, runtime checks, and optional annotated feedback. Standalone HTML previews use an isolated route-backed origin and require no additional preview server.
+
 ### Subagents
 
 Use the `agents` skill for agent selection and async daemon dispatch guidance:
