@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal
 
+from .compose import ComposeBootstrapError, resolve_docker_compose
+
 Engine = Literal["docker", "podman"]
 
 _REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
@@ -47,10 +49,6 @@ class EvalLaunchError(RuntimeError):
     @classmethod
     def missing_executable(cls, name: str) -> EvalLaunchError:
         return cls(f"required executable is unavailable: {name}")
-
-    @classmethod
-    def missing_compose(cls) -> EvalLaunchError:
-        return cls("Docker Compose is required for Podman; set DOCKER_COMPOSE_BIN")
 
     @classmethod
     def excessive_concurrency(cls) -> EvalLaunchError:
@@ -220,10 +218,7 @@ def build_environment(options: LaunchOptions) -> dict[str, str]:
         return environment
 
     _require_executable("podman")
-    compose = environment.get("DOCKER_COMPOSE_BIN") or shutil.which("docker-compose")
-    if not compose or not Path(compose).is_file():
-        raise EvalLaunchError.missing_compose()
-    environment["DOCKER_COMPOSE_BIN"] = compose
+    environment["DOCKER_COMPOSE_BIN"] = str(resolve_docker_compose(environment))
     wrapper_dir = _REPOSITORY_ROOT / "evals" / "terminal_bench" / "bin"
     environment["PATH"] = f"{wrapper_dir}{os.pathsep}{environment['PATH']}"
     return environment
@@ -260,7 +255,7 @@ def run(options: LaunchOptions) -> int:
 def main(argv: Sequence[str] | None = None) -> int:
     try:
         return run(parse_options(argv))
-    except (EvalLaunchError, subprocess.CalledProcessError) as exc:
+    except (ComposeBootstrapError, EvalLaunchError, subprocess.CalledProcessError) as exc:
         print(exc, file=sys.stderr)
         return 2
 

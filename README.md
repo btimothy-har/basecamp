@@ -262,7 +262,7 @@ Basecamp includes a repository-local [Harbor](https://harborframework.com) adapt
 Prerequisites:
 
 - Python 3.12+ and `uv`
-- Docker, or a running Podman machine plus the Docker Compose CLI
+- Docker, or a running Podman machine
 - A dedicated, scoped model-provider API key
 - A committed Basecamp revision; uncommitted and untracked files are deliberately excluded
 
@@ -274,18 +274,7 @@ uv tool install --force --prerelease explicit \
   'harbor==0.20.1.dev202607210139'
 ```
 
-For Podman on macOS, install the Docker Compose CLI (not `podman-compose`) and put Basecamp's compatibility wrapper first on `PATH`:
-
-```bash
-brew install docker-compose
-export DOCKER_COMPOSE_BIN="$(command -v docker-compose)"
-export PATH="$PWD/evals/terminal_bench/bin:$PATH"
-
-docker info
-docker compose version
-```
-
-The wrapper sends ordinary `docker` operations to Podman and points Docker Compose at the running Podman machine's API socket. `podman-compose` is not compatible with Harbor because it does not accept Compose's `--project-directory` option.
+For Podman on macOS, the launcher puts Basecamp's compatibility wrapper on `PATH` automatically. It uses `DOCKER_COMPOSE_BIN` or an installed `docker-compose` when available; otherwise it downloads Docker Compose v5.3.1 into `~/.cache/basecamp/evals/`, verifies the pinned SHA-256, and points it at the running Podman machine's API socket. `podman-compose` is not compatible with Harbor because it does not accept Compose's `--project-directory` option.
 
 From the Basecamp repository root, export the scoped provider credentials referenced by your Pi configuration, then use the Make targets:
 
