@@ -295,10 +295,8 @@ def _migrate_model_aliases_file(home: Path, options: MigrationOptions, actions: 
 def _migrate_companion(home: Path, options: MigrationOptions, actions: list[Action]) -> None:
     source_dir = pi_dir(home) / "companion"
     snapshots_dir = basecamp_dir(home) / "companion" / "snapshots"
-    analysis_dir = basecamp_dir(home) / "companion" / "analysis"
 
     _ensure_dir(snapshots_dir, options, actions)
-    _ensure_dir(analysis_dir, options, actions)
 
     if not source_dir.exists():
         _record(actions, "missing", source_dir, snapshots_dir.parent, "legacy companion directory is absent")
@@ -309,13 +307,12 @@ def _migrate_companion(home: Path, options: MigrationOptions, actions: list[Acti
 
     for source in sorted(source_dir.iterdir()):
         if source.name.endswith(".analysis.json"):
-            target = analysis_dir / source.name
-        elif source.suffix == ".json":
-            target = snapshots_dir / source.name
-        else:
-            _record(actions, "skip", source, None, "not a companion JSON snapshot or analysis sidecar")
+            _record(actions, "skip", source, None, "retired companion analysis sidecar")
             continue
-        _copy_regular_file(source, target, options, actions)
+        if source.suffix != ".json":
+            _record(actions, "skip", source, None, "not a companion JSON snapshot")
+            continue
+        _copy_regular_file(source, snapshots_dir / source.name, options, actions)
 
 
 def _migrate_swarm(home: Path, options: MigrationOptions, actions: list[Action]) -> None:

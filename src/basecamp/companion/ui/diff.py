@@ -17,8 +17,8 @@ from basecamp.companion.ui.syntax import lexer_for_filename
 
 type DeltaFactory = Callable[[int], Text | None]
 type DiffRenderKey = tuple[DiffDensity, DiffLayout]
-type DiffLineSignature = tuple[str, str, int | None]
-type DiffSignature = tuple[str, str, int | None, tuple[DiffLineSignature, ...], DiffRenderKey | None]
+type DiffLineCacheKey = tuple[str, str, int | None]
+type DiffCacheKey = tuple[str, str, int | None, tuple[DiffLineCacheKey, ...], DiffRenderKey | None]
 
 
 class FileList(Vertical):
@@ -146,7 +146,7 @@ class DiffView(VerticalScroll):
 
     def __init__(self, *args: object, **kwargs: object) -> None:
         super().__init__(*args, **kwargs)
-        self._last_signature: DiffSignature | None = None
+        self._last_signature: DiffCacheKey | None = None
 
     def compose(self) -> ComposeResult:
         """Compose content holder."""
@@ -160,7 +160,7 @@ class DiffView(VerticalScroll):
         diff_lines: list[DiffLine],
         width: int | None,
         render_key: DiffRenderKey | None,
-    ) -> DiffSignature:
+    ) -> DiffCacheKey:
         # width is tracked only for the width-baked delta render; it is None for
         # the built-in renderer, whose Rich Text reflows at display time.
         return (

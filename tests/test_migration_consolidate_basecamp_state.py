@@ -48,7 +48,7 @@ def test_apply_copies_legacy_state_to_bounded_contexts(tmp_path: Path) -> None:
     _write(tmp_path / ".pi" / "agent" / "basecamp" / "daemon.db", "db")
     _write(tmp_path / ".pi" / "agent" / "basecamp" / "agents" / "agent-1" / "log.json", "agent")
 
-    migration.run(migration.MigrationOptions(home=tmp_path, apply=True))
+    actions = migration.run(migration.MigrationOptions(home=tmp_path, apply=True))
 
     root = tmp_path / ".pi" / "basecamp"
     assert (root / "workspace" / "context" / "demo.md").read_text(encoding="utf-8") == "context"
@@ -61,8 +61,10 @@ def test_apply_copies_legacy_state_to_bounded_contexts(tmp_path: Path) -> None:
     }
     assert (root / "tasks" / "session.json").read_text(encoding="utf-8") == "[]"
     assert (root / "companion" / "snapshots" / "session.json").read_text(encoding="utf-8") == '{"snapshot":true}'
-    analysis_path = root / "companion" / "analysis" / "session.analysis.json"
-    assert analysis_path.read_text(encoding="utf-8") == '{"analysis":true}'
+    legacy_analysis = tmp_path / ".pi" / "companion" / "session.analysis.json"
+    assert legacy_analysis.read_text(encoding="utf-8") == '{"analysis":true}'
+    assert not (root / "companion" / "analysis").exists()
+    assert any(action.kind == "skip" and action.source == legacy_analysis for action in actions)
     assert (root / "swarm" / "daemon.db").read_text(encoding="utf-8") == "db"
     assert (root / "swarm" / "agents" / "agent-1" / "log.json").read_text(encoding="utf-8") == "agent"
     assert not (root / "swarm" / "daemon.pid").exists()
