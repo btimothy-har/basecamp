@@ -16,6 +16,8 @@ _AGENTS_MIGRATED_COLUMNS = (
     ("session_file", "TEXT"),
     ("repo", "TEXT"),
     ("worktree_label", "TEXT"),
+    ("branch", "TEXT"),
+    ("agent_mode", "TEXT"),
 )
 
 
@@ -41,7 +43,9 @@ class AgentsSchemaMixin:
                 model TEXT,
                 session_file TEXT,
                 repo TEXT,
-                worktree_label TEXT
+                worktree_label TEXT,
+                branch TEXT,
+                agent_mode TEXT
             )
             """
         )

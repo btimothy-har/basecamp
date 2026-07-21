@@ -18,7 +18,8 @@ from pydantic import BaseModel
 # v22: revise_workstream content-versioning frames + /workstreams detail carries version history.
 # v23: dispatch spec gains owned_worktree — the reaper removes a mutative agent's worktree on run exit.
 # v24: removes the retired companion-analysis thread_report frame.
-PROTOCOL_VERSION = 24
+# v25: register metadata facets + self-scoped session_metadata frame; read-only dashboard HTTP surface.
+PROTOCOL_VERSION = 25
 
 
 class ProtocolFrame(BaseModel):

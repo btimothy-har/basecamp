@@ -76,6 +76,9 @@ describe("daemon client", () => {
 				session_file: "/tmp/pi-session.jsonl",
 				repo: "acme/widgets",
 				worktree_label: "copilot/brave-otter-quill",
+				branch: "bt/dashboard",
+				model: "claude-sonnet-4-5",
+				agent_mode: "work",
 			},
 			{ socketPath: "/tmp/basecamp-test.sock", webSocketFactory: () => socket as any },
 		);
@@ -86,6 +89,9 @@ describe("daemon client", () => {
 		assert.equal(register.session_file, "/tmp/pi-session.jsonl");
 		assert.equal(register.repo, "acme/widgets");
 		assert.equal(register.worktree_label, "copilot/brave-otter-quill");
+		assert.equal(register.branch, "bt/dashboard");
+		assert.equal(register.model, "claude-sonnet-4-5");
+		assert.equal(register.agent_mode, "work");
 
 		socket.emit(
 			"message",

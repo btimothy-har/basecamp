@@ -1,16 +1,16 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `24`
+Protocol version: `25`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":24,...}
+{"type":"<frame_type>","v":25,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 24`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 25`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 - v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
@@ -22,11 +22,12 @@ Version handling:
 - v22 adds the `revise_workstream`/`revise_workstream_ack` frames for in-place workstream content versioning: a revision bumps the workstream's `version`, snapshots the new content into a `workstream_versions` history table (the prior version is retained), and leaves identity/dossier/attached agents unchanged. `GET /workstreams/{id_or_slug}` now also returns the workstream's `version` and a `versions` history array.
 - v23 adds `owned_worktree` to dispatch specs so the daemon can reclaim mutative-agent worktrees on run exit.
 - v24 removes the retired Companion-analysis `thread_report` frame.
+- v25 adds mutable session facets to `register`, the self-scoped `session_metadata` frame, and the read-only dashboard HTTP capability.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":24}`
+  - `GET /health` → `{"status":"ok","protocol":25}`
   - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for Companion's Swarm view.
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for Companion's Swarm view.
   - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
@@ -82,6 +83,19 @@ Important fields:
 - `session_file`: optional registered transcript file path used only as an ask fork source after authorization succeeds. It is not exposed in LLM-facing tools.
 - `repo`: optional canonical `<org>/<name>` repo identity facet for the registered node.
 - `worktree_label`: optional active worktree label facet (e.g. `copilot/<slug>`), or `null` when no worktree is active.
+- `branch`: optional active worktree branch.
+- `model`: optional current model id.
+- `agent_mode`: optional current Basecamp mode (`analysis`, `planning`, `work`, or `copilot`).
+
+### `session_metadata` client → daemon
+
+Replaces mutable metadata for the authenticated WebSocket's own registered node. The frame has no node-id field; the daemon derives the target from the connection established by `register`.
+
+Fields:
+- `session_name`: current display name.
+- `model`: current model id, or `null`.
+- `agent_mode`: current Basecamp mode.
+- `repo`, `worktree_label`, `branch`: current workspace facets, each nullable. Null values clear stale persisted metadata.
 
 ### `dispatch` client → daemon
 
@@ -121,7 +135,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 24,
+  "v": 25,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -152,7 +166,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 24,
+  "v": 25,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -404,6 +418,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 24`.
+2. Send `register` with `v: 25`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

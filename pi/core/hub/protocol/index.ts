@@ -18,7 +18,7 @@ import type {
 	PeerMessageDeliveryFrame,
 	PeerMessageFrame,
 } from "./peer-message.ts";
-import type { ErrorFrame, RegisteredFrame, RegisterFrame } from "./register.ts";
+import type { ErrorFrame, RegisteredFrame, RegisterFrame, SessionMetadataFrame } from "./register.ts";
 import type { ResultReportFrame, TelemetryFrame } from "./telemetry.ts";
 import { PROTOCOL_VERSION } from "./version.ts";
 import type { WaitFrame, WaitResultFrame } from "./wait.ts";
@@ -47,6 +47,7 @@ export { PROTOCOL_VERSION };
 export type Frame =
 	| RegisterFrame
 	| RegisteredFrame
+	| SessionMetadataFrame
 	| ErrorFrame
 	| DispatchFrame
 	| DispatchAckFrame
@@ -76,6 +77,7 @@ export type Frame =
 export const FRAME_TYPES = [
 	"register",
 	"registered",
+	"session_metadata",
 	"error",
 	"dispatch",
 	"dispatch_ack",

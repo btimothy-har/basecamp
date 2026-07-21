@@ -27,6 +27,8 @@ class AgentsWriterMixin:
         session_file: str | None = None,
         repo: str | None = None,
         worktree_label: str | None = None,
+        branch: str | None = None,
+        agent_mode: str | None = None,
     ) -> None:
         """Insert/update an agent row and refresh last-seen timestamp."""
 
@@ -34,7 +36,8 @@ class AgentsWriterMixin:
         with self._writing(immediate=True) as connection:
             existing = connection.execute(
                 """
-                SELECT agent_handle, agent_type, model, sibling_group, session_file, repo, worktree_label
+                SELECT agent_handle, agent_type, model, sibling_group, session_file,
+                       repo, worktree_label, branch, agent_mode
                 FROM agents
                 WHERE id = ?
                 """,
@@ -47,6 +50,8 @@ class AgentsWriterMixin:
             stored_session_file = existing[4] if existing is not None else None
             stored_repo = existing[5] if existing is not None else None
             stored_worktree_label = existing[6] if existing is not None else None
+            stored_branch = existing[7] if existing is not None else None
+            stored_agent_mode = existing[8] if existing is not None else None
             next_handle = agent_handle or stored_handle or _fallback_agent_handle(agent_id)
             next_agent_type = agent_type or stored_agent_type
             next_model = model or stored_model
@@ -54,6 +59,8 @@ class AgentsWriterMixin:
             next_session_file = session_file or stored_session_file
             next_repo = repo or stored_repo
             next_worktree_label = worktree_label or stored_worktree_label
+            next_branch = branch or stored_branch
+            next_agent_mode = agent_mode or stored_agent_mode
 
             try:
                 connection.execute(
@@ -73,9 +80,11 @@ class AgentsWriterMixin:
                         model,
                         session_file,
                         repo,
-                        worktree_label
+                        worktree_label,
+                        branch,
+                        agent_mode
                     )
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(id)
                     DO UPDATE SET
                         parent_id = excluded.parent_id,
@@ -90,7 +99,9 @@ class AgentsWriterMixin:
                         model = excluded.model,
                         session_file = excluded.session_file,
                         repo = excluded.repo,
-                        worktree_label = excluded.worktree_label
+                        worktree_label = excluded.worktree_label,
+                        branch = excluded.branch,
+                        agent_mode = excluded.agent_mode
                     """,
                     (
                         agent_id,
@@ -108,9 +119,53 @@ class AgentsWriterMixin:
                         next_session_file,
                         next_repo,
                         next_worktree_label,
+                        next_branch,
+                        next_agent_mode,
                     ),
                 )
             except sqlite3.IntegrityError as error:
                 if "agents.agent_handle" in str(error):
                     raise DuplicateAgentHandleError(next_handle) from error
                 raise
+
+    def update_agent_metadata(
+        self,
+        *,
+        agent_id: str,
+        session_name: str,
+        model: str | None,
+        agent_mode: str,
+        repo: str | None,
+        worktree_label: str | None,
+        branch: str | None,
+    ) -> None:
+        """Replace mutable session metadata, including explicit null values."""
+
+        with self._writing() as connection:
+            connection.execute(
+                """
+                UPDATE agents
+                SET session_name = ?, model = ?, agent_mode = ?, repo = ?,
+                    worktree_label = ?, branch = ?, last_seen_at = ?
+                WHERE id = ?
+                """,
+                (
+                    session_name,
+                    model,
+                    agent_mode,
+                    repo,
+                    worktree_label,
+                    branch,
+                    self._now(),
+                    agent_id,
+                ),
+            )
+
+    def touch_agent(self, agent_id: str) -> None:
+        """Refresh an agent's last-seen timestamp."""
+
+        with self._writing() as connection:
+            connection.execute(
+                "UPDATE agents SET last_seen_at = ? WHERE id = ?",
+                (self._now(), agent_id),
+            )

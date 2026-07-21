@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import sqlite3
 from typing import Literal
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -25,6 +26,7 @@ from .frames import (
     RegisterFrame,
     ResultReportFrame,
     ReviseWorkstreamFrame,
+    SessionMetadataFrame,
     TelemetryFrame,
     UpdateWorkstreamFrame,
     WaitFrame,
@@ -123,6 +125,9 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     session_file=parsed.session_file,
                     repo=parsed.repo,
                     worktree_label=parsed.worktree_label,
+                    branch=parsed.branch,
+                    model=parsed.model,
+                    agent_mode=parsed.agent_mode,
                 )
             except DuplicateAgentHandleError as exc:
                 if registry.get_connection(parsed.node_id) is websocket:
@@ -161,6 +166,18 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
                     return
 
                 inbound = parse_frame(payload)
+                if isinstance(inbound, SessionMetadataFrame):
+                    await asyncio.to_thread(
+                        store.update_agent_metadata,
+                        agent_id=parsed.node_id,
+                        session_name=inbound.session_name,
+                        model=inbound.model,
+                        agent_mode=inbound.agent_mode,
+                        repo=inbound.repo,
+                        worktree_label=inbound.worktree_label,
+                        branch=inbound.branch,
+                    )
+                    continue
                 if isinstance(inbound, DispatchFrame):
                     await _handle_dispatch(
                         websocket=websocket,
@@ -302,7 +319,13 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
         finally:
             if node_id is not None and registry.get_connection(node_id) is websocket:
                 registry.remove_connection(node_id)
-                schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
+                try:
+                    await asyncio.to_thread(store.touch_agent, node_id)
+                except sqlite3.Error:
+                    # Reaping must still proceed when a best-effort recency write loses a shutdown race.
+                    pass
+                finally:
+                    schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
 
     return app
 

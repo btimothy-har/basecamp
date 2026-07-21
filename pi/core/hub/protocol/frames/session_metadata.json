@@ -1,0 +1,10 @@
+{
+  "type": "session_metadata",
+  "v": 25,
+  "session_name": "dashboard build [9f3c]",
+  "model": "claude-sonnet-4-5",
+  "agent_mode": "work",
+  "repo": "example/repo",
+  "worktree_label": "wt-bt/dashboard",
+  "branch": "bt/dashboard"
+}

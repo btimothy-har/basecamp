@@ -251,4 +251,4 @@ def test_store_drops_retired_columns_on_modern_sqlite(tmp_path: Path) -> None:
 
     assert "product_role" not in columns
     assert "run_kind" not in columns
-    assert {"repo", "worktree_label"} <= columns
+    assert {"repo", "worktree_label", "branch", "agent_mode"} <= columns

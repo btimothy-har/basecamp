@@ -7,6 +7,7 @@ import {
 	deriveDaemonIdentity,
 	resolveDaemonAgentTitle,
 } from "./identity.ts";
+import { type SessionMetadataPublisher, startSessionMetadataPublisher } from "./metadata.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { ensureDaemon } from "./spawn.ts";
 import { getConnectListeners, getHubConnectionState, type HubConnectionState } from "./state.ts";
@@ -63,6 +64,7 @@ export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps
 	const state = getHubConnectionState();
 	let sessionCtx: ExtensionContext | null = null;
 	let connectionGeneration = 0;
+	let metadataPublisher: SessionMetadataPublisher | null = null;
 	const cleanups: Array<() => void> = [];
 
 	const runCleanups = (): void => {
@@ -74,6 +76,14 @@ export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps
 			}
 		}
 	};
+
+	pi.on("session_info_changed", (event) => {
+		metadataPublisher?.updateSessionName(event.name);
+	});
+
+	pi.on("model_select", (event) => {
+		metadataPublisher?.updateModel(event.model.id);
+	});
 
 	pi.on("session_start", (_event, ctx) => {
 		sessionCtx = ctx;
@@ -98,6 +108,12 @@ export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps
 				const activeConnection =
 					state.connection === connection ? connection : trackDaemonConnection(state, connection, ctx);
 				runCleanups();
+				const publisher = startSessionMetadataPublisher(pi, activeConnection, ctx);
+				metadataPublisher = publisher;
+				cleanups.push(() => {
+					if (metadataPublisher === publisher) metadataPublisher = null;
+					publisher.stop();
+				});
 				for (const listener of getConnectListeners()) {
 					const cleanup = listener(activeConnection, ctx);
 					if (cleanup) cleanups.push(cleanup);

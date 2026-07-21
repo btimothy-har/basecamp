@@ -24,6 +24,9 @@ export interface DaemonIdentity {
 	session_file?: string | null;
 	repo?: string | null;
 	worktree_label?: string | null;
+	branch?: string | null;
+	model?: string | null;
+	agent_mode?: RegisterFrame["agent_mode"];
 }
 
 export interface ConnectOptions {
@@ -94,6 +97,9 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 			session_file: identity.session_file ?? null,
 			repo: identity.repo ?? null,
 			worktree_label: identity.worktree_label ?? null,
+			branch: identity.branch ?? null,
+			model: identity.model ?? null,
+			agent_mode: identity.agent_mode ?? null,
 		};
 
 		ws.on("open", () => {

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
-from app_helpers import _build_app, _register_ws
+from app_helpers import _build_app, _build_app_with_store, _register_ws
 from fastapi.testclient import TestClient
 
 from basecamp.hub.frames import PROTOCOL_VERSION
@@ -63,6 +64,96 @@ def test_ws_disconnect_schedules_disconnect_reaper(tmp_path: Path, monkeypatch: 
             _register_ws(websocket, node_id="node-1", role="agent", parent_id=None, sibling_group="sg-main")
 
     assert calls == ["node-1"]
+
+
+def test_ws_disconnect_touches_last_seen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app, store = _build_app_with_store(tmp_path)
+    timestamps = iter(["2026-07-21T10:00:00+00:00", "2026-07-21T11:00:00+00:00"])
+    monkeypatch.setattr(store, "_now", lambda: next(timestamps))
+    monkeypatch.setattr("basecamp.hub.app.schedule_disconnect_reaper", lambda **_kwargs: None)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as websocket:
+            _register_ws(websocket, node_id="node-1", role="agent", parent_id=None, sibling_group=None)
+
+    agent = store.get_agent("node-1")
+    assert agent is not None
+    assert agent["last_seen_at"] == "2026-07-21T11:00:00+00:00"
+
+
+def test_ws_disconnect_still_schedules_reaper_when_recency_touch_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, store = _build_app_with_store(tmp_path)
+    scheduled: list[str] = []
+
+    def fail_touch(_node_id: str) -> None:
+        raise sqlite3.OperationalError
+
+    monkeypatch.setattr(store, "touch_agent", fail_touch)
+    monkeypatch.setattr(
+        "basecamp.hub.app.schedule_disconnect_reaper",
+        lambda **kwargs: scheduled.append(str(kwargs["node_id"])),
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as websocket:
+            _register_ws(websocket, node_id="node-1", role="agent", parent_id=None, sibling_group=None)
+
+    assert scheduled == ["node-1"]
+
+
+def test_ws_session_metadata_is_scoped_to_registered_node(tmp_path: Path) -> None:
+    app, store = _build_app_with_store(tmp_path)
+    store.upsert_agent(
+        agent_id="other-node",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="agent",
+        session_name="unchanged",
+        cwd="/tmp/other",
+        model="other-model",
+        repo="other/repo",
+        worktree_label="wt/other",
+        branch="bt/other",
+        agent_mode="planning",
+    )
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as websocket:
+            _register_ws(websocket, node_id="node-1", role="agent", parent_id=None, sibling_group=None)
+            websocket.send_json(
+                {
+                    "type": "session_metadata",
+                    "v": PROTOCOL_VERSION,
+                    "session_name": "updated",
+                    "model": None,
+                    "agent_mode": "work",
+                    "repo": "acme/widgets",
+                    "worktree_label": None,
+                    "branch": None,
+                }
+            )
+
+    updated = store.get_agent("node-1")
+    unchanged = store.get_agent("other-node")
+    assert updated is not None
+    assert updated["session_name"] == "updated"
+    assert updated["model"] is None
+    assert updated["agent_mode"] == "work"
+    assert updated["repo"] == "acme/widgets"
+    assert updated["worktree_label"] is None
+    assert updated["branch"] is None
+    assert unchanged is not None
+    assert (
+        unchanged["session_name"],
+        unchanged["model"],
+        unchanged["agent_mode"],
+        unchanged["repo"],
+        unchanged["worktree_label"],
+        unchanged["branch"],
+    ) == ("unchanged", "other-model", "planning", "other/repo", "wt/other", "bt/other")
 
 
 def test_ws_reregister_cancels_disconnect_reaper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -188,11 +279,11 @@ def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
     assert "registered" in reply["message"]
 
 
-def test_health_returns_protocol_24(tmp_path: Path) -> None:
+def test_health_returns_protocol_25(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
 
     with TestClient(app) as client:
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["protocol"] == 24
+    assert response.json()["protocol"] == 25
