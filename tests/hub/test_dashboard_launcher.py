@@ -74,7 +74,7 @@ def test_launcher_prints_one_time_fallback_only_when_browser_fails() -> None:
     )
 
     assert "Browser launch failed" in stream.getvalue()
-    assert _BOOTSTRAP_URL in stream.getvalue()
+    assert _BOOTSTRAP_URL in stream.getvalue().splitlines()
 
 
 def test_launcher_surfaces_dashboard_unavailability_without_opening() -> None:

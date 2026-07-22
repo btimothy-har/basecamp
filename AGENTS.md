@@ -37,12 +37,12 @@ pi/                            # ① the Pi extension (TypeScript)
 └── browser/                    # primary-only browser automation: pinned Playwright CLI shim + on-demand skill
 
 src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
-├── cli.py                      # Click entry point (config, setup, doctor, install, companion, hub)
+├── cli.py                      # Click entry point (config, setup, doctor, install, companion, hub, agents dashboard opener)
 ├── setup.py  installer.py      # environment setup + install orchestration (uv tool + npm + single pi install)
 ├── config_cli/                 # `basecamp config` CLI shell (plumbing + project/env/alias porcelain); composition layer over core + workspace, so it lives beside cli.py (core imports no other domain)
-├── core/                       # settings/ package (store = locked config.json primitive · schema = section registry · document = generic get/set/edit) + models (config record types: project/env/logseq) + paths (the ~/.pi/basecamp tree, incl. the swarm/companion runtime layout) · console (the shared rich pair) · files · exceptions · doctor
+├── core/                       # settings/ package (store = locked config.json primitive · schema = section registry · document = generic get/set/edit) + models (config record types: project/env/logseq) + paths (the ~/.pi/basecamp tree, incl. swarm/companion runtime layout) · console (the shared rich pair) · files · exceptions · doctor
 ├── workspace/                  # per-repo worktree-setup environments + menus
-├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents)
+├── hub/                         # host-global daemon: private UDS control app + store/frames/swarm, and dashboard/ (auth · TCP app/server · UDS client · no-build assets)
 └── companion/                   # Textual TUI (Diff · Files · Swarm) + daemon observability client
 
 evals/                         # non-shipping evaluation integrations
@@ -83,6 +83,18 @@ Agent modes are `analysis`, `planning`, `work`, and `copilot`. `work` is the def
 ### Agent Execution Posture
 
 Dispatched agents default to **read-only**, fail-closed (read-only unless a persona sets `readOnly: false`): they get a toolset without `write`/`edit`, launch `--read-only`, and share the parent's worktree so they see its live WIP. A **mutative** agent (currently only `worker`) instead gets its **own git worktree**, branched from the parent's HEAD and keyed per-run so re-tasks don't collide; it commits to a branch that the **primary integrates by merge**. Worker worktrees are atomically locked while live, and the daemon removes them on finish only when clean; a dirty residual stays recoverable, while the session-start sweep skips locks and never force-removes post-execution work. The Git lock is a cleanup/liveness guard, not a mutation lease. Mutating sessions with active dirty worktrees receive one hidden, advisory commit reminder before settling. The worktree is the isolation boundary, enforced by the workspace guard's `allowed_dirs` rule. `bash` is deliberately retained (scouts need `git log`, reviewers need `git diff`) and is **not** a mutation sandbox — a bash write still reaches the filesystem, so toolset + worktree confinement is defense-in-depth, not a wall. Independently, the workspace `tool_call` guard hard-blocks structured `write`/`edit` to the protected main checkout even when a subagent has no active worktree.
+
+### Agents Dashboard
+
+`basecamp agents` opens the global read-only browser dashboard. It first runs a Python port of the TypeScript hub ensure contract: the same `daemon.spawn.lock` path, exclusive `0600` `{pid, ts}` file, 30-second stale rule, protocol health gate, PID command validation, detached `basecamp hub` command, and timeout behavior. The daemon independently holds `daemon.server.lock` with nonblocking `flock` for its entire lifetime **before** touching the socket, so the one-hub invariant remains authoritative even if clients race or someone launches `basecamp hub` manually. Both TypeScript and Python spawn-lock owners verify the acquired file's inode before unlinking it.
+
+The hub process owns two completely separate FastAPI apps. The existing post-bind `0600` UDS app remains the only control plane and the only WebSocket listener. A managed secondary Uvicorn thread pre-binds `127.0.0.1:47658` without address/port reuse and serves only the dashboard HTML/assets plus hardcoded snapshot/message reads. It never mounts or generically proxies the daemon app. TCP bind/start failure is nonfatal: the UDS hub continues, while nonce minting reports the dashboard unavailable. The main-thread UDS server remains the signal owner; dashboard shutdown is bounded and cannot mask PID cleanup.
+
+Browser authentication is process-memory-only. The owner-only UDS mints a CSPRNG bootstrap nonce with a 30-second TTL; redemption is atomically single-use and creates a separate bounded 12-hour server-side browser session. The response sets a host-only `HttpOnly; SameSite=Strict; Path=/` cookie and returns a no-store `303` to `/`. Loopback HTTP cannot use `Secure`, and browser cookies are host-scoped rather than port-scoped; this is an accepted single-user-localhost trade-off, not a multi-user security boundary. Defense in depth is exact raw `Host: 127.0.0.1:47658`, exact Origin when present, required `Sec-Fetch-Site` (`none`/`same-origin` only by route), no CORS, disabled TCP access/server/date headers, no-store responses, restrictive CSP/referrer/sniff/frame/opener/resource/permissions headers, and DOM construction through `textContent` rather than HTML sinks.
+
+The dashboard uses a distinct safe global read model rather than exposing existing control/store rows. Structural roots are selected independently of descendant traversal; agent-free roots remain visible; Copilot mode takes classification precedence, then durable workstream attachment, then Root. Descendant traversal is cycle-safe, ask answerers/subtrees stay hidden, truncation is explicit, and all browser identity/routing uses public handles. The display window is query-time scope, never retention or cleanup. `pi/core/hub/protocol/PROTOCOL.md` is the canonical source for exact bounds, endpoint fields, and privacy exclusions.
+
+The frontend is a packaged, no-build application under `src/basecamp/hub/dashboard/assets/`: semantic `index.html` (enforced below 500 lines), external CSS, flat ES modules, no external runtime request, framework, CDN, font, service worker, or client-side persistence. It polls every three seconds only while visible, keeps the last safe in-memory snapshot on transient failure, uses public-handle hash routes, preserves filtered ancestry, and fetches messages only for the selected agent. Companion, Files, the compact in-Pi agent widget, and workstream tools remain independent and unchanged.
 
 ### Evaluations
 
@@ -147,7 +159,7 @@ There are no per-file exceptions and no suppression mechanism. (Files that preda
 
 - **Run all**: `make test` from repo root runs `uv run pytest` plus `npm test`.
 - **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` is root `tests/`, with a subdir per domain (`tests/core/`, `tests/workspace/`, `tests/swarm/`, `tests/companion/`) beside the CLI-shell tests; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
-- **TypeScript**: `npm test` runs the Node test runner over every domain's `pi/<domain>/**/*.test.ts` (one child process per test file), plus `pi/extension.test.ts` (whole-graph load + registration under strict Node). A new domain's tests must be added to the `test` glob list in `package.json`.
+- **TypeScript/JavaScript**: `npm test` runs the Node test runner over every domain's `pi/<domain>/**/*.test.ts` (one child process per test file), `pi/extension.test.ts` (whole-graph load + registration under strict Node), and the pure dashboard-model tests under `tests/hub/*.test.js`. A new domain's tests must be added to the `test` glob list in `package.json`.
 - **Tests live beside their code**: `pi/<domain>/**/tests/` (TS) and `tests/<domain>/` (Python).
 
 ## Pull Requests

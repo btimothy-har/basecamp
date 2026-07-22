@@ -62,7 +62,7 @@ def open_agents_dashboard(
         output.print("Opened the Basecamp agents dashboard.")
     else:
         output.print("Browser launch failed. Open this one-time URL within 30 seconds:")
-        output.print(url, markup=False)
+        output.print(url, markup=False, soft_wrap=True)
     return url
 
 

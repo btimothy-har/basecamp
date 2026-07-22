@@ -32,12 +32,16 @@ Version handling:
   - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for Companion's Swarm view.
   - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
   - `GET /workstreams/{id_or_slug}` returns a single workstream (including its `version`) with its joined agent rows and `versions` content-history array.
+  - `POST /dashboard/bootstrap` mints a 30-second, single-use browser bootstrap URL only while the dashboard listener is available.
+  - `GET /dashboard/snapshot` and `GET /dashboard/messages?root_handle=<handle>&agent_handle=<handle>` are private safe projections consumed only by the dashboard's fixed-method UDS client.
 - WebSocket over UDS:
   - `/ws`
   - First inbound frame must be `register`.
   - On success daemon replies with `registered`.
 
 The socket lives under `~/.pi/basecamp/swarm/daemon.sock` and is restricted to the local user.
+
+The same hub process also owns a separate read-only FastAPI app pre-bound to fixed `127.0.0.1:47658`. Its TCP routes are only `/bootstrap/<nonce>`, `/`, `/assets/<name>`, `/api/snapshot`, and `/api/messages`; it has no `/ws`, workstream, run-summary, or mutation routes and never mounts/generically proxies the UDS app. Every route is GET-only. Browser sessions require the in-memory bootstrap exchange plus exact Host, Origin/Fetch-Metadata provenance, no-CORS/no-store security headers, and a host-only `HttpOnly; SameSite=Strict` cookie. Dashboard bind/start failure is nonfatal to the UDS server and disables nonce minting.
 
 ## Identity model
 
@@ -64,7 +68,7 @@ Dispatched-run processes are freed three ways so they cannot leak as long-runnin
 - Explicit cancellation: the `cancel` / `cancel_ack` frames (below), which cancel the target and its whole dispatch subtree.
 - Startup reconciliation: on daemon start every non-terminal run is marked `failed` with `error: "daemon_restart_reconciled"`, and orphaned process groups left by a prior daemon are best-effort killed, gated by an identity check (the group leader's command must match the runner) so a reused process-group id is never signalled.
 
-The daemon is a long-lived shared singleton and does not idle-shut-down by design.
+The daemon is a long-lived shared singleton and does not idle-shut-down by design. TypeScript and Python clients coordinate starts through the same exclusive `daemon.spawn.lock` contract; independently, each daemon process must hold a nonblocking process-lifetime `flock` on `daemon.server.lock` before it can unlink or bind the UDS, so a raced/manual second daemon cannot steal the socket.
 
 ## Frame types
 
@@ -319,6 +323,18 @@ Response schema:
 - `messages`: latest visible assistant messages for the selected agent's current run, ordered oldest-to-newest within the returned window. Each message contains only `kind`, `seq`, daemon `timestamp`, `label`, and full visible assistant `text`.
 
 Message detail is subtree-validated by `root_id` + `agent_handle`. It excludes private `run_id`, raw private `agent_id`, report tokens, prompts, user/system/developer messages, raw tool args/results, env, cwd, spawn specs, hidden thinking, and chain-of-thought. Message text is visible assistant output only; ANSI/control characters are stripped while newlines are preserved. `/runs/summary` remains snippet-only.
+
+### `GET /dashboard/snapshot`
+
+Returns the browser-safe global session read model. The daemon selects every live structural root (`parent_id IS NULL`, `depth = 0`, `role = agent`) plus disconnected roots whose `last_seen_at` is within 72 hours. Copilot mode takes classification precedence, then durable workstream attachment, then Root. Agent-free roots remain visible.
+
+Each root contains only public/session display facets: `root_handle`, kind, session name, model/mode, repo/worktree/branch, live/timestamps, current task, up to 10 goal stages × 20 tasks, agent count/truncation, and up to 100 flat descendant rows. Descendants use `agent_handle`, `parent_handle`, computed depth, type/name/model/status/timestamps, bounded task/activity/skill/result/error projections, and explicit truncation. Ask answerers and their subtrees are hidden. Activity excludes thinking. The response never includes private root/agent/run IDs, cwd/session files, specs/prompts/env/report tokens, raw event/tool payloads, user/system/developer messages, hidden thinking, or full result/error bodies.
+
+### `GET /dashboard/messages`
+
+Accepts a structural `root_handle` plus descendant `agent_handle`, both path-safe public handles. The lookup is cycle-safe and subtree-scoped, rejects ask subtrees, and reads only the selected agent's current run. It returns at most three newest `assistant_output` messages in chronological order. Each text is ANSI/control stripped, capped at 4,000 characters, and reports whether it was truncated. Terminal result bodies and peer/user/system/developer messages are not included.
+
+These two UDS endpoints are not generic browser APIs. The separate TCP app maps only `/api/snapshot` and `/api/messages` to them after browser authentication and repeats public-handle validation at the edge.
 
 ### `create_workstream` client → daemon
 
