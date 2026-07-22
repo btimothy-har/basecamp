@@ -18,7 +18,8 @@ expect_option_value=false
 informational=false
 positional_only=false
 for argument in "$@"; do
-	if [ "$expect_option_value" = true ]; then
+	if [ "$positional_only" = false ] && [ "$argument" = "--" ]; then
+		positional_only=true
 		expect_option_value=false
 		continue
 	fi
@@ -26,11 +27,17 @@ for argument in "$@"; do
 		if [ -z "$command_name" ]; then command_name="$argument"; fi
 		continue
 	fi
+	if [ "$expect_option_value" = true ]; then
+		expect_option_value=false
+		case "$argument" in
+			-*) ;;
+			*) continue ;;
+		esac
+	fi
 	case "$argument" in
 		# Recheck value-taking install options whenever the exact-pinned CLI changes.
 		-s|--session|--skills) expect_option_value=true ;;
 		-h|--help|-v|--version) informational=true ;;
-		--) positional_only=true ;;
 		-*) ;;
 		*)
 			if [ -z "$command_name" ]; then command_name="$argument"; fi
