@@ -2,7 +2,7 @@
  * File-length check — enforces the hard caps from AGENTS.md
  * (Development → File Length Limits):
  *
- *   TypeScript (.ts) ≤ 350 lines · Python (.py) ≤ 500 lines
+ *   TypeScript (.ts) ≤ 350 lines · Python/HTML/CSS/JavaScript ≤ 500 lines
  *
  * The cap is a module-design forcing function: a file that outgrows it gets
  * split along responsibility seams, never compressed to sneak under. There
@@ -20,6 +20,9 @@ const REPO_ROOT = path.resolve(import.meta.dirname, "..");
 const LIMITS: Readonly<Record<string, number>> = {
 	".ts": 350,
 	".py": 500,
+	".html": 500,
+	".css": 500,
+	".js": 500,
 };
 
 const SKIP_DIRS = new Set([".git", ".claude", ".venv", ".pytest_cache", "__pycache__", "dist", "node_modules"]);

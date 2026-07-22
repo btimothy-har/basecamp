@@ -1,0 +1,213 @@
+.stage-tabs {
+	display: grid;
+	grid-auto-columns: minmax(210px, 1fr);
+	grid-auto-flow: column;
+	overflow-x: auto;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: #f3f6f2;
+}
+
+.stage-button {
+	display: grid;
+	grid-template-columns: 28px minmax(0, 1fr);
+	align-items: center;
+	gap: 9px;
+	min-height: 58px;
+	padding: 8px 12px;
+	text-align: left;
+	cursor: pointer;
+	border: 0;
+	border-right: 1px solid var(--line);
+	border-bottom: 3px solid transparent;
+	background: transparent;
+}
+
+.stage-button:last-child {
+	border-right: 0;
+}
+
+.stage-button:hover,
+.stage-button.selected {
+	background: white;
+}
+
+.stage-button.selected {
+	border-bottom-color: var(--teal);
+}
+
+.stage-number,
+.task-index {
+	display: grid;
+	place-items: center;
+	width: 23px;
+	height: 23px;
+	font-family: var(--mono);
+	font-size: 10px;
+	font-weight: 800;
+	color: var(--teal);
+	border: 1px solid var(--teal);
+	border-radius: 50%;
+	background: white;
+}
+
+.stage-button.complete .stage-number {
+	color: white;
+	background: var(--green);
+	border-color: var(--green);
+}
+
+.stage-copy {
+	display: grid;
+	gap: 4px;
+	min-width: 0;
+}
+
+.stage-copy strong {
+	overflow: hidden;
+	font-size: 12px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.stage-copy small {
+	color: var(--muted);
+}
+
+.selected-goal {
+	display: flex;
+	align-items: baseline;
+	gap: 14px;
+	padding: 10px 13px;
+	border: 1px solid var(--line);
+	border-radius: 5px;
+	background: #f3f6f2;
+}
+
+.selected-goal .label {
+	flex: 0 0 auto;
+	color: var(--muted);
+}
+
+.selected-goal p {
+	font-size: 13px;
+	line-height: 1.45;
+}
+
+.task-plan {
+	display: grid;
+	grid-template-columns: 265px minmax(0, 1fr);
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	overflow: hidden;
+	background: white;
+}
+
+.progress-panel {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	align-content: start;
+	align-items: end;
+	gap: 2px 8px;
+	padding: 20px;
+	background: #f2f5f0;
+	border-right: 1px solid var(--line);
+}
+
+.progress-number {
+	font-family: var(--mono);
+	font-size: 34px;
+	line-height: 1;
+	letter-spacing: -0.08em;
+}
+
+.progress-caption {
+	padding-bottom: 3px;
+	color: var(--muted);
+}
+
+.progress-track {
+	grid-column: 1 / -1;
+	height: 5px;
+	margin: 9px 0 13px;
+	overflow: hidden;
+	border-radius: 4px;
+	background: #d6dfd7;
+}
+
+.progress-track span {
+	display: block;
+	height: 100%;
+	background: var(--teal);
+}
+
+.progress-panel .label,
+.progress-panel p {
+	grid-column: 1 / -1;
+}
+
+.progress-panel .label {
+	margin-bottom: 3px;
+	color: var(--muted);
+}
+
+.progress-panel p {
+	font-size: 13px;
+	line-height: 1.4;
+}
+
+.task-list {
+	list-style: none;
+	padding: 0;
+}
+
+.task-row {
+	display: grid;
+	grid-template-columns: 30px minmax(0, 1fr) auto;
+	align-items: center;
+	gap: 4px;
+	min-height: 47px;
+	padding: 7px 14px;
+	border-bottom: 1px solid #e1e6e2;
+}
+
+.task-row:last-child {
+	border-bottom: 0;
+}
+
+.task-row.completed .task-index {
+	color: white;
+	border-color: var(--green);
+	background: var(--green);
+}
+
+.task-copy {
+	display: grid;
+	gap: 3px;
+}
+
+.task-copy strong {
+	font-size: 13px;
+}
+
+.task-copy small {
+	overflow: hidden;
+	font-size: 11px;
+	color: var(--muted);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.task-status {
+	color: var(--muted);
+}
+
+.task-row.active .task-status,
+.task-row.active .task-index {
+	color: var(--teal);
+}
+
+.task-empty {
+	padding: 22px;
+	color: var(--muted);
+}

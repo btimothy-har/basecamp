@@ -19,7 +19,7 @@ The repo is organized by the artifacts it ships:
 package.json  tsconfig.json  biome.json   # THE TypeScript toolchain — repo root is the Pi package
 pyproject.toml  uv.lock  install.py  Makefile   # Python toolchain + bootstrap
 scripts/check-boundaries.ts                # Import-boundary lint (cross-domain via #<domain>/index.ts only)
-scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350, .py ≤ 500 (no exceptions)
+scripts/check-file-length.ts               # Hard caps: .ts ≤ 350; .py/.html/.css/.js ≤ 500 (no exceptions)
 
 pi/                            # ① the Pi extension (TypeScript)
 ├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
@@ -94,7 +94,7 @@ Browser authentication is process-memory-only. The owner-only UDS mints a CSPRNG
 
 The dashboard uses a distinct safe global read model rather than exposing existing control/store rows. Structural roots are selected independently of descendant traversal; agent-free roots remain visible; Copilot mode takes classification precedence, then durable workstream attachment, then Root. Descendant traversal is cycle-safe, ask answerers/subtrees stay hidden, truncation is explicit, and all browser identity/routing uses public handles. The display window is query-time scope, never retention or cleanup. `pi/core/hub/protocol/PROTOCOL.md` is the canonical source for exact bounds, endpoint fields, and privacy exclusions.
 
-The frontend is a packaged, no-build application under `src/basecamp/hub/dashboard/assets/`: semantic `index.html` (enforced below 500 lines), external CSS, flat ES modules, no external runtime request, framework, CDN, font, service worker, or client-side persistence. It polls every three seconds only while visible, keeps the last safe in-memory snapshot on transient failure, uses public-handle hash routes, preserves filtered ancestry, and fetches messages only for the selected agent. Companion, Files, the compact in-Pi agent widget, and workstream tools remain independent and unchanged.
+The frontend is a packaged, no-build application under `src/basecamp/hub/dashboard/assets/`: semantic HTML, ordered external CSS, flat ES modules, and a 500-line cap on every asset; no external runtime request, framework, CDN, font, service worker, or client-side persistence. It polls every three seconds only while visible, keeps the last safe in-memory snapshot on transient failure, uses public-handle hash routes, preserves filtered ancestry, and fetches messages only for the selected agent. Companion, Files, the compact in-Pi agent widget, and workstream tools remain independent and unchanged.
 
 ### Evaluations
 
@@ -149,7 +149,7 @@ The model is multi-agent and repo-neutral: every `pi --workstream` session appen
 
 ### File Length Limits
 
-Hard caps on every file, tests included: **TypeScript ≤ 350 lines, Python ≤ 500 lines**, enforced by `scripts/check-file-length.ts` in `npm run check` (and therefore `make lint` and CI).
+Hard caps on every file, tests included: **TypeScript ≤ 350 lines; Python, HTML, CSS, and JavaScript ≤ 500 lines**, enforced by `scripts/check-file-length.ts` in `npm run check` (and therefore `make lint` and CI).
 
 The cap is a module-design forcing function. When a file approaches it, split along responsibility seams — named modules with one job each. Never satisfy the cap by compressing style (collapsing blank lines, one-lining logic), and never with `-part2`-style continuation files: if no seam is apparent, the file owns more than one responsibility and the design needs rethinking, not the formatting.
 
