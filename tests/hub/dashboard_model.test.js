@@ -2,16 +2,21 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
 	assignment,
+	canLoadMoreRoots,
 	contextsForRoot,
 	defaultStageIndex,
 	EMPTY_FILTERS,
 	elapsedTime,
+	MAX_RECENT_ROOT_LIMIT,
+	nextRecentRootLimit,
 	normalizeSnapshot,
 	parseRoute,
 	progressPercent,
 	relativeTime,
+	rootLoaderMode,
 	routeFor,
 	selectedStage,
+	snapshotFailureState,
 	stagesForRoot,
 	visibleContexts,
 	visibleRoots,
@@ -20,7 +25,10 @@ import {
 function fixture() {
 	return normalizeSnapshot({
 		generated_at: "2026-07-21T12:00:00Z",
-		window_hours: 72,
+		window_hours: 24,
+		recent_root_limit: 5,
+		recent_root_limit_max: 50,
+		roots_truncated: true,
 		roots: [
 			{
 				root_handle: "root.handle",
@@ -74,6 +82,42 @@ describe("dashboard model", () => {
 				["agent-c", 2, ["agent-a", "agent-b"]],
 			],
 		);
+	});
+
+	it("normalizes bounded root metadata and loader states", () => {
+		const snapshot = fixture();
+		assert.equal(snapshot.window_hours, 24);
+		assert.equal(snapshot.recent_root_limit, 5);
+		assert.equal(snapshot.recent_root_limit_max, 50);
+		assert.equal(snapshot.roots_truncated, true);
+		assert.equal(canLoadMoreRoots(snapshot, 5), true);
+		assert.equal(nextRecentRootLimit(5, snapshot.recent_root_limit_max), 10);
+		assert.equal(nextRecentRootLimit(48, snapshot.recent_root_limit_max), MAX_RECENT_ROOT_LIMIT);
+		assert.equal(canLoadMoreRoots(snapshot, MAX_RECENT_ROOT_LIMIT), false);
+		assert.equal(rootLoaderMode(snapshot, 5, false, "connected"), "more");
+		assert.equal(rootLoaderMode(snapshot, 10, true, "connected"), "loading");
+		assert.equal(rootLoaderMode(snapshot, 10, false, "busy"), "busy");
+		assert.equal(rootLoaderMode(snapshot, 10, false, "offline"), "offline");
+		assert.equal(
+			rootLoaderMode(
+				{ ...snapshot, recent_root_limit: MAX_RECENT_ROOT_LIMIT },
+				MAX_RECENT_ROOT_LIMIT,
+				false,
+				"connected",
+			),
+			"limit",
+		);
+		assert.equal(rootLoaderMode({ ...snapshot, roots_truncated: false }, 5, false, "connected"), "hidden");
+		assert.equal(rootLoaderMode({ ...snapshot, roots_truncated: false }, 10, false, "connected"), "complete");
+		assert.equal(snapshotFailureState(429, true), "busy");
+		assert.equal(snapshotFailureState(429, false), "loading");
+		assert.equal(snapshotFailureState(503, true), "offline");
+
+		const defaults = normalizeSnapshot({ roots: [] });
+		assert.equal(defaults.window_hours, 24);
+		assert.equal(defaults.recent_root_limit, 5);
+		assert.equal(defaults.recent_root_limit_max, 50);
+		assert.equal(defaults.roots_truncated, false);
 	});
 
 	it("retains ancestors as context under agent filters", () => {

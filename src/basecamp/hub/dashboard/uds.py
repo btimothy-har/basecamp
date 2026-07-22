@@ -8,6 +8,8 @@ from http.client import HTTPConnection, HTTPException
 from typing import Any, Protocol
 from urllib.parse import urlencode
 
+from ..store.dashboard import DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT
+
 DASHBOARD_UDS_TIMEOUT_SECONDS = 1.0
 DASHBOARD_UDS_RESPONSE_MAX_BYTES = 8 * 1024 * 1024
 
@@ -49,7 +51,12 @@ class DashboardUdsError(RuntimeError):
 class DashboardDataSource(Protocol):
     """Only UDS reads the TCP dashboard app is allowed to perform."""
 
-    def get_snapshot(self) -> dict[str, Any]: ...
+    def get_snapshot(
+        self,
+        *,
+        recent_root_limit: int = DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT,
+        selected_root_handle: str | None = None,
+    ) -> dict[str, Any]: ...
 
     def get_messages(self, *, root_handle: str, agent_handle: str) -> dict[str, Any]: ...
 
@@ -86,8 +93,16 @@ class DashboardUdsClient:
         self._connection_factory = connection_factory
         self._timeout = timeout
 
-    def get_snapshot(self) -> dict[str, Any]:
-        return self._request_json("GET", "/dashboard/snapshot")
+    def get_snapshot(
+        self,
+        *,
+        recent_root_limit: int = DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT,
+        selected_root_handle: str | None = None,
+    ) -> dict[str, Any]:
+        params: dict[str, str | int] = {"recent_root_limit": recent_root_limit}
+        if selected_root_handle is not None:
+            params["selected_root_handle"] = selected_root_handle
+        return self._request_json("GET", f"/dashboard/snapshot?{urlencode(params)}")
 
     def get_messages(self, *, root_handle: str, agent_handle: str) -> dict[str, Any]:
         query = urlencode({"root_handle": root_handle, "agent_handle": agent_handle})

@@ -19,9 +19,17 @@ class _Source:
     def __init__(self) -> None:
         self.calls: list[tuple[str, object]] = []
         self.fail = False
+        self.busy = False
 
-    def get_snapshot(self) -> dict[str, Any]:
-        self.calls.append(("snapshot", None))
+    def get_snapshot(
+        self,
+        *,
+        recent_root_limit: int = 5,
+        selected_root_handle: str | None = None,
+    ) -> dict[str, Any]:
+        self.calls.append(("snapshot", (recent_root_limit, selected_root_handle)))
+        if self.busy:
+            raise DashboardUdsError("busy", status=429)
         if self.fail:
             raise DashboardUdsError.unavailable()
         return {"roots": [{"root_handle": "root-handle"}]}
@@ -148,7 +156,11 @@ def test_authenticated_api_proxies_only_fixed_reads(tmp_path: Path) -> None:
         unauthenticated = client.get("/api/snapshot", headers=_SAME_ORIGIN_HEADERS)
         unauthenticated_post = client.post("/api/snapshot", headers=_SAME_ORIGIN_HEADERS)
         _authenticate(client, nonce)
-        snapshot = client.get("/api/snapshot", headers=_SAME_ORIGIN_HEADERS)
+        snapshot = client.get(
+            "/api/snapshot",
+            params={"recent_root_limit": 10, "selected_root_handle": "root-handle"},
+            headers=_SAME_ORIGIN_HEADERS,
+        )
         messages = client.get(
             "/api/messages",
             params={"root_handle": "root-handle", "agent_handle": "agent-handle"},
@@ -157,6 +169,16 @@ def test_authenticated_api_proxies_only_fixed_reads(tmp_path: Path) -> None:
         invalid_handle = client.get(
             "/api/messages",
             params={"root_handle": "root/invalid", "agent_handle": "agent-handle"},
+            headers=_SAME_ORIGIN_HEADERS,
+        )
+        invalid_snapshot_handle = client.get(
+            "/api/snapshot",
+            params={"selected_root_handle": "root/invalid"},
+            headers=_SAME_ORIGIN_HEADERS,
+        )
+        invalid_snapshot_limit = client.get(
+            "/api/snapshot",
+            params={"recent_root_limit": 51},
             headers=_SAME_ORIGIN_HEADERS,
         )
         post = client.post("/api/snapshot", headers=_SAME_ORIGIN_HEADERS)
@@ -171,12 +193,31 @@ def test_authenticated_api_proxies_only_fixed_reads(tmp_path: Path) -> None:
     assert snapshot.json() == {"roots": [{"root_handle": "root-handle"}]}
     assert messages.status_code == 200
     assert invalid_handle.status_code == 422
+    assert invalid_snapshot_handle.status_code == 422
+    assert invalid_snapshot_limit.status_code == 422
     assert post.status_code == 405
     assert all(response.status_code == 404 for response in missing)
     assert source.calls == [
-        ("snapshot", None),
+        ("snapshot", (10, "root-handle")),
         ("messages", ("root-handle", "agent-handle")),
     ]
+
+
+def test_snapshot_busy_remains_distinct_from_hub_unavailable(tmp_path: Path) -> None:
+    app, _access, source, nonce = _authenticated_app(tmp_path)
+
+    with TestClient(app, base_url=DASHBOARD_ORIGIN) as client:
+        _authenticate(client, nonce)
+        source.busy = True
+        busy = client.get("/api/snapshot", headers=_SAME_ORIGIN_HEADERS)
+        source.busy = False
+        source.fail = True
+        unavailable = client.get("/api/snapshot", headers=_SAME_ORIGIN_HEADERS)
+
+    assert busy.status_code == 429
+    assert busy.headers["retry-after"] == "1"
+    assert busy.json()["detail"] == "Dashboard snapshot refresh is already in progress"
+    assert unavailable.status_code == 503
 
 
 def test_security_headers_cover_success_and_error_responses(tmp_path: Path) -> None:

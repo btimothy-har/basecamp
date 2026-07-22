@@ -18,8 +18,14 @@ from .dashboard.access import DashboardAccess, DashboardUnavailableError
 from .frames import PROTOCOL_VERSION
 from .registry import Registry
 from .store import Store
+from .store.dashboard import DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT, DASHBOARD_RECENT_ROOT_MAX_LIMIT
 
 PublicAgentHandle = Annotated[str, Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")]
+OptionalPublicAgentHandle = Annotated[
+    str | None,
+    Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$"),
+]
+RecentRootLimit = Annotated[int, Query(ge=1, le=DASHBOARD_RECENT_ROOT_MAX_LIMIT)]
 
 
 class _SnapshotBusyError(RuntimeError):
@@ -79,10 +85,17 @@ def register_http_routes(
                 raise HTTPException(status_code=503, detail=str(error)) from error
 
     @app.get("/dashboard/snapshot")
-    async def dashboard_snapshot() -> dict[str, Any]:
+    async def dashboard_snapshot(
+        recent_root_limit: RecentRootLimit = DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT,
+        selected_root_handle: OptionalPublicAgentHandle = None,
+    ) -> dict[str, Any]:
         try:
             return await snapshot_flight.run(
-                lambda: store.get_dashboard_snapshot(live_node_ids=registry.live_node_ids())
+                lambda: store.get_dashboard_snapshot(
+                    live_node_ids=registry.live_node_ids(),
+                    recent_root_limit=recent_root_limit,
+                    selected_root_handle=selected_root_handle,
+                )
             )
         except _SnapshotBusyError as error:
             raise HTTPException(

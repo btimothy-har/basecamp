@@ -138,6 +138,10 @@ ol {
 	background: #87948f;
 }
 
+.connection-chip.busy .connection-dot {
+	background: var(--amber);
+}
+
 .connection-chip.loading .connection-dot {
 	animation: pulse 1.2s ease-in-out infinite;
 }

@@ -49,13 +49,19 @@ function renderConnection(state) {
 	nodes.connectionLabel.textContent =
 		state.connection === "connected"
 			? "Hub online"
-			: state.connection === "offline"
-				? "Cached · hub offline"
-				: "Connecting";
-	nodes.offlineBanner.hidden = state.connection !== "offline" || !state.snapshot;
+			: state.connection === "busy"
+				? "Cached · refresh busy"
+				: state.connection === "offline"
+					? "Cached · hub offline"
+					: "Connecting";
+	const showingCached = ["busy", "offline"].includes(state.connection) && state.snapshot;
+	nodes.offlineBanner.hidden = !showingCached;
 	if (!nodes.offlineBanner.hidden) {
 		const age = relativeTime(state.snapshot.generated_at);
-		nodes.offlineBanner.textContent = `Hub connection interrupted. Showing the last safe snapshot from ${age}.`;
+		nodes.offlineBanner.textContent =
+			state.connection === "busy"
+				? `Another snapshot refresh is still running. Showing cached data from ${age}.`
+				: `Hub connection interrupted. Showing the last safe snapshot from ${age}.`;
 	}
 }
 
@@ -89,7 +95,7 @@ function renderFilters(state) {
 		titleCase,
 	);
 	nodes.liveFilter.checked = state.filters.liveOnly;
-	nodes.windowHours.textContent = `${state.snapshot?.window_hours ?? 72}h`;
+	nodes.windowHours.textContent = `${state.snapshot?.window_hours ?? 24}h`;
 }
 
 function setOptions(select, values, allLabel, current, format) {

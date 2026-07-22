@@ -1,3 +1,7 @@
+export const DEFAULT_RECENT_ROOT_LIMIT = 5;
+export const MAX_RECENT_ROOT_LIMIT = 50;
+export const RECENT_ROOT_STEP = 5;
+
 export const EMPTY_FILTERS = Object.freeze({
 	repo: "all",
 	worktree: "all",
@@ -21,6 +25,11 @@ function string(value) {
 
 function number(value, fallback = 0) {
 	return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function integer(value, fallback, minimum, maximum) {
+	const parsed = Math.trunc(number(value, fallback));
+	return Math.max(minimum, Math.min(parsed, maximum));
 }
 
 function normalizeAgent(value) {
@@ -70,11 +79,50 @@ function normalizeRoot(value) {
 export function normalizeSnapshot(value) {
 	const snapshot = record(value);
 	if (!Array.isArray(snapshot.roots)) throw new Error("Invalid dashboard snapshot");
+	const recentRootLimitMax = integer(
+		snapshot.recent_root_limit_max,
+		MAX_RECENT_ROOT_LIMIT,
+		DEFAULT_RECENT_ROOT_LIMIT,
+		MAX_RECENT_ROOT_LIMIT,
+	);
 	return {
 		generated_at: string(snapshot.generated_at),
-		window_hours: number(snapshot.window_hours, 72),
+		window_hours: number(snapshot.window_hours, 24),
+		recent_root_limit: integer(
+			snapshot.recent_root_limit,
+			DEFAULT_RECENT_ROOT_LIMIT,
+			DEFAULT_RECENT_ROOT_LIMIT,
+			recentRootLimitMax,
+		),
+		recent_root_limit_max: recentRootLimitMax,
+		roots_truncated: snapshot.roots_truncated === true,
 		roots: snapshot.roots.map(normalizeRoot).filter(Boolean),
 	};
+}
+
+export function nextRecentRootLimit(current, maximum = MAX_RECENT_ROOT_LIMIT) {
+	const safeMaximum = integer(maximum, MAX_RECENT_ROOT_LIMIT, DEFAULT_RECENT_ROOT_LIMIT, MAX_RECENT_ROOT_LIMIT);
+	const safeCurrent = integer(current, DEFAULT_RECENT_ROOT_LIMIT, DEFAULT_RECENT_ROOT_LIMIT, safeMaximum);
+	return Math.min(safeMaximum, safeCurrent + RECENT_ROOT_STEP);
+}
+
+export function canLoadMoreRoots(snapshot, current) {
+	return snapshot?.roots_truncated === true && current < snapshot.recent_root_limit_max;
+}
+
+export function rootLoaderMode(snapshot, current, loading, connection) {
+	if (!snapshot?.roots_truncated) return current > DEFAULT_RECENT_ROOT_LIMIT ? "complete" : "hidden";
+	if (loading || current > snapshot.recent_root_limit) {
+		if (connection === "busy") return "busy";
+		if (connection === "offline") return "offline";
+		return "loading";
+	}
+	return canLoadMoreRoots(snapshot, current) ? "more" : "limit";
+}
+
+export function snapshotFailureState(status, hasSnapshot) {
+	if (status === 429) return hasSnapshot ? "busy" : "loading";
+	return "offline";
 }
 
 export function uniqueValues(values) {

@@ -51,16 +51,23 @@ def test_dashboard_uds_client_uses_only_fixed_paths() -> None:
     _Connection.requests = []
     _Connection.responses = [
         _Response(200, {"roots": []}),
+        _Response(200, {"roots": ["selected"]}),
         _Response(200, {"messages": []}),
         _Response(200, {"url": "http://127.0.0.1:47658/bootstrap/nonce"}),
     ]
     client = DashboardUdsClient("/tmp/daemon.sock", connection_factory=_Connection)
 
     assert client.get_snapshot() == {"roots": []}
+    assert client.get_snapshot(recent_root_limit=10, selected_root_handle="root one") == {"roots": ["selected"]}
     assert client.get_messages(root_handle="root one", agent_handle="agent/two") == {"messages": []}
     assert client.mint_bootstrap_url() == "http://127.0.0.1:47658/bootstrap/nonce"
     assert _Connection.requests == [
-        ("GET", "/dashboard/snapshot", None),
+        ("GET", "/dashboard/snapshot?recent_root_limit=5", None),
+        (
+            "GET",
+            "/dashboard/snapshot?recent_root_limit=10&selected_root_handle=root+one",
+            None,
+        ),
         ("GET", "/dashboard/messages?root_handle=root+one&agent_handle=agent%2Ftwo", None),
         ("POST", "/dashboard/bootstrap", b""),
     ]
@@ -109,6 +116,18 @@ def test_dashboard_uds_client_round_trips_real_private_socket(tmp_path: Path) ->
         thread.join(timeout=5)
         if uds_path.exists():
             uds_path.unlink()
+
+
+def test_dashboard_uds_client_preserves_snapshot_busy_status() -> None:
+    _Connection.requests = []
+    _Connection.responses = [_Response(429, {"detail": "snapshot busy"})]
+    client = DashboardUdsClient("/tmp/daemon.sock", connection_factory=_Connection)
+
+    with pytest.raises(DashboardUdsError) as raised:
+        client.get_snapshot()
+
+    assert raised.value.status == 429
+    assert raised.value.detail == "snapshot busy"
 
 
 def test_dashboard_uds_client_preserves_bounded_error_detail() -> None:

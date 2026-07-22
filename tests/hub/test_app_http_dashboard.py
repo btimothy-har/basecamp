@@ -53,11 +53,25 @@ def test_dashboard_snapshot_route_merges_live_registry_state(tmp_path: Path) -> 
                 sibling_group=None,
                 agent_handle="root-handle",
             )
-            response = client.get("/dashboard/snapshot")
+            response = client.get(
+                "/dashboard/snapshot",
+                params={"recent_root_limit": 10, "selected_root_handle": "root-handle"},
+            )
+            invalid_handle = client.get(
+                "/dashboard/snapshot",
+                params={"selected_root_handle": "root/invalid"},
+            )
+            invalid_limit = client.get(
+                "/dashboard/snapshot",
+                params={"recent_root_limit": 51},
+            )
 
     assert response.status_code == 200
+    assert invalid_handle.status_code == 422
+    assert invalid_limit.status_code == 422
     payload = response.json()
     assert payload["window_hours"] == 24
+    assert payload["recent_root_limit"] == 10
     assert [root["root_handle"] for root in payload["roots"]] == ["root-handle"]
     assert payload["roots"][0]["live"] is True
     assert "id" not in payload["roots"][0]

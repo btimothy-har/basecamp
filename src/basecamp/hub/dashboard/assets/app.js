@@ -1,11 +1,14 @@
 import {
 	contextsForRoot,
+	DEFAULT_RECENT_ROOT_LIMIT,
 	defaultStageIndex,
 	EMPTY_FILTERS,
 	findAgentContext,
+	nextRecentRootLimit,
 	normalizeSnapshot,
 	parseRoute,
 	routeFor,
+	snapshotFailureState,
 	uniqueValues,
 	visibleRoots,
 } from "/assets/model.js";
@@ -20,6 +23,8 @@ const state = {
 	selectedStageIndex: null,
 	selectedStageRootHandle: null,
 	filters: { ...EMPTY_FILTERS },
+	recentRootLimit: DEFAULT_RECENT_ROOT_LIMIT,
+	loadingMoreRoots: false,
 	messages: new Map(),
 };
 
@@ -57,9 +62,11 @@ function render() {
 		announce(
 			state.connection === "connected"
 				? "Dashboard connected"
-				: state.connection === "offline"
-					? "Dashboard offline. Cached data remains visible."
-					: "Connecting to dashboard",
+				: state.connection === "busy"
+					? "Snapshot refresh busy. Cached data remains visible."
+					: state.connection === "offline"
+						? "Dashboard offline. Cached data remains visible."
+						: "Connecting to dashboard",
 		);
 	}
 }
@@ -113,31 +120,56 @@ async function refreshSnapshot() {
 	clearTimeout(pollTimer);
 	if (document.visibilityState === "hidden") return;
 	const generation = ++refreshGeneration;
+	let responseStatus = null;
 	if (!state.snapshot) {
 		state.connection = "loading";
 		render();
 	}
 	try {
-		const response = await fetch("/api/snapshot", {
+		const response = await fetch(snapshotPath(), {
 			headers: { Accept: "application/json" },
 			credentials: "same-origin",
 			cache: "no-store",
 		});
+		responseStatus = response.status;
 		if (!response.ok) throw new Error(`snapshot status ${response.status}`);
 		const snapshot = normalizeSnapshot(await response.json());
 		if (generation !== refreshGeneration) return;
+		const loadedMore = state.loadingMoreRoots;
 		state.snapshot = snapshot;
+		state.recentRootLimit = snapshot.recent_root_limit;
+		state.loadingMoreRoots = false;
 		pruneMessageCache(snapshot);
 		state.connection = "connected";
 		render();
+		if (loadedMore) announce(`Showing up to ${snapshot.recent_root_limit} recent sessions.`);
 		loadSelectedMessages(true);
 	} catch {
 		if (generation !== refreshGeneration) return;
-		state.connection = "offline";
+		const loadingMore = state.loadingMoreRoots;
+		state.loadingMoreRoots = false;
+		state.connection = snapshotFailureState(responseStatus, Boolean(state.snapshot));
 		render();
+		if (loadingMore) announce("More sessions will load on the next refresh.");
 	} finally {
 		if (generation === refreshGeneration) schedulePoll();
 	}
+}
+
+function snapshotPath() {
+	const params = new URLSearchParams({ recent_root_limit: String(state.recentRootLimit) });
+	if (state.selectedRootHandle) params.set("selected_root_handle", state.selectedRootHandle);
+	return `/api/snapshot?${params}`;
+}
+
+function loadMoreRoots() {
+	if (!state.snapshot || state.loadingMoreRoots || state.recentRootLimit > state.snapshot.recent_root_limit) return;
+	const nextLimit = nextRecentRootLimit(state.recentRootLimit, state.snapshot.recent_root_limit_max);
+	if (nextLimit === state.recentRootLimit) return;
+	state.recentRootLimit = nextLimit;
+	state.loadingMoreRoots = true;
+	renderDashboard(state);
+	refreshSnapshot();
 }
 
 function schedulePoll() {
@@ -287,6 +319,7 @@ function handleAction(button) {
 		renderDashboard(state);
 	}
 	if (action === "resetFilters") resetFilters();
+	if (action === "loadMoreRoots") loadMoreRoots();
 	if (action === "retrySnapshot") refreshSnapshot();
 	if (action === "retryMessages" && rootHandle && agentHandle) loadMessages(rootHandle, agentHandle, { force: true });
 }

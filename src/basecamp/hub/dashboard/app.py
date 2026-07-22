@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi import Path as FastAPIPath
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 
+from ..store.dashboard import DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT, DASHBOARD_RECENT_ROOT_MAX_LIMIT
 from .access import DashboardAccess
 from .uds import DashboardDataSource, DashboardUdsClient, DashboardUdsError
 
@@ -20,6 +21,8 @@ DASHBOARD_ORIGIN = f"http://{DASHBOARD_HOST}:{DASHBOARD_PORT}"
 DASHBOARD_COOKIE = "basecamp_dashboard"
 PUBLIC_HANDLE_PATTERN = r"^[A-Za-z0-9_.-]+$"
 PublicHandle = Annotated[str, Query(min_length=1, max_length=128, pattern=PUBLIC_HANDLE_PATTERN)]
+OptionalPublicHandle = Annotated[str | None, Query(min_length=1, max_length=128, pattern=PUBLIC_HANDLE_PATTERN)]
+RecentRootLimit = Annotated[int, Query(ge=1, le=DASHBOARD_RECENT_ROOT_MAX_LIMIT)]
 BootstrapNonce = Annotated[str, FastAPIPath(min_length=32, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")]
 
 _SECURITY_HEADERS = {
@@ -137,10 +140,23 @@ def create_dashboard_app(
         return Response(content, media_type=content_type)
 
     @app.get("/api/snapshot", dependencies=authenticated)
-    async def snapshot() -> JSONResponse:
+    async def snapshot(
+        recent_root_limit: RecentRootLimit = DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT,
+        selected_root_handle: OptionalPublicHandle = None,
+    ) -> JSONResponse:
         try:
-            payload = await asyncio.to_thread(source.get_snapshot)
+            payload = await asyncio.to_thread(
+                source.get_snapshot,
+                recent_root_limit=recent_root_limit,
+                selected_root_handle=selected_root_handle,
+            )
         except DashboardUdsError as error:
+            if error.status == 429:
+                raise HTTPException(
+                    status_code=429,
+                    detail="Dashboard snapshot refresh is already in progress",
+                    headers={"Retry-After": "1"},
+                ) from error
             raise HTTPException(status_code=503, detail="Dashboard data is temporarily unavailable") from error
         return JSONResponse(payload)
 

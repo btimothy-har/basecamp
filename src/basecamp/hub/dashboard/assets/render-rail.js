@@ -1,5 +1,5 @@
 import { append, el, replace } from "/assets/dom.js";
-import { agentFiltersActive, matchingContexts, relativeTime } from "/assets/model.js";
+import { agentFiltersActive, matchingContexts, relativeTime, rootLoaderMode } from "/assets/model.js";
 import { kindBadge, railSkeleton } from "/assets/render-ui.js";
 
 export function renderRail(state, roots, sessionRail) {
@@ -13,7 +13,7 @@ export function renderRail(state, roots, sessionRail) {
 			: state.snapshot.roots.length
 				? "No sessions match these filters."
 				: "No recent sessions yet.";
-		replace(sessionRail, el("div", { className: "rail-empty", text }));
+		replace(sessionRail, el("div", { className: "rail-empty", text }), rootLoader(state));
 		return;
 	}
 
@@ -42,7 +42,44 @@ export function renderRail(state, roots, sessionRail) {
 		}
 		groups.push(repoSection);
 	}
-	replace(sessionRail, groups);
+	replace(sessionRail, groups, rootLoader(state));
+}
+
+function rootLoader(state) {
+	const mode = rootLoaderMode(state.snapshot, state.recentRootLimit, state.loadingMoreRoots, state.connection);
+	if (mode === "hidden") return null;
+	if (mode === "more") return loaderButton("Load 5 more sessions", false);
+	if (mode === "complete") return loaderNote("All recent sessions shown");
+	if (mode === "limit") return loaderNote(`Newest ${state.snapshot.recent_root_limit_max} recent sessions shown`);
+	const label =
+		mode === "busy"
+			? "Refresh busy · retrying…"
+			: mode === "offline"
+				? "Waiting for hub to load more…"
+				: "Loading more sessions…";
+	return loaderButton(label, true);
+}
+
+function loaderNote(text) {
+	return el("div", {
+		className: "root-limit-note",
+		text,
+		attrs: { tabindex: "-1" },
+		data: { action: "loadMoreRoots" },
+	});
+}
+
+function loaderButton(label, disabled) {
+	return el(
+		"div",
+		{ className: "root-loader" },
+		el("button", {
+			className: "load-more-button",
+			text: label,
+			attrs: { type: "button", "aria-disabled": disabled, "aria-busy": disabled },
+			data: { action: "loadMoreRoots" },
+		}),
+	);
 }
 
 function sessionButton(root, state) {
