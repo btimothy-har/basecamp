@@ -23,6 +23,7 @@ basecamp solves this with a Pi extension that:
 2. **Configures project context** — Detects configured projects from the repo you launch Pi in and loads project-specific prompts automatically
 3. **Supports isolated worktrees** — Planning starts in the protected repo root; approved implementation work activates a labeled worktree
 4. **Manages multi-repo projects** — Groups related repositories under one project definition
+5. **Keeps source files focused** — Supplies soft per-type limits and a hidden, non-blocking reminder after oversized structured edits
 
 ## Installation
 
@@ -205,11 +206,17 @@ The session mode sets the agent's posture and is shown in the footer. Cycle betw
 
 | Style | Description |
 |-------|-------------|
-| `engineering` | Partner role, collaborative work, code quality focus, frequent check-ins |
+| `engineering` | Partner role, collaborative work, code quality and file-focus guidance, frequent check-ins |
 | `advisor` | Advisor role, efficient discovery, direct communication, decision support |
 | `logseq` | Knowledge graph curation, structured entries, user-driven content approval |
 
 Create custom working styles as `{name}.md` files in `~/.pi/basecamp/workspace/styles/`.
+
+### File-Length Guidance
+
+Engineering sessions and mutative workers use soft caps of 350 lines for TypeScript and HTML, 400 for shell, 800 for SQL, and 500 for CSS, Python, and other recognized source types. Tighter project instructions take precedence. The cap is a module-design forcing function: split along responsibility seams rather than compressing formatting or creating continuation files.
+
+After a successful structured `edit` or `write`, Basecamp checks the resulting recognized source file and sends the agent one hidden reminder while it remains over its cap. The edit always succeeds; the reminder neither blocks the tool nor replaces project lint or CI. Unlisted file types are exempt, and mutations made through bash or external generators are not attributed to this hook.
 
 ### Project Context
 
