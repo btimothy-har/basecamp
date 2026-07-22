@@ -54,6 +54,11 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /# Work/);
 		assert.match(prompt, /# Your Role as an Engineer/);
 		assert.match(prompt, /You are a \*\*partner\*\*, not a follower\./);
+		assert.match(prompt, /### File Length/);
+		assert.match(prompt, /350 lines for TypeScript and HTML/);
+		assert.match(prompt, /800 for SQL/);
+		assert.match(prompt, /tighter limit/);
+		assert.match(prompt, /advisory, not a gate/);
 		assert.match(prompt, /## Git & GitHub/);
 		assert.match(prompt, /Use `git` and `gh` directly in bash like a normal developer\./);
 	});

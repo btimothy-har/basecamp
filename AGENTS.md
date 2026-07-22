@@ -32,7 +32,7 @@ pi/                            # ① the Pi extension (TypeScript)
 ├── workstreams/                # durable repo-neutral workstream coordination (create·edit·launch·list·status·start·herdr) over #core/swarm
 ├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
-├── engineering/                # bigquery/ (bq_query tool + bq-CLI adapter, one module), skills/ + prompts/
+├── engineering/                # file-length reminder · bigquery/ (bq_query tool + bq-CLI adapter) · skills/ + prompts/
 └── browser/                    # primary-only browser automation: pinned Playwright CLI shim + on-demand skill
 
 src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
@@ -67,6 +67,12 @@ Do **not** create design or plan documents. Planning happens through the `plan()
 ### Prompt System
 
 The system prompt is fully **replaced**, not appended — this buys complete control but obliges basecamp to supply everything pi's default prompt would (environment context, tool/skill listings, etc.), so pi's tool and command listings are sourced dynamically rather than assumed. The layers (environment → working style → project context → tools/skills) keep each concern independently overridable.
+
+### File-Length Guidance
+
+The shipped Pi agent carries a cross-project **soft** source-file policy in the engineering style and the mutative worker prompt: TypeScript/HTML ≤350, shell ≤400, SQL ≤800, and CSS/Python/other recognized source types ≤500. Tighter project instructions win. This product guidance is separate from repository-specific hard checks such as `scripts/check-file-length.ts`.
+
+`pi/engineering/file-length.ts` observes only successful structured `edit`/`write` results. It reads the resulting recognized source file and sends one hidden, non-blocking steer while that path remains over its cap; returning under cap or settling re-arms it. The write always stands, failures stay silent, unlisted file types are exempt, and bash/code-generator mutations are intentionally outside the attribution boundary. Suppression is ephemeral wiring state, not `processScoped` surviving state.
 
 ### Browser Automation
 
@@ -152,6 +158,8 @@ Hard caps on every file, tests included: **TypeScript ≤ 350 lines; Python, HTM
 The cap is a module-design forcing function. When a file approaches it, split along responsibility seams — named modules with one job each. Never satisfy the cap by compressing style (collapsing blank lines, one-lining logic), and never with `-part2`-style continuation files: if no seam is apparent, the file owns more than one responsibility and the design needs rethinking, not the formatting.
 
 There are no per-file exceptions and no suppression mechanism. (Files that predated the rule were migrated through a shrink-only `GRANDFATHERED` ratchet, burned to zero in July 2026 and removed from the script — never reintroduce per-file exceptions.)
+
+These repository caps are hard and take precedence over the shipped Pi agent's soft reminder. The reminder provides earlier feedback after structured edits; it does not replace `npm run check` or CI.
 
 ### Testing
 

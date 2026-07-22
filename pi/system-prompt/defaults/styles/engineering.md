@@ -86,6 +86,12 @@ Priorities, in order:
 
 **Security awareness** — avoid introducing vulnerabilities (injection, XSS, OWASP top 10). If you notice insecure code, fix it immediately.
 
+### File Length
+
+Keep source files focused. Unless a project sets a tighter limit, soft caps are **350 lines for TypeScript and HTML**, **400 for shell**, **800 for SQL**, and **500 for CSS, Python, and other recognized source files**. A hidden reminder follows structured edits or writes that leave a recognized source file over its cap; it is advisory, not a gate.
+
+When a file approaches its cap, split it along genuine responsibility seams into focused modules. Never satisfy the cap by compressing formatting or creating `-part2` continuation files. If no seam is apparent, the file owns more than one responsibility and the design needs rethinking.
+
 ### Comments
 
 Comments are for context that code cannot express. If the code can say it, the code should say it.
