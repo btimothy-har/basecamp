@@ -8,6 +8,7 @@ the WebSocket coordinator stays in ``app.py``.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Query
@@ -21,6 +22,31 @@ from .store import Store
 PublicAgentHandle = Annotated[str, Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")]
 
 
+class _SnapshotBusyError(RuntimeError):
+    """A dashboard snapshot worker already owns the single-flight slot."""
+
+
+class _SnapshotSingleFlight:
+    def __init__(self) -> None:
+        self._task: asyncio.Task[dict[str, Any]] | None = None
+
+    async def run(self, operation: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+        current = self._task
+        if current is not None and not current.done():
+            raise _SnapshotBusyError
+
+        task = asyncio.create_task(asyncio.to_thread(operation))
+        self._task = task
+        task.add_done_callback(self._release)
+        return await asyncio.shield(task)
+
+    def _release(self, task: asyncio.Task[dict[str, Any]]) -> None:
+        if self._task is task:
+            self._task = None
+        if not task.cancelled():
+            task.exception()
+
+
 def register_http_routes(
     app: FastAPI,
     *,
@@ -29,6 +55,8 @@ def register_http_routes(
     dashboard_access: DashboardAccess | None = None,
 ) -> None:
     """Register the daemon's read-only GET endpoints on ``app``."""
+
+    snapshot_flight = _SnapshotSingleFlight()
 
     @app.get("/health")
     async def health() -> dict[str, Any]:
@@ -52,7 +80,16 @@ def register_http_routes(
 
     @app.get("/dashboard/snapshot")
     async def dashboard_snapshot() -> dict[str, Any]:
-        return await asyncio.to_thread(store.get_dashboard_snapshot, live_node_ids=registry.live_node_ids())
+        try:
+            return await snapshot_flight.run(
+                lambda: store.get_dashboard_snapshot(live_node_ids=registry.live_node_ids())
+            )
+        except _SnapshotBusyError as error:
+            raise HTTPException(
+                status_code=429,
+                detail="Dashboard snapshot refresh is already in progress",
+                headers={"Retry-After": "1"},
+            ) from error
 
     @app.get("/dashboard/messages")
     async def dashboard_messages(root_handle: PublicAgentHandle, agent_handle: PublicAgentHandle) -> dict[str, Any]:

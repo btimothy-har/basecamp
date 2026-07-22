@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from store_helpers import _create_workstream, _insert_run, _write_task_log
 
 from basecamp.hub.store import Store
-from basecamp.hub.store.dashboard import DASHBOARD_AGENT_LIMIT
+from basecamp.hub.store.dashboard import (
+    DASHBOARD_AGENT_LIMIT,
+    DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT,
+    DASHBOARD_RECENT_ROOT_MAX_LIMIT,
+)
 
 NOW = datetime(2026, 7, 21, 12, tzinfo=UTC)
 
@@ -89,7 +93,7 @@ def test_dashboard_selects_structural_live_and_recent_roots_and_classifies_kind(
     _set_last_seen(store.db_path, "live-old", "2026-07-16T00:00:00+00:00")
     _set_last_seen(store.db_path, "recent", "2026-07-21T10:00:00+00:00")
     _set_last_seen(store.db_path, "copilot", "2026-07-21T09:00:00+00:00")
-    _set_last_seen(store.db_path, "expired", "2026-07-18T10:00:00+00:00")
+    _set_last_seen(store.db_path, "expired", "2026-07-20T11:00:00+00:00")
     _create_workstream(store, workstream_id="ws-recent", slug="recent-workstream")
     _create_workstream(store, workstream_id="ws-copilot", slug="copilot-workstream")
     store.attach_workstream_agent(workstream_id="ws-recent", agent_id="recent")
@@ -104,7 +108,66 @@ def test_dashboard_selects_structural_live_and_recent_roots_and_classifies_kind(
     assert roots["recent-root"]["kind"] == "workstream"
     assert roots["copilot-root"]["kind"] == "copilot"
     assert all(root["agent_count"] == 0 for root in roots.values())
-    assert snapshot["window_hours"] == 72
+    assert snapshot["window_hours"] == 24
+    assert snapshot["recent_root_limit"] == DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT
+    assert snapshot["recent_root_limit_max"] == DASHBOARD_RECENT_ROOT_MAX_LIMIT
+    assert snapshot["roots_truncated"] is False
+
+
+def test_dashboard_bounds_recent_roots_without_hiding_live_roots(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db", task_dir=tmp_path / "tasks")
+    for index in range(2):
+        root_id = f"live-{index}"
+        _root(store, root_id)
+        _set_last_seen(store.db_path, root_id, (NOW - timedelta(days=2, hours=index)).isoformat())
+    for index in range(7):
+        root_id = f"recent-{index}"
+        _root(store, root_id)
+        _set_last_seen(store.db_path, root_id, (NOW - timedelta(hours=index + 1)).isoformat())
+
+    snapshot = store.get_dashboard_snapshot(live_node_ids={"live-0", "live-1"}, now=NOW)
+
+    assert [root["root_handle"] for root in snapshot["roots"]] == [
+        "live-0",
+        "live-1",
+        "recent-0",
+        "recent-1",
+        "recent-2",
+        "recent-3",
+        "recent-4",
+    ]
+    assert snapshot["roots_truncated"] is True
+
+    expanded = store.get_dashboard_snapshot(
+        live_node_ids={"live-0", "live-1"},
+        recent_root_limit=10,
+        now=NOW,
+    )
+
+    assert len(expanded["roots"]) == 9
+    assert expanded["roots_truncated"] is False
+
+
+def test_dashboard_clamps_recent_roots_and_pins_the_selected_handle(tmp_path: Path) -> None:
+    store = Store(db_path=tmp_path / "daemon.db", task_dir=tmp_path / "tasks")
+    for index in range(DASHBOARD_RECENT_ROOT_MAX_LIMIT + 1):
+        root_id = f"recent-{index:02}"
+        _root(store, root_id)
+        _set_last_seen(store.db_path, root_id, (NOW - timedelta(minutes=index + 1)).isoformat())
+
+    bounded = store.get_dashboard_snapshot(recent_root_limit=500, now=NOW)
+    pinned = store.get_dashboard_snapshot(
+        recent_root_limit=500,
+        selected_root_handle="recent-50",
+        now=NOW,
+    )
+
+    assert bounded["recent_root_limit"] == DASHBOARD_RECENT_ROOT_MAX_LIMIT
+    assert len(bounded["roots"]) == DASHBOARD_RECENT_ROOT_MAX_LIMIT
+    assert bounded["roots_truncated"] is True
+    assert len(pinned["roots"]) == DASHBOARD_RECENT_ROOT_MAX_LIMIT + 1
+    assert pinned["roots"][-1]["root_handle"] == "recent-50"
+    assert pinned["roots_truncated"] is False
 
 
 def test_dashboard_projects_recursive_topology_and_excludes_ask_subtrees(tmp_path: Path) -> None:

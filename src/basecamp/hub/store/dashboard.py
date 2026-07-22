@@ -15,7 +15,9 @@ from .text import (
     _preview_text,
 )
 
-DASHBOARD_ROOT_WINDOW_HOURS = 72
+DASHBOARD_ROOT_WINDOW_HOURS = 24
+DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT = 5
+DASHBOARD_RECENT_ROOT_MAX_LIMIT = 50
 DASHBOARD_AGENT_LIMIT = 100
 DASHBOARD_MESSAGE_LIMIT = 3
 DASHBOARD_MESSAGE_CHARS = 4000
@@ -30,15 +32,23 @@ class DashboardMixin:
         self,
         *,
         live_node_ids: set[str] | None = None,
+        recent_root_limit: int = DASHBOARD_RECENT_ROOT_DEFAULT_LIMIT,
+        selected_root_handle: str | None = None,
         now: datetime | None = None,
     ) -> dict[str, Any]:
         live = set(live_node_ids or ())
+        safe_limit = max(0, min(recent_root_limit, DASHBOARD_RECENT_ROOT_MAX_LIMIT))
         current = now or datetime.now(UTC)
         if current.tzinfo is None:
             current = current.replace(tzinfo=UTC)
         cutoff = current - timedelta(hours=DASHBOARD_ROOT_WINDOW_HOURS)
-        root_rows = self._dashboard_root_rows(cutoff=cutoff, live_node_ids=live)
-        root_rows.sort(key=lambda row: row["id"] not in live)
+        eligible_rows = self._dashboard_root_rows(cutoff=cutoff, live_node_ids=live)
+        root_rows, roots_truncated = self._select_dashboard_root_rows(
+            eligible_rows,
+            live_node_ids=live,
+            recent_root_limit=safe_limit,
+            selected_root_handle=selected_root_handle,
+        )
         agent_rows = self._dashboard_agent_rows([row["id"] for row in root_rows])
         agents_by_root: dict[str, list[Any]] = defaultdict(list)
         for row in agent_rows:
@@ -57,8 +67,38 @@ class DashboardMixin:
         return {
             "generated_at": current.astimezone(UTC).isoformat(),
             "window_hours": DASHBOARD_ROOT_WINDOW_HOURS,
+            "recent_root_limit": safe_limit,
+            "recent_root_limit_max": DASHBOARD_RECENT_ROOT_MAX_LIMIT,
+            "roots_truncated": roots_truncated,
             "roots": [root for root in roots if root is not None],
         }
+
+    def _select_dashboard_root_rows(
+        self,
+        rows: list[Any],
+        *,
+        live_node_ids: set[str],
+        recent_root_limit: int,
+        selected_root_handle: str | None,
+    ) -> tuple[list[Any], bool]:
+        live_rows = [row for row in rows if row["id"] in live_node_ids]
+        recent_rows = [row for row in rows if row["id"] not in live_node_ids]
+        selected_recent = recent_rows[:recent_root_limit]
+        selected_ids = {row["id"] for row in selected_recent}
+        if selected_root_handle and _is_valid_agent_handle(selected_root_handle):
+            pinned = next(
+                (
+                    row
+                    for row in recent_rows
+                    if row["agent_handle"] == selected_root_handle and row["id"] not in selected_ids
+                ),
+                None,
+            )
+            if pinned is not None:
+                selected_recent.append(pinned)
+                selected_ids.add(pinned["id"])
+        roots_truncated = any(row["id"] not in selected_ids for row in recent_rows)
+        return [*live_rows, *selected_recent], roots_truncated
 
     def _dashboard_root_rows(self, *, cutoff: datetime, live_node_ids: set[str]) -> list[Any]:
         live = sorted(live_node_ids)

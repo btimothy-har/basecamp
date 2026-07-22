@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import suppress
 from pathlib import Path
+from typing import cast
 
+import pytest
 from app_helpers import _build_app_with_store, _register_ws
 from fastapi.testclient import TestClient
 
 from basecamp.hub.app import create_app
 from basecamp.hub.dashboard.access import DashboardAccess
+from basecamp.hub.http_routes import _SnapshotBusyError, _SnapshotSingleFlight
 from basecamp.hub.store import Store
 
 
@@ -50,10 +57,72 @@ def test_dashboard_snapshot_route_merges_live_registry_state(tmp_path: Path) -> 
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["window_hours"] == 72
+    assert payload["window_hours"] == 24
     assert [root["root_handle"] for root in payload["roots"]] == ["root-handle"]
     assert payload["roots"][0]["live"] is True
     assert "id" not in payload["roots"][0]
+
+
+@pytest.mark.asyncio
+async def test_snapshot_single_flight_survives_request_cancellation() -> None:
+    flight = _SnapshotSingleFlight()
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+    calls = 0
+
+    def project() -> dict[str, object]:
+        nonlocal calls
+        calls += 1
+        started.set()
+        try:
+            assert release.wait(timeout=2)
+            return {"roots": []}
+        finally:
+            finished.set()
+
+    request = asyncio.create_task(flight.run(project))
+    assert await asyncio.to_thread(started.wait, 1)
+    request.cancel()
+    with suppress(asyncio.CancelledError):
+        await request
+
+    with pytest.raises(_SnapshotBusyError):
+        await flight.run(lambda: {"roots": []})
+
+    release.set()
+    assert await asyncio.to_thread(finished.wait, 1)
+    await asyncio.sleep(0)
+    assert await flight.run(lambda: {"roots": ["next"]}) == {"roots": ["next"]}
+    assert calls == 1
+
+
+def test_dashboard_snapshot_route_rejects_concurrent_store_work() -> None:
+    started = threading.Event()
+    release = threading.Event()
+    calls = 0
+
+    class BlockingStore:
+        def get_dashboard_snapshot(self, **_kwargs: object) -> dict[str, object]:
+            nonlocal calls
+            calls += 1
+            started.set()
+            assert release.wait(timeout=2)
+            return {"window_hours": 24, "roots": []}
+
+    app = create_app(cast(Store, BlockingStore()))
+    with TestClient(app) as client, ThreadPoolExecutor(max_workers=1) as executor:
+        first = executor.submit(client.get, "/dashboard/snapshot")
+        assert started.wait(timeout=1)
+        follower = client.get("/dashboard/snapshot")
+        assert follower.status_code == 429
+        assert follower.headers["retry-after"] == "1"
+        assert calls == 1
+        release.set()
+        assert first.result(timeout=2).status_code == 200
+        assert client.get("/dashboard/snapshot").status_code == 200
+
+    assert calls == 2
 
 
 def test_dashboard_messages_route_uses_public_handles(tmp_path: Path) -> None:
