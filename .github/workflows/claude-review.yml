@@ -32,6 +32,7 @@ jobs:
             git show "${BASE_SHA}:pi/code-review/skills/code-review/references/review-method.md" \
               > "${RUNNER_TEMP}/basecamp-review-method.md"
           else
+            # Bootstrap only: the introducing PR supplies this copy because its base predates the reference.
             cp pi/code-review/skills/code-review/references/review-method.md \
               "${RUNNER_TEMP}/basecamp-review-method.md"
           fi

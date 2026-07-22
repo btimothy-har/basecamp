@@ -20,7 +20,7 @@ function formatCounts(counts: Verdict["counts"]): string {
 	return `${counts.critical} critical, ${counts.high} high, ${counts.medium} medium, ${counts.low} low`;
 }
 
-function formatRevieweePrompt(result: ReviewResult, artifactPath: string, annotated: boolean): string {
+function formatReviewChairPrompt(result: ReviewResult, artifactPath: string, annotated: boolean): string {
 	return [
 		`The independent reviewers completed ${result.scope.label}; you synthesized their reports as review chair.`,
 		"",
@@ -73,7 +73,7 @@ export function registerReviewTool(pi: ExtensionAPI): void {
 			const artifactPath = persistReviewArtifact(result, reactions);
 
 			return {
-				content: [{ type: "text", text: formatRevieweePrompt(result, artifactPath, annotated) }],
+				content: [{ type: "text", text: formatReviewChairPrompt(result, artifactPath, annotated) }],
 				details: {
 					decision: verdict.decision,
 					counts: verdict.counts,
