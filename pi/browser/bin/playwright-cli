@@ -14,15 +14,16 @@ if [ "$depth" -gt 0 ]; then
 fi
 
 command_name=""
-expect_session_name=false
+expect_option_value=false
 informational=false
 for argument in "$@"; do
-	if [ "$expect_session_name" = true ]; then
-		expect_session_name=false
+	if [ "$expect_option_value" = true ]; then
+		expect_option_value=false
 		continue
 	fi
 	case "$argument" in
-		-s|--session) expect_session_name=true ;;
+		# Recheck value-taking install options whenever the exact-pinned CLI changes.
+		-s|--session|--skills) expect_option_value=true ;;
 		-h|--help|-v|--version) informational=true ;;
 		-*) ;;
 		*)
@@ -38,6 +39,32 @@ if [ "$informational" = false ]; then
 			;;
 	esac
 fi
+
+if [ -z "${HOME:-}" ]; then
+	echo "playwright-cli is unavailable: HOME is required" >&2
+	exit 1
+fi
+case "$HOME" in
+	/*) ;;
+	*)
+		echo "playwright-cli is unavailable: HOME must be an absolute path" >&2
+		exit 1
+		;;
+esac
+case "${PLAYWRIGHT_MCP_OUTPUT_DIR:-}" in
+	""|/*) ;;
+	*)
+		echo "playwright-cli is unavailable: PLAYWRIGHT_MCP_OUTPUT_DIR must be an absolute path" >&2
+		exit 1
+		;;
+esac
+case "${PLAYWRIGHT_MCP_USER_DATA_DIR:-}" in
+	""|/*) ;;
+	*)
+		echo "playwright-cli is unavailable: PLAYWRIGHT_MCP_USER_DATA_DIR must be an absolute path" >&2
+		exit 1
+		;;
+esac
 
 umask 077
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -56,7 +83,7 @@ export PLAYWRIGHT_MCP_HEADLESS PLAYWRIGHT_MCP_ISOLATED PLAYWRIGHT_MCP_BROWSER PL
 export NO_UPDATE_NOTIFIER=1
 
 if [ -z "${PLAYWRIGHT_MCP_OUTPUT_DIR:-}" ]; then
-	PLAYWRIGHT_MCP_OUTPUT_DIR="${HOME:?HOME is required}/.pi/basecamp/browser/playwright-output"
+	PLAYWRIGHT_MCP_OUTPUT_DIR="$HOME/.pi/basecamp/browser/playwright-output"
 	mkdir -p "$PLAYWRIGHT_MCP_OUTPUT_DIR"
 	chmod 700 "$PLAYWRIGHT_MCP_OUTPUT_DIR"
 	export PLAYWRIGHT_MCP_OUTPUT_DIR

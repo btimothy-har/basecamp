@@ -106,7 +106,13 @@ describe("playwright-cli skill", () => {
 			assert.ok(content.includes(guidance), `skill should explain ${guidance}`);
 		}
 		assert.match(content, /Never use `npx`/);
-		assert.match(content, /relative `--filename` writes into the current directory/);
+		assert.match(
+			content,
+			/Any relative filename supplied to a write-producing command resolves from the current directory/,
+		);
+		assert.match(content, /only when the user explicitly requests a project artifact/);
+		assert.match(content, /Storage state can contain cookies and tokens/);
+		assert.match(content, /overrides must be absolute/);
 		assert.match(content, /direct `file:` navigation is blocked/);
 		assert.ok(content.includes("distinct reserved `.test` hostname"));
 		assert.ok(content.includes("http://prototype.test/"));
