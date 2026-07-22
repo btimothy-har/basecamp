@@ -348,7 +348,7 @@ make eval EVAL_ENGINE=docker EVAL_EXTRA=--no-models \
 
 The adapter installs the exact Pi version and a `git archive` of `package.json`, `package-lock.json`, and `pi/` from the clean `HEAD` commit resolved by the launcher. It verifies the archive digest, installs production dependencies from the committed lockfile without lifecycle scripts, and registers Basecamp with Pi. It never mounts host Pi auth, Basecamp configuration, worktrees, or the repository into the trial container.
 
-This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, bash reviewer, and structured file tools. It disables the Python hub, dispatched subagents, companion, browser, workstreams, code-review UI, and interactive `plan()` flow. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
+This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, bash reviewer, and structured file tools. It disables the Python hub, dispatched subagents, browser, workstreams, code-review UI, and interactive `plan()` flow. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
 
 Harbor writes each job and trial beneath `EVAL_JOBS_DIR` (default: `~/evals/basecamp-terminal-bench/jobs`). The useful per-trial files are:
 
@@ -366,27 +366,12 @@ harbor view "$HOME/evals/basecamp-terminal-bench/jobs"
 
 Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
 
-## Companion TUI
-
-Interactive primary sessions open `basecamp companion tui` in a Herdr or tmux side pane when available. The TUI starts in **Diff** and cycles through **Diff → Files → Swarm** with `m`.
-
-Diff controls are independent:
-
-| Key | Control | Values |
-|-----|---------|--------|
-| `c` | Context density | `full` (all context within display limits) / `compact` (three context lines around changes) |
-| `l` | Git layout | `split` (side-by-side) / `stacked` (unified) |
-| `d` | Git scope | `all` / `uncommitted` / `committed` |
-| `←` / `→` | Changed file | Previous / next |
-
-Git-delta powers both layouts and inline word-level highlighting. If it is unexpectedly absent from the pane runtime, Companion falls back to its built-in stacked line renderer. Display choices are local to the running TUI and are not persisted.
-
 ## Package Layout
 
 basecamp is organized by the artifacts it ships:
 
-- `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
-- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `hub` (daemon), and `companion` (TUI) subpackages
+- `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, browser, agents, code review, and workstream features
+- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/config/install CLI plus the `core`, `workspace`, and `hub` (daemon + agents dashboard) subpackages
 - `evals/` — non-shipping evaluation integrations; currently the Harbor adapter for isolated Terminal-Bench runs of Pi with Basecamp
 
 ## License
