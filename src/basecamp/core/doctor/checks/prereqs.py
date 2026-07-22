@@ -1,9 +1,9 @@
 """Environment checks: required executables on the PATH and daemon runtime hygiene.
 
 The executable list is the same one ``basecamp setup`` preflights, sourced from
-:mod:`basecamp.core.prereqs` so the two never drift; essential tools missing are
-errors, optional ones warnings. The daemon check is best-effort and emits
-nothing when the hub is running or was never started — it only flags a *stale*
+:mod:`basecamp.core.prereqs` so the two never drift. The daemon check is
+best-effort and emits nothing when the hub is running or was never started — it
+only flags a *stale*
 pid file (a crashed daemon's leftover), which the daemon itself recreates on its
 next launch.
 """
@@ -24,10 +24,7 @@ def check_prereqs(locations: Locations) -> list[Finding]:
     for prereq in prereqs_module.PREREQUISITES:
         if prereqs_module.is_available(prereq.command):
             continue
-        severity = Severity.ERROR if prereq.essential else Severity.WARNING
-        findings.append(
-            Finding(GROUP, severity, f"{prereq.name} not found on PATH ({prereq.command}).", detail=prereq.hint)
-        )
+        findings.append(Finding(GROUP, Severity.ERROR, f"{prereq.name} not found on PATH ({prereq.command})."))
     findings.extend(_check_daemon(locations))
     return findings
 

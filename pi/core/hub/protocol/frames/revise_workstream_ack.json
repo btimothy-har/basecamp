@@ -1,6 +1,6 @@
 {
   "type": "revise_workstream_ack",
-  "v": 24,
+  "v": 26,
   "request_id": "req-revise-001",
   "status": "revised",
   "version": 2,

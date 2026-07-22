@@ -1,9 +1,9 @@
 /**
  * Task-domain data models — the shared vocabulary of goals and tasks.
  *
- * These are the types other tasks layers (lifecycle/workflows/tools) and the
- * companion domain read. They import nothing from tasks itself — the bottom of
- * the domain's dependency graph.
+ * These are the types shared by the task lifecycle, workflows, and tools. They
+ * import nothing from tasks itself — the bottom of the domain's dependency
+ * graph.
  */
 
 import type { AgentMode } from "#core/agent-mode/index.ts";
@@ -40,12 +40,4 @@ export interface GoalCycle {
 	agentMode?: AgentMode | null;
 	active: boolean;
 	archivedAt: string | null;
-}
-
-/**
- * Read-only view of live task state, published by lifecycle for cross-domain
- * observers (companion). Reads only — mutation stays inside the tasks domain.
- */
-export interface TasksReader {
-	getState(): Readonly<TasksState>;
 }

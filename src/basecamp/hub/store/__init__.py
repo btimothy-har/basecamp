@@ -18,6 +18,7 @@ from basecamp.core.paths import DAEMON_DB, TASKS_DIR
 
 from ._sqlite import reading, writing
 from .agents import AgentsMixin
+from .dashboard import DashboardMixin
 from .directory import DirectoryMixin
 from .errors import (
     ActiveRunExistsError,
@@ -29,6 +30,7 @@ from .messages import MessagesMixin
 from .policy import PolicyMixin
 from .runs import RunsMixin
 from .summary import SummaryMixin
+from .task_projection import TaskProjectionMixin
 from .text import (
     is_message_delivery_terminal,
     safe_product_role,
@@ -52,6 +54,8 @@ class Store(
     RunsMixin,
     PolicyMixin,
     DirectoryMixin,
+    TaskProjectionMixin,
+    DashboardMixin,
     SummaryMixin,
     WorkstreamsMixin,
 ):

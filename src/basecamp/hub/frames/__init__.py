@@ -43,6 +43,8 @@ from .swarm import (
 )
 from .version import PROTOCOL_VERSION, ProtocolFrame
 
+SessionAgentMode = Literal["analysis", "planning", "work", "copilot"]
+
 
 class RegisterFrame(ProtocolFrame):
     """Client registration frame."""
@@ -59,6 +61,21 @@ class RegisterFrame(ProtocolFrame):
     session_file: str | None = None
     repo: str | None = None
     worktree_label: str | None = None
+    branch: str | None = None
+    model: str | None = None
+    agent_mode: SessionAgentMode | None = None
+
+
+class SessionMetadataFrame(ProtocolFrame):
+    """Mutable metadata for the authenticated session connection."""
+
+    type: Literal["session_metadata"]
+    session_name: str
+    model: str | None
+    agent_mode: SessionAgentMode
+    repo: str | None
+    worktree_label: str | None
+    branch: str | None
 
 
 class RegisteredFrame(ProtocolFrame):
@@ -80,6 +97,7 @@ class ErrorFrame(ProtocolFrame):
 Frame = Annotated[
     RegisterFrame
     | RegisteredFrame
+    | SessionMetadataFrame
     | ErrorFrame
     | DispatchFrame
     | DispatchAckFrame
@@ -157,6 +175,7 @@ __all__ = [
     "RegisterFrame",
     "RegisteredFrame",
     "ResultReportFrame",
+    "SessionMetadataFrame",
     "ReviseWorkstreamAckFrame",
     "ReviseWorkstreamFrame",
     "TelemetryFrame",

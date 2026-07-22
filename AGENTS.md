@@ -9,7 +9,7 @@ The repo is organized by the artifacts it ships:
 | Product | Directory | Purpose |
 |---------|-----------|---------|
 | Basecamp Pi extension | `pi/` (`pi/extension.ts` + `pi/<domain>/`) | The single Pi package, registered from the repo root: all session, workspace, workflow, and agent behavior, assembled from domain modules |
-| `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, `basecamp.hub` (daemon), and `basecamp.companion` (TUI) subpackages |
+| `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, and `basecamp.hub` (daemon + agents dashboard) subpackages |
 
 `evals/` is deliberately outside both shipped products. It contains repository-local evaluation harness integrations and may depend on evaluator APIs that production Basecamp never imports.
 
@@ -17,9 +17,9 @@ The repo is organized by the artifacts it ships:
 
 ```
 package.json  tsconfig.json  biome.json   # THE TypeScript toolchain — repo root is the Pi package
-pyproject.toml  uv.lock  install.py  Makefile   # Python toolchain + bootstrap
+pyproject.toml  install.py  Makefile           # Python toolchain + bootstrap
 scripts/check-boundaries.ts                # Import-boundary lint (cross-domain via #<domain>/index.ts only)
-scripts/check-file-length.ts               # Hard file-length caps: .ts ≤ 350, .py ≤ 500 (no exceptions)
+scripts/check-file-length.ts               # Hard caps: .ts ≤ 350; .py/.html/.css/.js ≤ 500 (no exceptions)
 
 pi/                            # ① the Pi extension (TypeScript)
 ├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
@@ -30,20 +30,18 @@ pi/                            # ① the Pi extension (TypeScript)
 ├── system-prompt/              # before_agent_start prompt assembly: prompt.ts · context-builders.ts · defaults/ (modes·styles·environment)
 ├── code-review/                # /skill:code-review feature domain (user-invoked skill + report_findings tool: findings·synthesis·annotate-pane·artifact)
 ├── workstreams/                # durable repo-neutral workstream coordination (create·edit·launch·list·status·start·herdr) over #core/swarm
-├── companion/                  # Companion TUI integration: snapshot/ + panes/ over Herdr/tmux adapters
 ├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
 ├── engineering/                # file-length reminder · bigquery/ (bq_query tool + bq-CLI adapter) · skills/ + prompts/
 └── browser/                    # primary-only browser automation: pinned Playwright CLI shim + on-demand skill
 
 src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
-├── cli.py                      # Click entry point (config, setup, doctor, install, companion, hub)
+├── cli.py                      # Click entry point (config, setup, doctor, install, hub, agents dashboard opener)
 ├── setup.py  installer.py      # environment setup + install orchestration (uv tool + npm + single pi install)
 ├── config_cli/                 # `basecamp config` CLI shell (plumbing + project/env/alias porcelain); composition layer over core + workspace, so it lives beside cli.py (core imports no other domain)
-├── core/                       # settings/ package (store = locked config.json primitive · schema = section registry · document = generic get/set/edit) + models (config record types: project/env/logseq) + paths (the ~/.pi/basecamp tree, incl. the swarm/companion runtime layout) · console (the shared rich pair) · files · exceptions · doctor
+├── core/                       # settings/ package (store = locked config.json primitive · schema = section registry · document = generic get/set/edit) + models (config record types: project/env/logseq) + paths (the ~/.pi/basecamp config/task/swarm tree) · console (the shared rich pair) · files · exceptions · doctor
 ├── workspace/                  # per-repo worktree-setup environments + menus
-├── hub/                         # the daemon (host-global service): core (app·server·http_routes·registry) + frames/ + store/ (per data object) + swarm/ (agents)
-└── companion/                   # Textual TUI (Diff · Files · Swarm) + daemon observability client
+└── hub/                        # host-global daemon: private UDS control app + store/frames/swarm, and dashboard/ (auth · TCP app/server · UDS client · no-build assets)
 
 evals/                         # non-shipping evaluation integrations
 └── terminal_bench/             # Harbor adapter: pinned Pi + committed Basecamp package in isolated task containers
@@ -78,7 +76,7 @@ The shipped Pi agent carries a cross-project **soft** source-file policy in the 
 
 ### Browser Automation
 
-`pi/browser/` exposes no custom browser tools and is **primary-only**: a top-level session discovers the `playwright-cli` skill on demand and gets one private PATH entry — a gated shim for the exact-pinned `@playwright/cli`. Subagents get neither, and the shim rejects `BASECAMP_AGENT_DEPTH > 0`. The shim blocks install commands and confines artifacts to a bounded private directory.
+`pi/browser/` exposes no custom browser tools and is **primary-only**: a top-level session discovers the `playwright-cli` skill on demand and gets one private PATH entry — a gated shim for the exact-pinned `@playwright/cli`. Subagents get neither, and the shim rejects `BASECAMP_AGENT_DEPTH > 0`. The shim blocks install commands and confines automatically named artifacts to a bounded private directory; an explicit filename remains the user-directed project-artifact escape hatch.
 
 Playwright owns a fresh managed profile. The retired `~/.pi/basecamp/browser/profile` and any legacy Chrome/CDP process are never migrated, modified, or terminated in normal operation. The sole exception is `basecamp doctor --clean`, which may reclaim the retired profile only when it is **provably unused** — superseded, unlocked (its Chrome `SingletonLock` names no live pid), and cold (past the staleness threshold) — and only after explicit user confirmation. It never touches a live process or a held/warm profile.
 
@@ -90,6 +88,18 @@ Agent modes are `analysis`, `planning`, `work`, and `copilot`. `work` is the def
 
 Dispatched agents default to **read-only**, fail-closed (read-only unless a persona sets `readOnly: false`): they get a toolset without `write`/`edit`, launch `--read-only`, and share the parent's worktree so they see its live WIP. A **mutative** agent (currently only `worker`) instead gets its **own git worktree**, branched from the parent's HEAD and keyed per-run so re-tasks don't collide; it commits to a branch that the **primary integrates by merge**. Worker worktrees are atomically locked while live, and the daemon removes them on finish only when clean; a dirty residual stays recoverable, while the session-start sweep skips locks and never force-removes post-execution work. The Git lock is a cleanup/liveness guard, not a mutation lease. Mutating sessions with active dirty worktrees receive one hidden, advisory commit reminder before settling. The worktree is the isolation boundary, enforced by the workspace guard's `allowed_dirs` rule. `bash` is deliberately retained (scouts need `git log`, reviewers need `git diff`) and is **not** a mutation sandbox — a bash write still reaches the filesystem, so toolset + worktree confinement is defense-in-depth, not a wall. Independently, the workspace `tool_call` guard hard-blocks structured `write`/`edit` to the protected main checkout even when a subagent has no active worktree.
 
+### Agents Dashboard
+
+`basecamp agents` opens the global read-only browser dashboard. It first runs a Python port of the TypeScript hub ensure contract: the same `daemon.spawn.lock` path, exclusive `0600` `{pid, ts}` file, 30-second stale rule, protocol health gate, PID command validation, detached `basecamp hub` command, and timeout behavior. The daemon independently holds `daemon.server.lock` with nonblocking `flock` for its entire lifetime **before** touching the socket, so the one-hub invariant remains authoritative even if clients race or someone launches `basecamp hub` manually. Both TypeScript and Python spawn-lock owners verify the acquired file's inode before unlinking it.
+
+The hub process owns two completely separate FastAPI apps. The existing post-bind `0600` UDS app remains the only control plane and the only WebSocket listener. A managed secondary Uvicorn thread pre-binds `127.0.0.1:47658` without address/port reuse and serves only the dashboard HTML/assets plus hardcoded snapshot/message reads. It never mounts or generically proxies the daemon app. TCP bind/start failure is nonfatal: the UDS hub continues, while nonce minting reports the dashboard unavailable. The main-thread UDS server remains the signal owner; dashboard shutdown is bounded and cannot mask PID cleanup.
+
+Browser authentication is process-memory-only. The owner-only UDS mints a CSPRNG bootstrap nonce with a 30-second TTL; redemption is atomically single-use and creates a separate bounded 12-hour server-side browser session. The response sets a host-only `HttpOnly; SameSite=Strict; Path=/` cookie and returns a no-store `303` to `/`. Loopback HTTP cannot use `Secure`, and browser cookies are host-scoped rather than port-scoped; this is an accepted single-user-localhost trade-off, not a multi-user security boundary. Defense in depth is exact raw `Host: 127.0.0.1:47658`, exact Origin when present, required `Sec-Fetch-Site` (`none`/`same-origin` only by route), no CORS, disabled TCP access/server/date headers, no-store responses, restrictive CSP/referrer/sniff/frame/opener/resource/permissions headers, and DOM construction through `textContent` rather than HTML sinks.
+
+The dashboard uses a distinct safe global read model rather than exposing existing control/store rows. Structural roots are selected independently of descendant traversal; agent-free roots remain visible; Copilot mode takes classification precedence, then durable workstream attachment, then Root. Descendant traversal is cycle-safe, ask answerers/subtrees stay hidden, truncation is explicit, and all browser identity/routing uses public handles. Every live root is projected, while disconnected history is a newest-first 24-hour prefix loaded five at a time to a 50-root ceiling; the selected eligible root may add one pin. The display window is query-time scope, never retention or cleanup. The daemon admits only one snapshot projection worker at a time, preserves that ownership past requester cancellation, and rejects followers as busy rather than queueing shared-executor work. `pi/core/hub/protocol/PROTOCOL.md` is the canonical source for exact bounds, endpoint fields, and privacy exclusions.
+
+The frontend is a packaged, no-build application under `src/basecamp/hub/dashboard/assets/`: semantic HTML, ordered external CSS, flat ES modules, and a 500-line cap on every asset; no external runtime request, framework, CDN, font, service worker, or client-side persistence. It polls every three seconds only while visible, keeps the last safe in-memory snapshot on transient failure or busy refresh, uses public-handle hash routes, preserves filtered ancestry, and fetches messages only for the selected agent. The compact in-Pi agent widget and workstream tools remain independent.
+
 ### Evaluations
 
 Evaluation integrations live in the non-shipping top-level `evals/` package. Dependency flow is one-way: eval adapters may consume Harbor and committed Basecamp artifacts, while neither `pi/` nor `src/basecamp/` may import `evals/`. Harbor runs on the host and owns one disposable Docker container per task attempt; the evaluated Pi/Basecamp process never runs against the host checkout.
@@ -100,7 +110,7 @@ The initial Terminal-Bench adapter exposes the worker-like `basecamp-pi-single` 
 
 All TypeScript ships as **one** Pi extension (`pi/extension.ts`; manifest = the repo-root `package.json`). It composes the domain modules in a **fixed order, core first**, so init is deterministic and identical on `/reload`. Each domain exposes a `register*` default export; cross-domain imports go only through `#`-subpath aliases and are boundary-checked (core imports no other domain).
 
-Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `code-review` and `workstreams` consume `#core/swarm`; Companion independently owns its snapshot and pane integration while its Python TUI reads safe run projections from the daemon. The Python daemon is `src/basecamp/hub/`.
+Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `code-review` and `workstreams` consume `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
 
 ### Code Review
 
@@ -143,7 +153,7 @@ The model is multi-agent and repo-neutral: every `pi --workstream` session appen
 
 ### File Length Limits
 
-Hard caps on every file, tests included: **TypeScript ≤ 350 lines, Python ≤ 500 lines**, enforced by `scripts/check-file-length.ts` in `npm run check` (and therefore `make lint` and CI).
+Hard caps on every file, tests included: **TypeScript ≤ 350 lines; Python, HTML, CSS, and JavaScript ≤ 500 lines**, enforced by `scripts/check-file-length.ts` in `npm run check` (and therefore `make lint` and CI).
 
 The cap is a module-design forcing function. When a file approaches it, split along responsibility seams — named modules with one job each. Never satisfy the cap by compressing style (collapsing blank lines, one-lining logic), and never with `-part2`-style continuation files: if no seam is apparent, the file owns more than one responsibility and the design needs rethinking, not the formatting.
 
@@ -154,8 +164,8 @@ These repository caps are hard and take precedence over the shipped Pi agent's s
 ### Testing
 
 - **Run all**: `make test` from repo root runs `uv run pytest` plus `npm test`.
-- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` is root `tests/`, with a subdir per domain (`tests/core/`, `tests/workspace/`, `tests/swarm/`, `tests/companion/`) beside the CLI-shell tests; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
-- **TypeScript**: `npm test` runs the Node test runner over every domain's `pi/<domain>/**/*.test.ts` (one child process per test file), plus `pi/extension.test.ts` (whole-graph load + registration under strict Node). A new domain's tests must be added to the `test` glob list in `package.json`.
+- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` is root `tests/`, with domain suites under `tests/core/`, `tests/workspace/`, `tests/hub/`, `tests/config_cli/`, and `tests/evals/` beside the CLI-shell tests; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
+- **TypeScript/JavaScript**: `npm test` runs the Node test runner over every domain's `pi/<domain>/**/*.test.ts` (one child process per test file), `pi/extension.test.ts` (whole-graph load + registration under strict Node), and the pure dashboard-model tests under `tests/hub/*.test.js`. A new domain's tests must be added to the `test` glob list in `package.json`.
 - **Tests live beside their code**: `pi/<domain>/**/tests/` (TS) and `tests/<domain>/` (Python).
 
 ## Pull Requests

@@ -15,6 +15,7 @@ const configuredEnv = [
 	"PLAYWRIGHT_MCP_ISOLATED",
 	"PLAYWRIGHT_MCP_OUTPUT_DIR",
 	"PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE",
+	"PLAYWRIGHT_MCP_USER_DATA_DIR",
 ];
 
 function tempDir(t: TestContext, prefix: string): string {
@@ -30,6 +31,7 @@ function baseEnv(home: string): NodeJS.ProcessEnv {
 		HOME: home,
 	};
 	for (const name of configuredEnv) delete env[name];
+	delete env.BASECAMP_TEST_WRITE_ARTIFACT;
 	return env;
 }
 
@@ -53,8 +55,13 @@ printf 'BROWSER=%s\\n' "$PLAYWRIGHT_MCP_BROWSER"
 printf 'EXECUTABLE=%s\\n' "${"$"}{PLAYWRIGHT_MCP_EXECUTABLE_PATH:-}"
 printf 'OUTPUT_DIR=%s\\n' "$PLAYWRIGHT_MCP_OUTPUT_DIR"
 printf 'OUTPUT_MAX_SIZE=%s\\n' "$PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE"
+printf 'USER_DATA_DIR=%s\\n' "${"$"}{PLAYWRIGHT_MCP_USER_DATA_DIR:-}"
 printf 'NO_UPDATE_NOTIFIER=%s\\n' "$NO_UPDATE_NOTIFIER"
 for argument in "$@"; do printf 'ARG=%s\\n' "$argument"; done
+if [ "${"$"}{BASECAMP_TEST_WRITE_ARTIFACT:-}" = "1" ]; then
+	mkdir -p "$PLAYWRIGHT_MCP_OUTPUT_DIR"
+	touch "$PLAYWRIGHT_MCP_OUTPUT_DIR/automatic-artifact.yml"
+fi
 touch "$HOME/umask-probe"
 `,
 		{ mode: 0o755 },
@@ -109,10 +116,28 @@ describe("playwright-cli shim", () => {
 		assert.equal(fs.statSync(path.join(home, "umask-probe")).mode & 0o777, 0o600);
 	});
 
-	it("preserves explicit Playwright overrides", (t) => {
+	it("routes simulated automatic artifacts outside the invocation directory", (t) => {
+		const home = tempDir(t, "basecamp-browser-artifact-home-");
+		const cwd = tempDir(t, "basecamp-browser-artifact-cwd-");
+		const fakeNodeDir = createFakeNode(t);
+		const env = baseEnv(home);
+		env.PATH = [fakeNodeDir, process.env.PATH ?? ""].join(path.delimiter);
+		env.BASECAMP_TEST_WRITE_ARTIFACT = "1";
+
+		const result = runShim(["screenshot"], env, cwd);
+		const artifact = path.join(home, ".pi", "basecamp", "browser", "playwright-output", "automatic-artifact.yml");
+
+		assert.equal(result.status, 0, result.stderr);
+		assert.equal(fs.existsSync(artifact), true);
+		assert.equal(fs.statSync(artifact).mode & 0o777, 0o600);
+		assert.deepEqual(fs.readdirSync(cwd), []);
+	});
+
+	it("preserves absolute Playwright overrides", (t) => {
 		const home = tempDir(t, "basecamp-browser-overrides-home-");
 		const fakeNodeDir = createFakeNode(t);
 		const customOutput = path.join(home, "custom-output");
+		const customProfile = path.join(home, "custom-profile");
 		const env = {
 			...baseEnv(home),
 			BASECAMP_BROWSER_PATH: "/missing/basecamp-browser",
@@ -123,6 +148,7 @@ describe("playwright-cli shim", () => {
 			PLAYWRIGHT_MCP_ISOLATED: "true",
 			PLAYWRIGHT_MCP_OUTPUT_DIR: customOutput,
 			PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE: "12345",
+			PLAYWRIGHT_MCP_USER_DATA_DIR: customProfile,
 		};
 
 		const result = runShim(["--version"], env);
@@ -134,16 +160,51 @@ describe("playwright-cli shim", () => {
 		assert.match(result.stdout, /^EXECUTABLE=\/custom\/browser$/m);
 		assert.match(result.stdout, new RegExp(`^OUTPUT_DIR=${escapeRegex(customOutput)}$`, "m"));
 		assert.match(result.stdout, /^OUTPUT_MAX_SIZE=12345$/m);
+		assert.match(result.stdout, new RegExp(`^USER_DATA_DIR=${escapeRegex(customProfile)}$`, "m"));
 		assert.equal(fs.existsSync(path.join(home, ".pi")), false);
+	});
+
+	it("rejects writable paths that could resolve from the invocation directory", (t) => {
+		const home = tempDir(t, "basecamp-browser-path-home-");
+		const cwd = tempDir(t, "basecamp-browser-path-cwd-");
+		const missingHome = baseEnv(home);
+		delete missingHome.HOME;
+		const cases: Array<{ name: string; env: NodeJS.ProcessEnv }> = [
+			{ name: "missing HOME", env: missingHome },
+			{ name: "relative HOME", env: { ...baseEnv(home), HOME: "relative-home" } },
+			{
+				name: "relative output directory",
+				env: { ...baseEnv(home), PLAYWRIGHT_MCP_OUTPUT_DIR: "relative-output" },
+			},
+			{
+				name: "relative user data directory",
+				env: { ...baseEnv(home), PLAYWRIGHT_MCP_USER_DATA_DIR: "relative-profile" },
+			},
+		];
+
+		for (const testCase of cases) {
+			const result = runShim(["--version"], testCase.env, cwd);
+			assert.notEqual(result.status, 0, `${testCase.name} should be rejected`);
+			assert.match(result.stderr, /HOME is required|must be an absolute path/);
+		}
+		assert.deepEqual(fs.readdirSync(cwd), []);
 	});
 
 	it("blocks commands that would install or download browsers", (t) => {
 		const home = tempDir(t, "basecamp-browser-install-home-");
 		const blockedCommands = [
 			["install"],
+			["install", "--skills", "agents"],
+			["--skills", "agents", "install"],
 			["-s=test", "install"],
 			["--session", "test", "install-browser"],
 			["--session=test", "install-browser"],
+			["install-browser", "--", "--help"],
+			["--", "install-browser", "--help"],
+			["--session", "--", "install-browser", "--help"],
+			["-s", "--", "install-browser", "-h"],
+			["--session", "--session", "agents", "install-browser"],
+			["--skills", "--session", "agents", "install"],
 		];
 		for (const args of blockedCommands) {
 			const result = runShim(args, baseEnv(home));
@@ -156,6 +217,7 @@ describe("playwright-cli shim", () => {
 		const home = tempDir(t, "basecamp-browser-install-help-home-");
 		for (const args of [
 			["--help", "install"],
+			["--skills", "agents", "install", "--help"],
 			["install-browser", "--help"],
 		]) {
 			const result = runShim(args, baseEnv(home), home);

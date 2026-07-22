@@ -221,11 +221,15 @@ def test_upsert_agent_persists_facets_and_preserves_them_on_null(tmp_path: Path)
         cwd="/tmp/a",
         repo="acme/widgets",
         worktree_label="copilot/brave-otter-quill",
+        branch="bt/dashboard",
+        agent_mode="planning",
     )
 
     with sqlite3.connect(db_path) as connection:
-        stored = connection.execute("SELECT repo, worktree_label FROM agents WHERE id = 'agent-1'").fetchone()
-    assert stored == ("acme/widgets", "copilot/brave-otter-quill")
+        stored = connection.execute(
+            "SELECT repo, worktree_label, branch, agent_mode FROM agents WHERE id = 'agent-1'"
+        ).fetchone()
+    assert stored == ("acme/widgets", "copilot/brave-otter-quill", "bt/dashboard", "planning")
 
     # A lightweight re-register (e.g. a result-report) sends no facets; the stored
     # values must survive rather than being clobbered to NULL.
@@ -239,8 +243,50 @@ def test_upsert_agent_persists_facets_and_preserves_them_on_null(tmp_path: Path)
         cwd="/tmp/a",
         repo=None,
         worktree_label=None,
+        branch=None,
+        agent_mode=None,
     )
 
     with sqlite3.connect(db_path) as connection:
-        preserved = connection.execute("SELECT repo, worktree_label FROM agents WHERE id = 'agent-1'").fetchone()
-    assert preserved == ("acme/widgets", "copilot/brave-otter-quill")
+        preserved = connection.execute(
+            "SELECT repo, worktree_label, branch, agent_mode FROM agents WHERE id = 'agent-1'"
+        ).fetchone()
+    assert preserved == ("acme/widgets", "copilot/brave-otter-quill", "bt/dashboard", "planning")
+
+
+def test_update_agent_metadata_replaces_nullable_facets_exactly(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    store = Store(db_path=db_path)
+    store.upsert_agent(
+        agent_id="agent-1",
+        parent_id=None,
+        sibling_group=None,
+        depth=0,
+        role="agent",
+        session_name="old name",
+        cwd="/tmp/a",
+        model="old-model",
+        repo="acme/widgets",
+        worktree_label="wt/old",
+        branch="bt/old",
+        agent_mode="planning",
+    )
+
+    store.update_agent_metadata(
+        agent_id="agent-1",
+        session_name="new name",
+        model=None,
+        agent_mode="work",
+        repo="acme/widgets",
+        worktree_label=None,
+        branch=None,
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        stored = connection.execute(
+            """
+            SELECT session_name, model, agent_mode, repo, worktree_label, branch
+            FROM agents WHERE id = 'agent-1'
+            """
+        ).fetchone()
+    assert stored == ("new name", None, "work", "acme/widgets", None, None)

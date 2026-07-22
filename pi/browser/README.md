@@ -21,7 +21,7 @@ Load the `playwright-cli` skill for browser tasks. Its default loop is:
 3. act through stable element refs;
 4. snapshot again after state changes.
 
-Use `eval` for a single page or element expression and `run-code` for multi-step Playwright APIs. Screenshots are file-based: run `playwright-cli screenshot` without a relative filename, then inspect the reported PNG with Pi's `read` tool. A relative `--filename` is resolved from the current directory and can dirty the repository.
+Use `eval` for a single page or element expression and `run-code` for multi-step Playwright APIs. Automatically named snapshots, screenshots, PDFs, downloads, response bodies, traces, videos, and storage state go to Basecamp's private output directory. Any relative filename for a write-producing command resolves from the invocation directory and can dirty the repository, so agents use one only when the user requests a project artifact. Storage state can contain cookies and tokens and stays out of the project by default.
 
 ## Runtime policy
 
@@ -29,9 +29,9 @@ Use `eval` for a single page or element expression and `run-code` for multi-step
 - **Browser**: headed Chrome by default. `PLAYWRIGHT_MCP_EXECUTABLE_PATH` takes precedence, followed by `BASECAMP_BROWSER_PATH`; on macOS the shim then checks Google Chrome and Brave. Other platforms use Playwright's Chrome-channel resolution. The pinned upstream Chromium launcher adds `--disable-blink-features=AutomationControlled`, which causes Chrome's generic unsupported-flag banner; Basecamp does not hide it with another flag.
 - **Profile**: `PLAYWRIGHT_MCP_ISOLATED=false` by default, so Playwright creates and owns a fresh persistent profile for its workspace/session. Basecamp does not force a user-data directory.
 - **Lifecycle**: the Playwright daemon preserves browser state across CLI commands. `playwright-cli close` stops the current browser session while retaining its managed profile. Basecamp does not kill CLI sessions on Pi shutdown.
-- **Artifacts**: the default output directory is `~/.pi/basecamp/browser/playwright-output`, created as `0700`; the shim uses umask `077`, and Playwright removes older artifacts when the directory exceeds 512 MiB. Explicit output overrides should use an absolute non-project path.
+- **Artifacts**: the default output directory is `~/.pi/basecamp/browser/playwright-output`, created as `0700`; the shim uses umask `077`, and Playwright removes older artifacts when the directory exceeds 512 MiB. `PLAYWRIGHT_MCP_OUTPUT_DIR` and `PLAYWRIGHT_MCP_USER_DATA_DIR` overrides must be absolute; output overrides should use a non-project path.
 
-The shim defaults `PLAYWRIGHT_MCP_HEADLESS=false`, `PLAYWRIGHT_MCP_ISOLATED=false`, `PLAYWRIGHT_MCP_BROWSER=chrome`, `PLAYWRIGHT_MCP_OUTPUT_DIR`, and `PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE=536870912`. Explicit `PLAYWRIGHT_MCP_*` values win. `BASECAMP_BROWSER_PATH` remains the Basecamp-specific executable override.
+The shim defaults `PLAYWRIGHT_MCP_HEADLESS=false`, `PLAYWRIGHT_MCP_ISOLATED=false`, `PLAYWRIGHT_MCP_BROWSER=chrome`, `PLAYWRIGHT_MCP_OUTPUT_DIR`, and `PLAYWRIGHT_MCP_OUTPUT_MAX_SIZE=536870912`. Explicit `PLAYWRIGHT_MCP_*` values win after writable path validation. `BASECAMP_BROWSER_PATH` remains the Basecamp-specific executable override.
 
 ## Legacy state
 

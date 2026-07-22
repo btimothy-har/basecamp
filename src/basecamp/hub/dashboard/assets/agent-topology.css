@@ -1,0 +1,154 @@
+.agent-table {
+	overflow: hidden;
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	background: white;
+}
+
+.agent-table-head,
+.agent-row {
+	display: grid;
+	grid-template-columns: 240px minmax(260px, 1fr) 180px 80px;
+	gap: 16px;
+	align-items: center;
+}
+
+.agent-table-head {
+	min-height: 33px;
+	padding: 0 15px;
+	color: #728078;
+	background: #f1f4f0;
+	border-bottom: 1px solid var(--line);
+}
+
+.agent-row {
+	width: 100%;
+	min-height: 70px;
+	padding: 9px 15px;
+	text-align: left;
+	cursor: pointer;
+	border: 0;
+	border-bottom: 1px solid #e0e6e1;
+	background: white;
+}
+
+.agent-row:last-child {
+	border-bottom: 0;
+}
+
+.agent-row:hover {
+	background: #f6f9f5;
+}
+
+.agent-row.context-only {
+	background: #f4f6f3;
+	color: #6d7973;
+}
+
+.agent-identity {
+	position: relative;
+	display: grid;
+	gap: 5px;
+	min-width: 0;
+	padding-left: calc(var(--depth) * 18px);
+}
+
+.agent-identity::before {
+	position: absolute;
+	top: 7px;
+	left: calc((var(--depth) * 18px) - 12px);
+	width: calc(var(--depth) * 12px);
+	height: 1px;
+	content: "";
+	background: #9eafa4;
+}
+
+.agent-status-line {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+	font-size: 12px;
+}
+
+.agent-status-line > span:last-child {
+	overflow: hidden;
+	font-weight: 700;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.status-dot {
+	width: 7px;
+	height: 7px;
+}
+
+.status-text {
+	font-family: var(--mono);
+	font-size: 10px;
+	letter-spacing: 0.05em;
+	text-transform: uppercase;
+}
+
+.status-text.running {
+	color: var(--blue);
+}
+
+.status-text.completed {
+	color: var(--green);
+}
+
+.status-text.failed {
+	color: var(--red);
+}
+
+.status-text.pending {
+	color: var(--amber);
+}
+
+.agent-identity small,
+.assignment-cell small,
+.model-cell,
+.elapsed-cell {
+	font-family: var(--mono);
+	font-size: 10px;
+	color: var(--muted);
+}
+
+.assignment-cell {
+	display: grid;
+	gap: 4px;
+	min-width: 0;
+}
+
+.assignment-cell strong,
+.assignment-cell small {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.assignment-cell strong {
+	font-size: 13px;
+}
+
+.lineage {
+	color: #78847e;
+}
+
+.model-cell,
+.elapsed-cell {
+	font-weight: 700;
+}
+
+.elapsed-cell {
+	text-align: right;
+}
+
+.descendants-section {
+	background: #fafbf8;
+}
+
+.agent-table.compact .agent-row {
+	grid-template-columns: 225px minmax(260px, 1fr) 170px 70px;
+}

@@ -1,0 +1,168 @@
+.run-card {
+	border: 1px solid var(--line);
+	border-radius: 6px;
+	overflow: hidden;
+	background: white;
+}
+
+.run-card-heading {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 20px;
+	padding: 16px 18px;
+	background: #f2f5f1;
+	border-bottom: 1px solid var(--line);
+}
+
+.run-card-heading > div:first-child {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.run-counts {
+	display: flex;
+	gap: 18px;
+}
+
+.run-counts > div {
+	text-align: right;
+}
+
+.run-panel {
+	display: grid;
+	grid-template-columns: 190px minmax(0, 1fr);
+	gap: 18px;
+	padding: 17px 18px;
+	border-bottom: 1px solid #dce3dd;
+}
+
+.run-panel:last-child {
+	border-bottom: 0;
+}
+
+.run-panel h3 {
+	font-size: 13px;
+}
+
+.run-copy {
+	display: grid;
+	gap: 7px;
+}
+
+.run-copy p,
+.result-panel p {
+	font-size: 13px;
+	line-height: 1.55;
+	color: #3f4b46;
+}
+
+.activity-list,
+.message-list {
+	display: grid;
+	gap: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.activity-list li {
+	display: grid;
+	grid-template-columns: 72px 85px minmax(0, 1fr);
+	gap: 8px;
+	padding: 7px 0;
+	font-size: 12px;
+	border-bottom: 1px solid #e5e9e6;
+}
+
+.activity-list li:last-child {
+	border-bottom: 0;
+}
+
+.activity-list time {
+	font-family: var(--mono);
+	font-size: 10px;
+	color: var(--muted);
+}
+
+.activity-kind {
+	color: var(--teal);
+}
+
+.skill-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.skill-chip {
+	padding: 4px 7px;
+	font-family: var(--mono);
+	font-size: 10px;
+	font-weight: 700;
+	border: 1px solid #c8d1ca;
+	border-radius: 3px;
+	background: #f2f5f1;
+}
+
+.message-list {
+	gap: 10px;
+}
+
+.message-list li {
+	display: grid;
+	gap: 7px;
+	padding: 12px;
+	border: 1px solid #d9e0da;
+	border-radius: 4px;
+	background: #f9faf8;
+}
+
+.message-list header {
+	display: flex;
+	justify-content: space-between;
+	gap: 12px;
+	font-family: var(--mono);
+	font-size: 10px;
+	color: var(--muted);
+}
+
+.message-list p {
+	font-size: 12px;
+	line-height: 1.55;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.message-list small,
+.result-panel small {
+	font-family: var(--mono);
+	font-size: 9px;
+	color: var(--muted);
+}
+
+.inline-error {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.result-panel {
+	display: grid;
+	gap: 7px;
+	padding-left: 12px;
+	border-left: 3px solid var(--line-strong);
+}
+
+.result-panel.completed {
+	border-left-color: var(--green);
+}
+
+.result-panel.failed {
+	border-left-color: var(--red);
+}
+
+.result-panel.running {
+	border-left-color: var(--blue);
+}

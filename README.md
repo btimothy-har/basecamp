@@ -104,9 +104,9 @@ Use it to list, add, edit, or remove configured projects.
 
 ### Browser Automation
 
-Primary sessions can load the `playwright-cli` skill to automate an installed Chrome or Brave browser. Basecamp uses an exact-pinned local CLI through its gated `playwright-cli` command—no global install, browser download, or MCP server is required. Accessibility snapshots and element refs are the default interaction loop; screenshots are written outside the repository and then inspected with Pi's `read` tool.
+Primary sessions can load the `playwright-cli` skill to automate an installed Chrome or Brave browser. Basecamp uses an exact-pinned local CLI through its gated `playwright-cli` command—no global install, browser download, or MCP server is required. Accessibility snapshots and element refs are the default interaction loop; automatically named artifacts are written outside the repository and then inspected with Pi's `read` tool. An explicit filename writes where requested and is reserved for user-requested project artifacts.
 
-Playwright starts with a fresh managed persistent profile, and browser artifacts default to the private bounded directory `~/.pi/basecamp/browser/playwright-output`. Set `BASECAMP_BROWSER_PATH` for a custom Chromium executable; explicit `PLAYWRIGHT_MCP_*` environment overrides are also honored. Browser access is not exposed to subagents. Upgrades do not migrate or delete the former `~/.pi/basecamp/browser/profile`.
+Playwright starts with a fresh managed persistent profile, and browser artifacts default to the private bounded directory `~/.pi/basecamp/browser/playwright-output`. Set `BASECAMP_BROWSER_PATH` for a custom Chromium executable; explicit `PLAYWRIGHT_MCP_*` environment overrides are also honored, with writable path overrides required to be absolute. Browser access is not exposed to subagents. Upgrades do not migrate or delete the former `~/.pi/basecamp/browser/profile`.
 
 ### Frontend Design
 
@@ -128,6 +128,28 @@ wait_for_agent({ handles: "<agent-handle>" })
 Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`.
 
 Named read-only agents may fan out for parallel investigation and review. Mutative workers may also run in parallel because each receives its own locked, per-run worktree and branch. Basecamp gives mutating sessions one hidden reminder to commit dirty work, reclaims clean worker worktrees automatically, and preserves live or dirty trees rather than force-removing them.
+
+### Agents dashboard
+
+Open the global, read-only session dashboard from any directory:
+
+```bash
+basecamp agents
+```
+
+The command starts or reuses the single Basecamp hub, mints a 30-second one-time browser login over the owner-only daemon socket, and opens the dashboard. If the system browser cannot be opened, it prints the short-lived fallback URL instead. Run the command again when browser authentication expires.
+
+The dashboard groups top-level Root, Workstream, and Copilot sessions by repository and worktree. It always includes every connected root, including sessions with no child agents, plus the five newest disconnected roots seen within the last 24 hours. An explicit **Load 5 more sessions** control expands disconnected history up to 50 roots; the selected session stays pinned while eligible. Filters cover repository, worktree, kind, live status, agent status, and agent type. Session pages show bounded goal-cycle/task history and recursive agent topology; public-handle agent pages show ancestry, descendants, current task, recent allowlisted activity, skills, previews, and at most three assistant messages. Polling pauses while the page is hidden and retains the last safe in-memory snapshot during a transient failure or busy refresh.
+
+The browser surface is deliberately narrower than the daemon:
+
+- It binds only `127.0.0.1:47658`; the port is fixed and a collision disables the dashboard without stopping the UDS hub.
+- It exposes no dispatch, cancel, messaging, mutation, workstream-management, or daemon WebSocket routes.
+- Browser payloads omit private IDs, paths, session files, prompts/specs, environment data, report tokens, raw tool inputs/results, hidden thinking, and full result/error bodies.
+- Authentication state and bootstrap nonces exist only in hub memory. The loopback HTTP cookie is host-only, `HttpOnly`, and `SameSite=Strict`; no login secret is written to disk.
+- The 24-hour disconnected-session window and 50-root loader ceiling are display rules, not retention policy. Older SQLite rows are left untouched, and live roots remain visible regardless of age.
+
+This is a single-user localhost surface, not a remote dashboard: there is no configurable bind address, TLS layer, CORS, or multi-user authorization.
 
 ## Configuration
 
@@ -333,7 +355,7 @@ make eval EVAL_ENGINE=docker EVAL_EXTRA=--no-models \
 
 The adapter installs the exact Pi version and a `git archive` of `package.json`, `package-lock.json`, and `pi/` from the clean `HEAD` commit resolved by the launcher. It verifies the archive digest, installs production dependencies from the committed lockfile without lifecycle scripts, and registers Basecamp with Pi. It never mounts host Pi auth, Basecamp configuration, worktrees, or the repository into the trial container.
 
-This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, bash reviewer, and structured file tools. It disables the Python hub, dispatched subagents, companion, browser, workstreams, code-review UI, and interactive `plan()` flow. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
+This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, bash reviewer, and structured file tools. It disables the Python hub, dispatched subagents, browser, workstreams, code-review UI, and interactive `plan()` flow. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
 
 Harbor writes each job and trial beneath `EVAL_JOBS_DIR` (default: `~/evals/basecamp-terminal-bench/jobs`). The useful per-trial files are:
 
@@ -351,27 +373,12 @@ harbor view "$HOME/evals/basecamp-terminal-bench/jobs"
 
 Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
 
-## Companion TUI
-
-Interactive primary sessions open `basecamp companion tui` in a Herdr or tmux side pane when available. The TUI starts in **Diff** and cycles through **Diff → Files → Swarm** with `m`.
-
-Diff controls are independent:
-
-| Key | Control | Values |
-|-----|---------|--------|
-| `c` | Context density | `full` (all context within display limits) / `compact` (three context lines around changes) |
-| `l` | Git layout | `split` (side-by-side) / `stacked` (unified) |
-| `d` | Git scope | `all` / `uncommitted` / `committed` |
-| `←` / `→` | Changed file | Previous / next |
-
-Git-delta powers both layouts and inline word-level highlighting. If it is unexpectedly absent from the pane runtime, Companion falls back to its built-in stacked line renderer. Display choices are local to the running TUI and are not persisted.
-
 ## Package Layout
 
 basecamp is organized by the artifacts it ships:
 
-- `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, agents, and companion features
-- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/projects/install CLI plus the `core`, `workspace`, `hub` (daemon), and `companion` (TUI) subpackages
+- `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, browser, agents, code review, and workstream features
+- `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/config/install CLI plus the `core`, `workspace`, and `hub` (daemon + agents dashboard) subpackages
 - `evals/` — non-shipping evaluation integrations; currently the Harbor adapter for isolated Terminal-Bench runs of Pi with Basecamp
 
 ## License

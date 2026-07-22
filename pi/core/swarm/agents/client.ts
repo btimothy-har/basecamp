@@ -16,7 +16,6 @@ export {
 export {
 	fetchRunSummary,
 	type RunSummaryAgent,
-	type RunSummaryCounts,
 	type RunSummaryResult,
 } from "./view/summary.ts";
 export {

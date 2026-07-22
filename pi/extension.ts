@@ -12,7 +12,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import registerBashReviewer from "#bash-reviewer/index.ts";
 import registerBrowser from "#browser/index.ts";
 import registerCodeReview from "#code-review/index.ts";
-import registerCompanion from "#companion/index.ts";
 import registerCore from "#core/index.ts";
 import registerEngineering from "#engineering/index.ts";
 import registerSystemPrompt from "#system-prompt/index.ts";
@@ -26,7 +25,6 @@ const MODULES: ReadonlyArray<readonly [string, (pi: ExtensionAPI) => void]> = [
 	["bash-reviewer", registerBashReviewer],
 	["engineering", registerEngineering],
 	["browser", registerBrowser],
-	["companion", registerCompanion],
 	["code-review", registerCodeReview],
 	["workstreams", registerWorkstreams],
 ];

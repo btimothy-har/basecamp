@@ -7,9 +7,9 @@ loaders, and the CLI all validate against one shared definition rather than
 re-declaring the shape.
 
 Kept deliberately domain-neutral: only models for the shared config document
-belong here. Domain-internal shapes (hub wire frames, companion snapshots,
-persistence rows) stay in their own domains, which the ``core imports no other
-domain`` rule requires anyway.
+belong here. Domain-internal shapes such as hub wire frames and persistence rows stay
+in their own domains, which the ``core imports no other domain`` rule requires
+anyway.
 """
 
 from __future__ import annotations

@@ -77,13 +77,25 @@ async function writeSpawnLock(lockPath: string, nowMs: number): Promise<fs.promi
 }
 
 async function releaseSpawnLock(file: fs.promises.FileHandle | null, lockPath: string): Promise<void> {
+	if (!file) return;
+	let identity: { dev: number; ino: number } | null = null;
 	try {
-		await file?.close();
+		const stat = await file.stat();
+		identity = { dev: stat.dev, ino: stat.ino };
 	} catch {
 		// best effort
 	}
 	try {
-		await fs.promises.unlink(lockPath);
+		await file.close();
+	} catch {
+		// best effort
+	}
+	if (!identity) return;
+	try {
+		const current = await fs.promises.stat(lockPath);
+		if (current.dev === identity.dev && current.ino === identity.ino) {
+			await fs.promises.unlink(lockPath);
+		}
 	} catch {
 		// best effort
 	}

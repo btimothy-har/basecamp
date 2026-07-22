@@ -1,5 +1,7 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { getAgentMode } from "../agent-mode/index.ts";
 import { getAgentDepth } from "../host/env.ts";
+import { getWorkspaceState, type WorkspaceState } from "../project/workspace/state.ts";
 import { shortSessionId as defaultShortSessionId } from "../session/session-id.ts";
 import { formatTitle } from "../ui/index.ts";
 import type { DaemonIdentity } from "./connection.ts";
@@ -22,10 +24,12 @@ import { buildDeterministicAgentHandle } from "./handles.ts";
 export interface DaemonIdentityDeps {
 	formatTitle: (title: string, tag: string) => string;
 	shortSessionId: (sessionId: string) => string;
+	getAgentMode: typeof getAgentMode;
+	getWorkspaceState: () => WorkspaceState | null;
 }
 
 export function defaultIdentityDeps(): DaemonIdentityDeps {
-	return { formatTitle, shortSessionId: defaultShortSessionId };
+	return { formatTitle, shortSessionId: defaultShortSessionId, getAgentMode, getWorkspaceState };
 }
 
 /** Truncate + strip control characters from a display label; null when empty. */
@@ -48,6 +52,7 @@ export function deriveDaemonIdentity(ctx: ExtensionContext, deps?: Partial<Daemo
 	// explicit flag the daemon stamps on spawned workers (BASECAMP_USER_FACING=0),
 	// not on json-mode/hasUI; everything not daemon-spawned defaults to "agent".
 	const role = process.env.BASECAMP_USER_FACING === "0" ? "worker" : "agent";
+	const workspace = (deps?.getWorkspaceState ?? getWorkspaceState)();
 	return {
 		node_id: nodeId,
 		agent_handle: explicitHandle || buildDeterministicAgentHandle(nodeId),
@@ -66,6 +71,9 @@ export function deriveDaemonIdentity(ctx: ExtensionContext, deps?: Partial<Daemo
 		session_file: resolveSessionFile(ctx),
 		repo: process.env.BASECAMP_REPO?.trim() || null,
 		worktree_label: process.env.BASECAMP_WORKTREE_LABEL?.trim() || null,
+		branch: workspace?.activeWorktree?.branch ?? null,
+		model: ctx.model?.id ?? null,
+		agent_mode: (deps?.getAgentMode ?? getAgentMode)(),
 	};
 }
 
@@ -81,7 +89,10 @@ function resolveSessionFile(ctx: ExtensionContext): string | null {
 	}
 }
 
-export function resolveDaemonAgentTitle(ctx: ExtensionContext, deps: DaemonIdentityDeps): string | null {
+export function resolveDaemonAgentTitle(
+	ctx: ExtensionContext,
+	deps: Pick<DaemonIdentityDeps, "formatTitle" | "shortSessionId">,
+): string | null {
 	const base = process.env.BASECAMP_AGENT_TITLE?.trim();
 	if (!base) return null;
 	return deps.formatTitle(base, deps.shortSessionId(ctx.sessionManager.getSessionId()));

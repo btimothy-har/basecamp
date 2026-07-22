@@ -27,7 +27,7 @@ Do not add cleanup automation casually. Worktree deletion, branch deletion, and 
 One feature, organized by function (not sub-features):
 
 - **`schemas/`** — the shared data models (`task.ts`, `plan.ts`); the import-nothing leaf.
-- **`lifecycle/`** — the durable goal/task state machine: runtime, goal-cycle ops, persistence, widget, and the read-only `TasksReader` (`reader.ts`).
+- **`lifecycle/`** — the durable goal/task state machine: runtime, goal-cycle operations, persistence, and widget.
 - **`workflows/`** — the stateless `plan()` procedures: `draft.ts`, `review/`, `handoff/` (incl. `runHandoff`).
 - **`tools/`** — the thin agent-facing surface: `task-tools.ts`, `plan-tool.ts`, `commands.ts`, `guards.ts`, `render.ts`. Wired by the composition root; depends downward on the layers below.
 
@@ -37,4 +37,4 @@ One feature, organized by function (not sub-features):
 
 ## Type contracts
 
-`TaskStatus`, `Task`, `ReviewState`, `TasksState`, `GoalCycle`, and the plan models (`PlanDraft`, …) live in `pi/tasks/schemas/` and are exported through `#tasks/index.ts`. For cross-domain observation, `lifecycle/` publishes a read-only `TasksReader` (`getState()` only — no mutators) via `registerTasksReader`; companion reads it through `getTasksReader()` (returns null until tasks registers it). Read-only by construction: the reader cannot mutate task state.
+`TaskStatus`, `Task`, `ReviewState`, `TasksState`, `GoalCycle`, and the plan models (`PlanDraft`, …) live in `pi/tasks/schemas/`. Types needed outside the domain are exported through `#tasks/index.ts`; mutation remains behind the task tools and lifecycle runtime.

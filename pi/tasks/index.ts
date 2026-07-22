@@ -16,6 +16,4 @@ export default function (pi: ExtensionAPI) {
 	registerPlanCommands(pi, runtime, plan);
 }
 
-// Public surface for other contexts (imported via #tasks/index.ts only).
-export { getTasksReader, registerTasksReader } from "./lifecycle/reader.ts";
 export type { GoalCycle, ReviewState, Task, TaskStatus, TasksState } from "./schemas/task.ts";

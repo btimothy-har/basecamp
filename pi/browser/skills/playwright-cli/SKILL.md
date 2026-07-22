@@ -44,6 +44,12 @@ playwright-cli run-code "async page => await page.getByRole('main').innerText()"
 
 Do not use `eval` or `run-code` when a dedicated CLI command expresses the action.
 
+## Files and artifacts
+
+Let Playwright choose filenames for snapshots, screenshots, PDFs, response bodies, videos, and storage state. Automatic files go to Basecamp's private output directory. Any relative filename supplied to a write-producing command resolves from the current directory; use one only when the user explicitly requests a project artifact. `PLAYWRIGHT_MCP_OUTPUT_DIR` and `PLAYWRIGHT_MCP_USER_DATA_DIR` overrides must be absolute.
+
+Storage state can contain cookies and tokens. Run `state-save` without a filename so it uses the private output directory, and never put storage state in the project unless the user explicitly requests it and understands the credential risk.
+
 ## Screenshots
 
 Snapshots are the default inspection method. When pixels matter, save a screenshot and then inspect the reported PNG path with Pi's `read` tool.
@@ -52,8 +58,6 @@ Snapshots are the default inspection method. When pixels matter, save a screensh
 playwright-cli screenshot
 playwright-cli screenshot e15
 ```
-
-Let Playwright choose the output filename so the shim routes it outside the project checkout. A relative `--filename` writes into the current directory; use one only when the user explicitly requests a project artifact.
 
 ## Standalone HTML previews
 
