@@ -7,6 +7,31 @@ from pathlib import Path
 from app_helpers import _build_app_with_store, _register_ws
 from fastapi.testclient import TestClient
 
+from basecamp.hub.app import create_app
+from basecamp.hub.dashboard.access import DashboardAccess
+from basecamp.hub.store import Store
+
+
+def test_private_dashboard_bootstrap_route_requires_available_listener(tmp_path: Path) -> None:
+    access = DashboardAccess(token_factory=lambda: "n" * 43)
+    app = create_app(
+        Store(db_path=tmp_path / "daemon.db", task_dir=tmp_path / "tasks"),
+        dashboard_access=access,
+    )
+
+    with TestClient(app) as client:
+        unavailable = client.post("/dashboard/bootstrap")
+        access.set_available("http://127.0.0.1:47658")
+        available = client.post("/dashboard/bootstrap")
+        wrong_method = client.get("/dashboard/bootstrap")
+
+    assert unavailable.status_code == 503
+    assert "has not started" in unavailable.json()["detail"]
+    assert available.status_code == 200
+    assert available.headers["cache-control"] == "no-store"
+    assert available.json() == {"url": f"http://127.0.0.1:47658/bootstrap/{'n' * 43}"}
+    assert wrong_method.status_code == 405
+
 
 def test_dashboard_snapshot_route_merges_live_registry_state(tmp_path: Path) -> None:
     app, _store = _build_app_with_store(tmp_path)

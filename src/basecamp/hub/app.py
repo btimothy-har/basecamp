@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
+from .dashboard.access import DashboardAccess
 from .frames import (
     PROTOCOL_VERSION,
     AttachWorkstreamAgentFrame,
@@ -57,7 +58,12 @@ from .swarm.service import (
 )
 
 
-def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
+def create_app(
+    store: Store,
+    *,
+    daemon_uds: str | None = None,
+    dashboard_access: DashboardAccess | None = None,
+) -> FastAPI:
     """Create and configure the daemon FastAPI app."""
 
     app = FastAPI()
@@ -66,7 +72,7 @@ def create_app(store: Store, *, daemon_uds: str | None = None) -> FastAPI:
     reapers: set[asyncio.Task[None]] = set()
     delivery_tasks: set[asyncio.Task[None]] = set()
 
-    register_http_routes(app, store=store, registry=registry)
+    register_http_routes(app, store=store, registry=registry, dashboard_access=dashboard_access)
 
     @app.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:

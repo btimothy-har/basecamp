@@ -11,7 +11,9 @@ import asyncio
 from typing import Annotated, Any
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse
 
+from .dashboard.access import DashboardAccess, DashboardUnavailableError
 from .frames import PROTOCOL_VERSION
 from .registry import Registry
 from .store import Store
@@ -19,7 +21,13 @@ from .store import Store
 PublicAgentHandle = Annotated[str, Query(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_.-]+$")]
 
 
-def register_http_routes(app: FastAPI, *, store: Store, registry: Registry) -> None:
+def register_http_routes(
+    app: FastAPI,
+    *,
+    store: Store,
+    registry: Registry,
+    dashboard_access: DashboardAccess | None = None,
+) -> None:
     """Register the daemon's read-only GET endpoints on ``app``."""
 
     @app.get("/health")
@@ -35,6 +43,18 @@ def register_http_routes(app: FastAPI, *, store: Store, registry: Registry) -> N
     @app.get("/runs/messages")
     async def runs_messages(root_id: str, agent_handle: str, limit: int = 3) -> dict[str, Any]:
         return await asyncio.to_thread(store.get_run_messages, root_id, agent_handle=agent_handle, limit=limit)
+
+    if dashboard_access is not None:
+
+        @app.post("/dashboard/bootstrap")
+        async def dashboard_bootstrap() -> JSONResponse:
+            try:
+                return JSONResponse(
+                    {"url": dashboard_access.mint_bootstrap_url()},
+                    headers={"Cache-Control": "no-store"},
+                )
+            except DashboardUnavailableError as error:
+                raise HTTPException(status_code=503, detail=str(error)) from error
 
     @app.get("/dashboard/snapshot")
     async def dashboard_snapshot() -> dict[str, Any]:

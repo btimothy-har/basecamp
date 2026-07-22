@@ -9,6 +9,8 @@ from pathlib import Path
 import uvicorn
 
 from .app import create_app
+from .dashboard.access import DashboardAccess
+from .dashboard.server import DashboardServer
 from .store import Store
 from .swarm.process import reconcile_orphaned_runs
 
@@ -36,10 +38,16 @@ class UdsServer(uvicorn.Server):
                 raise RuntimeError(msg) from exc
 
 
-def create_server(uds_path: str, store: Store, *, log_level: str = "info") -> UdsServer:
+def create_server(
+    uds_path: str,
+    store: Store,
+    *,
+    dashboard_access: DashboardAccess | None = None,
+    log_level: str = "info",
+) -> UdsServer:
     """Build a UDS-bound daemon server for the given store."""
 
-    app = create_app(store, daemon_uds=uds_path)
+    app = create_app(store, daemon_uds=uds_path, dashboard_access=dashboard_access)
     config = uvicorn.Config(app, uds=uds_path, log_level=log_level)
     return UdsServer(config)
 
@@ -82,10 +90,16 @@ def run_hub(
     if daemon_pid_path is not None:
         _write_pid_file(daemon_pid_path, daemon_pid)
 
+    dashboard: DashboardServer | None = None
     try:
         store = Store(db_path=db_path)
         reconcile_orphaned_runs(store)
-        create_server(str(socket_path), store).run()
+        dashboard_access = DashboardAccess()
+        dashboard = DashboardServer(access=dashboard_access, uds_path=str(socket_path))
+        dashboard.start()
+        create_server(str(socket_path), store, dashboard_access=dashboard_access).run()
     finally:
+        if dashboard is not None:
+            dashboard.stop()
         if daemon_pid_path is not None:
             _remove_pid_file(daemon_pid_path, daemon_pid)
