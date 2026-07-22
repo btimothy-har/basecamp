@@ -199,6 +199,8 @@ describe("playwright-cli shim", () => {
 			["-s=test", "install"],
 			["--session", "test", "install-browser"],
 			["--session=test", "install-browser"],
+			["install-browser", "--", "--help"],
+			["--", "install-browser", "--help"],
 		];
 		for (const args of blockedCommands) {
 			const result = runShim(args, baseEnv(home));
