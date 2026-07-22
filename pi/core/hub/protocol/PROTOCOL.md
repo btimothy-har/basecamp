@@ -300,9 +300,17 @@ Rows exclude private agent/run ids, counts, root liveness, models, roles, result
 
 ### `GET /dashboard/snapshot`
 
-Returns the browser-safe global session read model. The daemon selects every live structural root (`parent_id IS NULL`, `depth = 0`, `role = agent`) plus disconnected roots whose `last_seen_at` is within 72 hours. Copilot mode takes classification precedence, then durable workstream attachment, then Root. Agent-free roots remain visible.
+Returns the browser-safe global session read model. The daemon always selects every live structural root (`parent_id IS NULL`, `depth = 0`, `role = agent`), regardless of age, plus a bounded prefix of disconnected roots whose `last_seen_at` is within 24 hours. Copilot mode takes classification precedence, then durable workstream attachment, then Root. Agent-free roots remain visible.
+
+Query parameters:
+- `recent_root_limit` (optional, default `5`): disconnected-root prefix size, validated as `1`–`50` at both HTTP edges.
+- `selected_root_handle` (optional): path-safe public handle to pin when the eligible disconnected root falls outside the prefix. It cannot recover a disconnected root older than 24 hours.
+
+The browser increases `recent_root_limit` by five through an explicit loader. The response echoes `recent_root_limit` and `recent_root_limit_max` (`50`), and `roots_truncated` reports whether eligible disconnected roots remain omitted. Live roots do not consume prefix slots, so the response may contain more than the requested limit. Non-selected disconnected roots may rotate as newer sessions enter the prefix.
 
 Each root contains only public/session display facets: `root_handle`, kind, session name, model/mode, repo/worktree/branch, live/timestamps, current task, up to 10 goal stages × 20 tasks, agent count/truncation, and up to 100 flat descendant rows. Descendants use `agent_handle`, `parent_handle`, computed depth, type/name/model/status/timestamps, bounded task/activity/skill/result/error projections, and explicit truncation. Ask answerers and their subtrees are hidden. Activity excludes thinking. The response never includes private root/agent/run IDs, cwd/session files, specs/prompts/env/report tokens, raw event/tool payloads, user/system/developer messages, hidden thinking, or full result/error bodies.
+
+The daemon owns one snapshot projection task at a time. A concurrent follower receives `429` with `Retry-After: 1` without scheduling another store worker. Request cancellation does not release ownership before the worker finishes. The TCP app preserves the busy status, and the browser keeps cached data while retrying on its normal visible-page schedule; transport failures remain `503`.
 
 ### `GET /dashboard/messages`
 

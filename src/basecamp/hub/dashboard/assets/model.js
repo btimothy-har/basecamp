@@ -1,4 +1,5 @@
 export const DEFAULT_RECENT_ROOT_LIMIT = 5;
+export const MIN_RECENT_ROOT_LIMIT = 1;
 export const MAX_RECENT_ROOT_LIMIT = 50;
 export const RECENT_ROOT_STEP = 5;
 
@@ -82,7 +83,7 @@ export function normalizeSnapshot(value) {
 	const recentRootLimitMax = integer(
 		snapshot.recent_root_limit_max,
 		MAX_RECENT_ROOT_LIMIT,
-		DEFAULT_RECENT_ROOT_LIMIT,
+		MIN_RECENT_ROOT_LIMIT,
 		MAX_RECENT_ROOT_LIMIT,
 	);
 	return {
@@ -91,7 +92,7 @@ export function normalizeSnapshot(value) {
 		recent_root_limit: integer(
 			snapshot.recent_root_limit,
 			DEFAULT_RECENT_ROOT_LIMIT,
-			DEFAULT_RECENT_ROOT_LIMIT,
+			MIN_RECENT_ROOT_LIMIT,
 			recentRootLimitMax,
 		),
 		recent_root_limit_max: recentRootLimitMax,
@@ -101,8 +102,8 @@ export function normalizeSnapshot(value) {
 }
 
 export function nextRecentRootLimit(current, maximum = MAX_RECENT_ROOT_LIMIT) {
-	const safeMaximum = integer(maximum, MAX_RECENT_ROOT_LIMIT, DEFAULT_RECENT_ROOT_LIMIT, MAX_RECENT_ROOT_LIMIT);
-	const safeCurrent = integer(current, DEFAULT_RECENT_ROOT_LIMIT, DEFAULT_RECENT_ROOT_LIMIT, safeMaximum);
+	const safeMaximum = integer(maximum, MAX_RECENT_ROOT_LIMIT, MIN_RECENT_ROOT_LIMIT, MAX_RECENT_ROOT_LIMIT);
+	const safeCurrent = integer(current, DEFAULT_RECENT_ROOT_LIMIT, MIN_RECENT_ROOT_LIMIT, safeMaximum);
 	return Math.min(safeMaximum, safeCurrent + RECENT_ROOT_STEP);
 }
 

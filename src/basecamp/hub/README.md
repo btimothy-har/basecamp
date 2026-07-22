@@ -9,6 +9,6 @@
 
 `basecamp agents` starts or reuses the singleton hub, POSTs to the owner-only UDS for a 30-second one-time bootstrap URL, and opens the browser. The daemon holds a process-lifetime `flock` before touching the socket; TypeScript and Python clients additionally coordinate startup through the shared `daemon.spawn.lock` contract.
 
-The dashboard query returns live and recently seen root sessions through a bounded, public-handle-only safe projection. `pi/core/hub/protocol/PROTOCOL.md` is the canonical source for its scope, fields, bounds, and exclusions.
+The dashboard query always returns live roots plus a five-at-a-time, 24-hour disconnected-root prefix capped at 50, through a public-handle-only safe projection. One cancellation-safe worker owns snapshot projection at a time; overlapping refreshes fail fast as busy instead of queueing more store work. `pi/core/hub/protocol/PROTOCOL.md` is the canonical source for its scope, fields, bounds, and exclusions.
 
 Run the daemon through the `basecamp` CLI (entry point in `src/basecamp/cli.py`). Tests live in `tests/hub/`; dashboard model tests also run under `npm test`.

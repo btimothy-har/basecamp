@@ -113,6 +113,10 @@ describe("dashboard model", () => {
 		assert.equal(snapshotFailureState(429, false), "loading");
 		assert.equal(snapshotFailureState(503, true), "offline");
 
+		const minimum = normalizeSnapshot({ recent_root_limit: 1, recent_root_limit_max: 50, roots: [] });
+		assert.equal(minimum.recent_root_limit, 1);
+		assert.equal(nextRecentRootLimit(minimum.recent_root_limit, minimum.recent_root_limit_max), 6);
+
 		const defaults = normalizeSnapshot({ roots: [] });
 		assert.equal(defaults.window_hours, 24);
 		assert.equal(defaults.recent_root_limit, 5);

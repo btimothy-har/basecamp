@@ -111,6 +111,19 @@ async def test_snapshot_single_flight_survives_request_cancellation() -> None:
     assert calls == 1
 
 
+@pytest.mark.asyncio
+async def test_snapshot_single_flight_recovers_after_projection_error() -> None:
+    flight = _SnapshotSingleFlight()
+
+    def fail() -> dict[str, object]:
+        raise RuntimeError
+
+    with pytest.raises(RuntimeError):
+        await flight.run(fail)
+
+    assert await flight.run(lambda: {"roots": []}) == {"roots": []}
+
+
 def test_dashboard_snapshot_route_rejects_concurrent_store_work() -> None:
     started = threading.Event()
     release = threading.Event()
