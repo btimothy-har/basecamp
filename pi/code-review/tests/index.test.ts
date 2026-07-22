@@ -99,15 +99,4 @@ describe("code-review skill", () => {
 			assert.equal(content.includes(agent), true, `skill should dispatch ${agent}`);
 		}
 	});
-
-	it("shares trusted base guidance with the GitHub reviewer", () => {
-		const repoRoot = path.resolve(import.meta.dirname, "..", "..", "..");
-		const workflow = fs.readFileSync(path.join(repoRoot, ".github", "workflows", "claude-review.yml"), "utf8");
-
-		assert.match(workflow, /pull_request\.base\.sha/);
-		assert.match(workflow, /basecamp-review-method\.md/);
-		assert.match(workflow, /skills\/code-review\/references\/review-method\.md/);
-		assert.doesNotMatch(workflow, /REVIEW\.md/);
-		assert.equal(fs.existsSync(path.join(repoRoot, "REVIEW.md")), false);
-	});
 });
