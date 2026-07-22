@@ -126,6 +126,7 @@ class DashboardServer:
         if thread is not None and thread.is_alive():
             thread.join(timeout)
         if thread is not None and thread.is_alive():
+            # A stuck secondary listener must never keep the UDS hub shutdown waiting.
             if server is not None:
                 server.force_exit = True
             self._close_listener()

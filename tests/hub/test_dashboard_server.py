@@ -100,6 +100,36 @@ def test_dashboard_thread_start_failure_closes_listener(monkeypatch: MonkeyPatch
         replacement.close()
 
 
+def test_dashboard_stop_forces_exit_after_bounded_join() -> None:
+    class StuckThread:
+        def __init__(self) -> None:
+            self.joined: list[float | None] = []
+
+        def is_alive(self) -> bool:
+            return True
+
+        def join(self, timeout: float | None = None) -> None:
+            self.joined.append(timeout)
+
+    class StuckUvicorn:
+        should_exit = False
+        force_exit = False
+
+    access = DashboardAccess()
+    access.set_available("http://127.0.0.1:47658")
+    server = DashboardServer(access=access, uds_path="/tmp/daemon.sock")
+    thread = StuckThread()
+    uvicorn = StuckUvicorn()
+    server._thread = thread
+    server._server = uvicorn
+
+    assert server.stop(timeout=0.25) is False
+    assert thread.joined == [0.25]
+    assert uvicorn.should_exit is True
+    assert uvicorn.force_exit is True
+    assert access.availability().available is False
+
+
 def test_dashboard_app_construction_failure_is_nonfatal() -> None:
     def fail_app(**_kwargs: object) -> FastAPI:
         raise RuntimeError

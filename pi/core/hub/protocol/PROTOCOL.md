@@ -408,6 +408,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 25`.
+2. Send `register` with `v: 26`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

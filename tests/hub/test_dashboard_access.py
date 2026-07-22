@@ -63,6 +63,45 @@ def test_dashboard_access_enforces_nonce_and_session_expiry() -> None:
     assert access.validate_session(session) is False
 
 
+def test_dashboard_access_bounds_bootstrap_nonces_to_newest_64() -> None:
+    counter = 0
+
+    def token() -> str:
+        nonlocal counter
+        counter += 1
+        return f"token-{counter:04}-0000000000000000000000000000"
+
+    access = DashboardAccess(token_factory=token)
+    access.set_available("http://127.0.0.1:47658")
+    nonces = [access.mint_bootstrap_url().rsplit("/", 1)[-1] for _ in range(65)]
+
+    assert access.redeem_bootstrap(nonces[0]) is None
+    assert access.redeem_bootstrap(nonces[1]) is not None
+    assert access.redeem_bootstrap(nonces[-1]) is not None
+
+
+def test_dashboard_access_bounds_browser_sessions_to_newest_64() -> None:
+    counter = 0
+
+    def token() -> str:
+        nonlocal counter
+        counter += 1
+        return f"token-{counter:04}-0000000000000000000000000000"
+
+    access = DashboardAccess(token_factory=token)
+    access.set_available("http://127.0.0.1:47658")
+    sessions: list[str] = []
+    for _ in range(65):
+        nonce = access.mint_bootstrap_url().rsplit("/", 1)[-1]
+        session = access.redeem_bootstrap(nonce)
+        assert session is not None
+        sessions.append(session)
+
+    assert access.validate_session(sessions[0]) is False
+    assert access.validate_session(sessions[1]) is True
+    assert access.validate_session(sessions[-1]) is True
+
+
 def test_dashboard_nonce_redemption_is_atomic_across_threads() -> None:
     counter = 0
     token_lock = threading.Lock()

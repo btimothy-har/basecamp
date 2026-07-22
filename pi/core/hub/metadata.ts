@@ -70,6 +70,7 @@ export function startSessionMetadataPublisher(
 	const publish = (): void => {
 		const frame = buildFrame(sessionName, model, deps);
 		const payload = JSON.stringify(frame);
+		// Reloaded Pi event handlers can converge here; identical snapshots stay wire-silent.
 		if (payload === lastPayload) return;
 		lastPayload = payload;
 		try {
