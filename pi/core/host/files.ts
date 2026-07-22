@@ -1,9 +1,9 @@
 /**
  * Filesystem + JSON primitives shared across domains.
  *
- * The atomic writer and the plain reader were previously copied verbatim into
- * session-state, companion snapshots, and the tasks store; `isRecord` was
- * re-declared in five places. This is their single home. The two perms-hardened
+ * The atomic writer and the plain reader were previously copied across session
+ * state and task persistence; `isRecord` was re-declared in five places. This
+ * is their single home. The two perms-hardened
  * writers (agent run-result, code-review artifacts) are deliberately NOT folded
  * in — they have different shapes (random-temp+rename vs O_EXCL fresh-create)
  * and security-sensitive perms.

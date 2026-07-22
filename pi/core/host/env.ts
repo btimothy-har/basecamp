@@ -1,32 +1,4 @@
-/**
- * Environment contract for basecamp session state.
- *
- * Owns the BASECAMP_* env var schema, typed getters/setters, and the
- * companion-active flag.
- */
-
-import { processScoped } from "../global-registry.ts";
-
-// ---------------------------------------------------------------------------
-// Companion active flag
-// ---------------------------------------------------------------------------
-
-// Runtime session state (set as panes open/close) — must survive /reload.
-const getCompanionActiveState = processScoped("basecamp.companionActive", () => ({ active: false }));
-
-/** Returns true if the Companion TUI pane is active in this session. */
-export function isCompanionActive(): boolean {
-	return getCompanionActiveState().active;
-}
-
-/** Set the companion-active flag. Called by the companion module. */
-export function setCompanionActive(active: boolean): void {
-	getCompanionActiveState().active = active;
-}
-
-// ---------------------------------------------------------------------------
-// BASECAMP_* env vars
-// ---------------------------------------------------------------------------
+/** Environment contract for basecamp session state. */
 
 export type BasecampEnvVar =
 	| "BASECAMP_PROJECT"

@@ -1,7 +1,7 @@
 /**
- * Daemon wire protocol: one file per frame family, composed here. Core-owned
- * (core/hub is the hub-daemon adapter); swarm and companion consume it.
- * The Frame union, FRAME_TYPES, and the codec must stay in lockstep with the
+ * Daemon wire protocol: one file per frame family, composed here. Core owns
+ * the hub-daemon adapter and swarm consumes it. The Frame union, FRAME_TYPES,
+ * and the codec must stay in lockstep with the
  * Python side (src/basecamp/hub/frames/) — tests/frames.test.ts asserts
  * PROTOCOL_VERSION parity and round-trips the shared fixtures in
  * core/hub/protocol/frames/.

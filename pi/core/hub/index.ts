@@ -182,7 +182,6 @@ export {
 export { deriveDaemonIdentity, sanitizeDisplayLabel } from "./identity.ts";
 export { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
 export { ensureDaemon } from "./spawn.ts";
-// ── core/hub public surface: connector primitives + wire protocol, for swarm/companion ──
 export {
 	awaitDaemonConnection,
 	type DaemonConnectListener,

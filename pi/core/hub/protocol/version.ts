@@ -6,7 +6,7 @@
 // v21: register frame gains repo + worktree_label identity facets.
 // v22: revise_workstream content-versioning frames + /workstreams detail carries version history.
 // v23: dispatch spec gains owned_worktree — the reaper removes a mutative agent's worktree on run exit.
-// v24: removes the retired companion-analysis thread_report frame.
+// v24: removes the retired thread_report frame.
 // v25: register metadata facets + self-scoped session_metadata frame; read-only dashboard HTTP surface.
 export const PROTOCOL_VERSION = 25;
 
