@@ -59,7 +59,7 @@ def _asset_bundle(assets_dir: Path) -> tuple[bytes, dict[str, tuple[bytes, str]]
 
     assets: dict[str, tuple[bytes, str]] = {}
     for path in assets_dir.iterdir():
-        if not path.is_file() or path.suffix not in {".css", ".js"}:
+        if not path.is_file() or path.suffix not in {".css", ".js", ".svg"}:
             continue
         content_type = "text/javascript" if path.suffix == ".js" else mimetypes.guess_type(path.name)[0]
         assets[path.name] = (path.read_bytes(), content_type or "application/octet-stream")

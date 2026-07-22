@@ -37,6 +37,7 @@ def _assets(tmp_path: Path) -> Path:
     (assets / "index.html").write_text("<!doctype html><title>Dashboard</title>", encoding="utf-8")
     (assets / "app.js").write_text('document.title = "Dashboard";', encoding="utf-8")
     (assets / "styles.css").write_text("body { color: black; }", encoding="utf-8")
+    (assets / "favicon.svg").write_text("<svg xmlns='http://www.w3.org/2000/svg'/>", encoding="utf-8")
     (assets / "ignored.txt").write_text("not served", encoding="utf-8")
     return assets
 
@@ -67,6 +68,7 @@ def test_bootstrap_sets_host_only_cookie_and_serves_authenticated_assets(tmp_pat
         bootstrap = _authenticate(client, nonce)
         page = client.get("/", headers=_NAVIGATION_HEADERS)
         script = client.get("/assets/app.js", headers=_SAME_ORIGIN_HEADERS)
+        icon = client.get("/assets/favicon.svg", headers=_SAME_ORIGIN_HEADERS)
         ignored = client.get("/assets/ignored.txt", headers=_SAME_ORIGIN_HEADERS)
         replay = _authenticate(client, nonce)
 
@@ -84,6 +86,8 @@ def test_bootstrap_sets_host_only_cookie_and_serves_authenticated_assets(tmp_pat
     assert page.text == "<!doctype html><title>Dashboard</title>"
     assert script.status_code == 200
     assert script.headers["content-type"].startswith("text/javascript")
+    assert icon.status_code == 200
+    assert icon.headers["content-type"].startswith("image/svg+xml")
     assert ignored.status_code == 404
     assert replay.status_code == 404
 
@@ -142,6 +146,7 @@ def test_authenticated_api_proxies_only_fixed_reads(tmp_path: Path) -> None:
 
     with TestClient(app, base_url=DASHBOARD_ORIGIN) as client:
         unauthenticated = client.get("/api/snapshot", headers=_SAME_ORIGIN_HEADERS)
+        unauthenticated_post = client.post("/api/snapshot", headers=_SAME_ORIGIN_HEADERS)
         _authenticate(client, nonce)
         snapshot = client.get("/api/snapshot", headers=_SAME_ORIGIN_HEADERS)
         messages = client.get(
@@ -161,6 +166,7 @@ def test_authenticated_api_proxies_only_fixed_reads(tmp_path: Path) -> None:
         ]
 
     assert unauthenticated.status_code == 401
+    assert unauthenticated_post.status_code == 405
     assert snapshot.status_code == 200
     assert snapshot.json() == {"roots": [{"root_handle": "root-handle"}]}
     assert messages.status_code == 200

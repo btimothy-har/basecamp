@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <title>Basecamp agents</title>
+  <rect width="64" height="64" rx="8" fill="#12231f"/>
+  <path d="M15 12v40M15 12h28v40H15" fill="none" stroke="#55cfa5" stroke-width="4"/>
+  <text x="21" y="40" fill="#f5faf7" font-family="monospace" font-size="22" font-weight="700">B_</text>
+</svg>
