@@ -18,8 +18,6 @@ def _check_prerequisites() -> bool:
             console.print(f"  [green]✓[/green] {prereq.name}")
         else:
             console.print(f"  [red]✗[/red] {prereq.name} [dim]({prereq.command} not found on PATH)[/dim]")
-            if prereq.hint:
-                console.print(f"      [dim]{prereq.hint}[/dim]")
             ok = False
     return ok
 

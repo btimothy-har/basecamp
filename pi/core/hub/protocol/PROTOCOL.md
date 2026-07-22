@@ -1,35 +1,35 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `25`
+Protocol version: `26`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":25,...}
+{"type":"<frame_type>","v":26,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 25`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 26`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 - v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
 - v17 adds safe current-task previews to `list_agents_result` rows.
 - v18 adds cancel-agent request/ack frames and dispatched-run lifecycle hardening: process-group spawn, dispatcher-disconnect grace reaping, and startup reconciliation of orphaned runs.
 - v19 adds workstream management frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` read endpoints.
-- v20 added the `thread_report` raw-thread upload for the Companion analyzer; v24 removed both.
+- v20 added the retired `thread_report` raw-thread upload; v24 removed it.
 - v21 adds first-class node-identity facets (`repo`, `worktree_label`) to `register`, renames node roles to `agent` (user-facing) / `worker` (backgrounded) derived from `BASECAMP_USER_FACING`, and removes the retired `product_role` (register display role) and `run_kind` (dispatch/list mutative kind) fields along with the agent-role and mutative seams.
 - v22 adds the `revise_workstream`/`revise_workstream_ack` frames for in-place workstream content versioning: a revision bumps the workstream's `version`, snapshots the new content into a `workstream_versions` history table (the prior version is retained), and leaves identity/dossier/attached agents unchanged. `GET /workstreams/{id_or_slug}` now also returns the workstream's `version` and a `versions` history array.
 - v23 adds `owned_worktree` to dispatch specs so the daemon can reclaim mutative-agent worktrees on run exit.
-- v24 removes the retired Companion-analysis `thread_report` frame.
+- v24 removes the retired `thread_report` frame.
 - v25 adds mutable session facets to `register`, the self-scoped `session_metadata` frame, and the read-only dashboard HTTP capability.
+- v26 removes the selected-agent run-message HTTP read and narrows `/runs/summary` to compact active-agent widget fields.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":25}`
-  - `GET /runs/summary?root_id=<id>` returns safe agent-level observability for Companion's Swarm view.
-  - `GET /runs/messages?root_id=<id>&agent_handle=<handle>` returns selected-agent assistant message detail for Companion's Swarm view.
+  - `GET /health` → `{"status":"ok","protocol":26}`
+  - `GET /runs/summary?root_id=<id>` returns compact rows for the in-Pi active-agent widget.
   - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
   - `GET /workstreams/{id_or_slug}` returns a single workstream (including its `version`) with its joined agent rows and `versions` content-history array.
   - `POST /dashboard/bootstrap` mints a 30-second, single-use browser bootstrap URL only while the dashboard listener is available.
@@ -139,7 +139,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 25,
+  "v": 26,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -170,7 +170,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 25,
+  "v": 26,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -285,44 +285,18 @@ Fields:
 
 ### `GET /runs/summary`
 
-Returns companion Swarm observability under the requested root session.
+Returns the compact rows consumed by the in-Pi active-agent widget under the requested root session.
 
 Query parameters:
-- `root_id` (required): root session agent id whose subtree is summarized.
-- `limit` (optional, default `5`): maximum number of agent rows to return. The daemon clamps this to `0`–`100`.
+- `root_id` (required): private root session id whose descendant subtree scopes the read.
+- `limit` (optional, default `5`): maximum number of agent rows. The daemon clamps this to `0`–`50`.
 
-Response schema:
-- `root_id`: requested root id.
-- `counts`: run status counts for scoped run history: `pending`, `running`, `completed`, `failed`, `total`.
-- `agents`: one safe row per same-root non-session agent, ordered by current-run/agent recency.
-- `session_active`: whether the root session is currently registered.
+The response contains only an `agents` array. Rows are ordered by current-run/agent recency and contain:
+- `agent_handle`, `agent_type`, `session_name`, and `status`.
+- `created_at` and `started_at`, used to render elapsed time.
+- `task`: `null` or a compact `{goal, current_task: {label} | null}` projection.
 
-Each summary row contains:
-- `agent_handle`, `agent_id_short`, `agent_type`, `model`, `role`, `session_name`.
-- `agent_id_short`: deterministic short suffix derived from the private agent id for display disambiguation. The raw private `agent_id` is not included.
-- `model`: public display model stored from dispatch; legacy rows with no stored model project `default`.
-- `status`: one of `idle`, `pending`, `running`, `completed`, or `failed`.
-- `result_preview`, `error_preview`, `exit_code`, `created_at`, `started_at`, `ended_at`.
-- `task`: safe projection from `~/.pi/basecamp/tasks/<agent-id>.json`, or `null` if absent/invalid. It contains sanitized `goal`, `progress: {completed, deleted, total}`, canonical bounded `task_plan` entries (`index`, `label`, `status`), and `current_task` (`index`, `label`, `status`, `description`). Task status values are `pending`, `active`, `completed`, and `deleted`; deleted tasks are omitted from `task_plan` but counted in `progress.deleted`.
-- `recent_activity`: bounded telemetry projection containing only allowlisted display fields: event `kind`, `seq`, daemon `timestamp`, `category`, `label`, `snippet`, `toolName`, `isError`, `turnIndex`, and `toolCount`. Current event kinds are `tool_call`, `tool_result`, `assistant_output`, `thinking`, `agent_result`, plus compatible `tool_execution_start`, `tool_execution_end`, and `turn_end`.
-
-Summary rows do not include private `run_id`, private `agent_id`, report tokens, prompts, full results, errors, spawn specs, env, cwd, raw telemetry payloads/args/outputs, raw tool call ids, visible/model message text beyond reporter-sanitized snippets, or hidden model thinking. Display strings are control/ANSI stripped and length capped.
-
-### `GET /runs/messages`
-
-Returns companion Swarm message detail for one selected async agent under the requested root session. This endpoint is intended for selected-agent detail panes, not routine all-agent summary polling.
-
-Query parameters:
-- `root_id` (required): root session agent id whose subtree scopes the lookup.
-- `agent_handle` (required): public agent handle to display.
-- `limit` (optional, default `3`): maximum number of messages. The daemon clamps this to `0`–`3`.
-
-Response schema:
-- `root_id`: requested root id.
-- `agent_handle`: requested public agent handle.
-- `messages`: latest visible assistant messages for the selected agent's current run, ordered oldest-to-newest within the returned window. Each message contains only `kind`, `seq`, daemon `timestamp`, `label`, and full visible assistant `text`.
-
-Message detail is subtree-validated by `root_id` + `agent_handle`. It excludes private `run_id`, raw private `agent_id`, report tokens, prompts, user/system/developer messages, raw tool args/results, env, cwd, spawn specs, hidden thinking, and chain-of-thought. Message text is visible assistant output only; ANSI/control characters are stripped while newlines are preserved. `/runs/summary` remains snippet-only.
+Rows exclude private agent/run ids, counts, root liveness, models, roles, results, errors, exit codes, end times, skills, activity, task plans, descriptions, specs, prompts, env, cwd, report tokens, and message bodies. The browser dashboard uses its separate bounded `/dashboard/snapshot` and `/dashboard/messages` projections.
 
 ### `GET /dashboard/snapshot`
 

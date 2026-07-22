@@ -1,6 +1,6 @@
 {
   "type": "revise_workstream",
-  "v": 25,
+  "v": 26,
   "request_id": "req-revise-001",
   "workstream": "feature-auth",
   "label": "Feature Auth v2",

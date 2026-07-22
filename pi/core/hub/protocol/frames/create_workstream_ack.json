@@ -1,6 +1,6 @@
 {
   "type": "create_workstream_ack",
-  "v": 25,
+  "v": 26,
   "request_id": "req-create-001",
   "status": "created",
   "workstream_id": "ws-001",

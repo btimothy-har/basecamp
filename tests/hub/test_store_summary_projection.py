@@ -11,7 +11,7 @@ from store_helpers import _summary_agent, _write_task_log
 from basecamp.hub.store import Store
 
 
-def test_get_run_summary_projects_skills_from_tool_calls(tmp_path: Path) -> None:
+def test_projects_skills_from_tool_calls(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
     _summary_agent(store)
@@ -54,9 +54,9 @@ def test_get_run_summary_projects_skills_from_tool_calls(tmp_path: Path) -> None
                 (f"2026-01-01T00:00:0{seq}Z", "run-1", seq),
             )
 
-    result = store.get_run_summary("root")
+    skills = store._project_skills("run-1")
 
-    assert result["agents"][0]["skills"] == [
+    assert skills == [
         {"name": "marimo", "count": 1, "last_seq": 5, "last_timestamp": "2026-01-01T00:00:05Z"},
         {
             "name": "python-development",
@@ -68,7 +68,7 @@ def test_get_run_summary_projects_skills_from_tool_calls(tmp_path: Path) -> None
     ]
 
 
-def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> None:
+def test_projects_safe_task_log_and_activity(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     task_dir = tmp_path / "tasks"
     store = Store(db_path=db_path, task_dir=task_dir)
@@ -206,14 +206,10 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
         ],
     )
 
-    result = store.get_run_summary("root")
+    task = store._project_task_log("agent-1")
+    activity = store._project_recent_activity("run-1")
 
-    agent = result["agents"][0]
-    assert "agent_id" not in agent
-    assert "run_id" not in agent
-    assert agent["agent_id_short"] == "agent1"
-    assert agent["model"] == "claude-haiku-4-5"
-    assert agent["task"] == {
+    assert task == {
         "goal": "Ship observability",
         "progress": {"completed": 1, "deleted": 1, "total": 3},
         "task_plan": [
@@ -228,7 +224,7 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
             "description": "Desc with controls",
         },
     }
-    assert agent["recent_activity"] == [
+    assert activity == [
         {
             "kind": "tool_execution_start",
             "seq": 1,
@@ -286,11 +282,11 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
             "toolCount": 2,
         },
     ]
-    assert agent["recent_activity"][0]["timestamp"] != "agent-supplied-timestamp"
-    assert all(activity["kind"] != "raw_model_delta" for activity in agent["recent_activity"])
-    for activity in agent["recent_activity"]:
+    assert activity[0]["timestamp"] != "agent-supplied-timestamp"
+    assert all(event["kind"] != "raw_model_delta" for event in activity)
+    for event in activity:
         assert all(
-            key not in activity
+            key not in event
             for key in [
                 "args",
                 "output",
@@ -307,7 +303,7 @@ def test_get_run_summary_projects_safe_task_log_and_activity(tmp_path: Path) -> 
         )
 
 
-def test_get_run_summary_bounds_and_tolerates_malformed_activity(tmp_path: Path) -> None:
+def test_recent_activity_is_bounded_and_tolerates_malformed_payloads(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
     _summary_agent(store)
@@ -337,7 +333,7 @@ def test_get_run_summary_bounds_and_tolerates_malformed_activity(tmp_path: Path)
                 (f"2026-01-01T00:00:{seq:02d}Z", "run-1", seq),
             )
 
-    activity = store.get_run_summary("root")["agents"][0]["recent_activity"]
+    activity = store._project_recent_activity("run-1")
 
     assert len(activity) == 10
     assert [item["seq"] for item in activity] == list(range(3, 13))
@@ -353,7 +349,7 @@ def test_get_run_summary_bounds_and_tolerates_malformed_activity(tmp_path: Path)
     assert "isError" not in non_bool_error
 
 
-def test_get_run_summary_tolerates_malformed_task_logs(tmp_path: Path) -> None:
+def test_task_projection_tolerates_malformed_logs(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     task_dir = tmp_path / "tasks"
     store = Store(db_path=db_path, task_dir=task_dir)
@@ -361,12 +357,10 @@ def test_get_run_summary_tolerates_malformed_task_logs(tmp_path: Path) -> None:
     task_dir.mkdir()
     (task_dir / "agent-1.json").write_text("not json", encoding="utf-8")
 
-    result = store.get_run_summary("root")
-
-    assert result["agents"][0]["task"] is None
+    assert store._project_task_log("agent-1") is None
 
 
-def test_get_run_summary_reads_legacy_bare_array_task_log(tmp_path: Path) -> None:
+def test_task_projection_reads_legacy_bare_array_log(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     task_dir = tmp_path / "tasks"
     store = Store(db_path=db_path, task_dir=task_dir)
@@ -386,14 +380,14 @@ def test_get_run_summary_reads_legacy_bare_array_task_log(tmp_path: Path) -> Non
         encoding="utf-8",
     )
 
-    task = store.get_run_summary("root")["agents"][0]["task"]
+    task = store._project_task_log("agent-1")
 
     assert task is not None
     assert task["goal"] == "Legacy goal"
     assert task["current_task"]["label"] == "T1"
 
 
-def test_get_run_summary_rejects_unsafe_task_log_paths_symlinks_and_size(tmp_path: Path) -> None:
+def test_task_projection_rejects_unsafe_paths_symlinks_and_size(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     task_dir = tmp_path / "tasks"
     store = Store(db_path=db_path, task_dir=task_dir)
@@ -403,13 +397,13 @@ def test_get_run_summary_rejects_unsafe_task_log_paths_symlinks_and_size(tmp_pat
     outside.write_text(json.dumps([{"goal": "bad", "active": True, "tasks": []}]), encoding="utf-8")
     (task_dir / "..%2Fescape.json").write_text("[]", encoding="utf-8")
 
-    assert store.get_run_summary("root")["agents"][0]["task"] is None
+    assert store._project_task_log("../escape") is None
 
     store = Store(db_path=tmp_path / "daemon2.db", task_dir=task_dir)
     _summary_agent(store, agent_id="agent-1")
     (task_dir / "agent-1.json").symlink_to(outside)
-    assert store.get_run_summary("root")["agents"][0]["task"] is None
+    assert store._project_task_log("agent-1") is None
 
     (task_dir / "agent-1.json").unlink()
     (task_dir / "agent-1.json").write_text("[" + (" " * (256 * 1024)) + "]", encoding="utf-8")
-    assert store.get_run_summary("root")["agents"][0]["task"] is None
+    assert store._project_task_log("agent-1") is None

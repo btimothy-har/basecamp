@@ -84,8 +84,7 @@ def test_dashboard_modules_are_flat_self_contained_and_avoid_html_sinks() -> Non
     sources = {path.name: path.read_text(encoding="utf-8") for path in scripts}
     combined = "\n".join(sources.values())
     exports_by_script = {
-        name: set(re.findall(r"export\s+(?:const|function|class)\s+(\w+)", source))
-        for name, source in sources.items()
+        name: set(re.findall(r"export\s+(?:const|function|class)\s+(\w+)", source)) for name, source in sources.items()
     }
     imports_by_script: dict[str, set[str]] = {}
 

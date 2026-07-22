@@ -36,13 +36,7 @@ def register_http_routes(
 
     @app.get("/runs/summary")
     async def runs_summary(root_id: str, limit: int = 5) -> dict[str, Any]:
-        summary = await asyncio.to_thread(store.get_run_summary, root_id, limit=limit)
-        summary["session_active"] = registry.has_connection(root_id)
-        return summary
-
-    @app.get("/runs/messages")
-    async def runs_messages(root_id: str, agent_handle: str, limit: int = 3) -> dict[str, Any]:
-        return await asyncio.to_thread(store.get_run_messages, root_id, agent_handle=agent_handle, limit=limit)
+        return await asyncio.to_thread(store.get_run_summary, root_id, limit=limit)
 
     if dashboard_access is not None:
 

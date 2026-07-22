@@ -7,7 +7,6 @@ from pathlib import Path
 
 import rich_click as click
 
-from basecamp.companion.app import run_companion
 from basecamp.config_cli.config_group import config
 from basecamp.core.console import err_console
 from basecamp.core.doctor import run_doctor
@@ -58,39 +57,6 @@ def agents() -> None:
         open_agents_dashboard()
     except LauncherError as e:
         _handle_error(e)
-
-
-@basecamp.group()
-def companion() -> None:
-    """Live session companion commands."""
-
-
-@companion.command()
-@click.option(
-    "--snapshot",
-    "snapshot_path",
-    required=True,
-    type=click.Path(path_type=Path),
-    help="Path to the companion snapshot JSON.",
-)
-@click.option(
-    "--cwd",
-    "cwd",
-    required=True,
-    type=click.Path(path_type=Path),
-    help="Git working directory for diffs.",
-)
-@click.option(
-    "--scratch",
-    "scratch_dir",
-    required=False,
-    default=None,
-    type=click.Path(path_type=Path),
-    help="Path to the basecamp scratch directory.",
-)
-def tui(snapshot_path: Path, cwd: Path, scratch_dir: Path | None) -> None:
-    """Live session companion TUI (runs in a side pane)."""
-    run_companion(snapshot_path, cwd, scratch_dir)
 
 
 @basecamp.command()

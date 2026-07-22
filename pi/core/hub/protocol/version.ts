@@ -8,7 +8,8 @@
 // v23: dispatch spec gains owned_worktree — the reaper removes a mutative agent's worktree on run exit.
 // v24: removes the retired thread_report frame.
 // v25: register metadata facets + self-scoped session_metadata frame; read-only dashboard HTTP surface.
-export const PROTOCOL_VERSION = 25;
+// v26: removes /runs/messages and narrows /runs/summary to compact-widget fields.
+export const PROTOCOL_VERSION = 26;
 
 /**
  * The version envelope every wire frame carries. Frame interfaces `extends` this

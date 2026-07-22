@@ -1,16 +1,8 @@
 """Filesystem layout for basecamp's ``~/.pi/basecamp`` tree.
 
-Single source for every basecamp-owned path: the config root, the user
-override dirs (context/styles/prompts), and the daemon + companion runtime
-tree (``swarm/``, ``tasks/``, ``companion/``). Consumers import these constants
-instead of re-deriving ``~/.pi/basecamp/<sub>`` by hand — that re-derivation
-previously drifted across the hub, the companion, and the doctor (the
-``swarm/`` dir alone was spelled in four separate files).
-
-The runtime tree lives here, not in the hub/companion packages, because it is
-shared layout knowledge: the daemon writes it, the companion reads part of it,
-and ``basecamp doctor`` inspects all of it. Keeping it in ``core`` lets each of
-those import the layout without ``core`` importing them.
+Single source for every basecamp-owned path: configuration, user overrides,
+tasks, and hub runtime state. Consumers import these constants instead of
+re-deriving ``~/.pi/basecamp/<sub>`` by hand.
 
 ``basecamp_config_dir()`` / ``swarm_agents_dir()`` rebase the tree onto a
 non-default home for the one runtime seam that needs it — a dispatched child
@@ -53,8 +45,6 @@ USER_STYLES_DIR: Path = BASECAMP_CONFIG_DIR / "styles"
 #: User-supplied prompt fragment overrides directory.
 USER_PROMPTS_DIR: Path = BASECAMP_CONFIG_DIR / "prompts"
 
-# ── daemon + companion runtime tree ──
-
 #: Hub daemon runtime root.
 SWARM_DIR: Path = BASECAMP_CONFIG_DIR / "swarm"
 
@@ -78,9 +68,6 @@ DAEMON_SERVER_LOCK: Path = SWARM_DIR / "daemon.server.lock"
 
 #: Task-log directory (per-session task cycles).
 TASKS_DIR: Path = BASECAMP_CONFIG_DIR / "tasks"
-
-#: Companion runtime root (snapshots and related state).
-COMPANION_DIR: Path = BASECAMP_CONFIG_DIR / "companion"
 
 
 def swarm_agents_dir(home: str | Path | None = None) -> Path:
