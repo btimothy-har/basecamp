@@ -12,6 +12,7 @@ from basecamp.config_cli.config_group import config
 from basecamp.core.console import err_console
 from basecamp.core.doctor import run_doctor
 from basecamp.core.exceptions import LauncherError
+from basecamp.hub.launcher import open_agents_dashboard
 from basecamp.hub.server import run_hub
 from basecamp.installer import run_interactive_install
 from basecamp.setup import execute_setup
@@ -48,6 +49,15 @@ def setup() -> None:
 def doctor(*, fix: bool, clean: bool, stale_days: int) -> None:
     """Diagnose (and optionally repair) basecamp configuration and runtime."""
     raise SystemExit(run_doctor(fix=fix, clean=clean, stale_days=stale_days))
+
+
+@basecamp.command()
+def agents() -> None:
+    """Open the read-only local agents dashboard."""
+    try:
+        open_agents_dashboard()
+    except LauncherError as e:
+        _handle_error(e)
 
 
 @basecamp.group()

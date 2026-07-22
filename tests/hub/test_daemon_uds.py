@@ -12,7 +12,7 @@ from pathlib import Path
 
 import httpx
 import uvicorn
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, raises
 
 from basecamp.hub import server as daemon_server
 from basecamp.hub.app import create_app
@@ -47,6 +47,25 @@ class _FakeDashboardServer:
 
 def _stub_dashboard(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(daemon_server, "DashboardServer", _FakeDashboardServer)
+
+
+def test_server_lock_is_exclusive_and_reusable(tmp_path: Path) -> None:
+    lock_path = tmp_path / "daemon.server.lock"
+    first = daemon_server._acquire_server_lock(lock_path)
+    try:
+        with raises(daemon_server.HubAlreadyRunningError):
+            daemon_server._acquire_server_lock(lock_path)
+        socket_path = tmp_path / "daemon.sock"
+        socket_path.write_text("live socket placeholder", encoding="utf-8")
+        with raises(daemon_server.HubAlreadyRunningError):
+            daemon_server.run_hub(str(socket_path))
+        assert socket_path.read_text(encoding="utf-8") == "live socket placeholder"
+    finally:
+        daemon_server._release_server_lock(first)
+
+    replacement = daemon_server._acquire_server_lock(lock_path)
+    daemon_server._release_server_lock(replacement)
+    assert stat.S_IMODE(lock_path.stat().st_mode) == 0o600
 
 
 def test_run_hub_writes_and_removes_pid_file(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:

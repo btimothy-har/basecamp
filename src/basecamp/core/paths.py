@@ -70,6 +70,12 @@ DAEMON_SOCK: Path = SWARM_DIR / "daemon.sock"
 #: Hub daemon pid file.
 DAEMON_PID: Path = SWARM_DIR / "daemon.pid"
 
+#: Cross-client exclusive daemon spawn lock.
+DAEMON_SPAWN_LOCK: Path = SWARM_DIR / "daemon.spawn.lock"
+
+#: Process-lifetime hub singleton lock.
+DAEMON_SERVER_LOCK: Path = SWARM_DIR / "daemon.server.lock"
+
 #: Task-log directory (per-session task cycles).
 TASKS_DIR: Path = BASECAMP_CONFIG_DIR / "tasks"
 
