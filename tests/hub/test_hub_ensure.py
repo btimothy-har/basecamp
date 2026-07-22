@@ -223,6 +223,44 @@ def test_ensure_hub_restarts_protocol_mismatch(tmp_path: Path) -> None:
     assert events == ["terminate", "spawn"]
 
 
+def test_protocol_restart_gets_fresh_post_spawn_readiness_budget(tmp_path: Path) -> None:
+    paths = _paths(tmp_path)
+    clock = _Clock()
+    ready_at: float | None = None
+    events: list[str] = []
+
+    def health_ping(_path: Path, _timeout: float) -> HubHealth:
+        if ready_at is None:
+            return HubHealth(ok=True, protocol=999)
+        is_ready = clock.elapsed >= ready_at
+        return HubHealth(ok=is_ready, protocol=PROTOCOL_VERSION if is_ready else None)
+
+    def terminate(_paths: HubPaths) -> None:
+        events.append("terminate")
+        clock.sleep(0.9)
+
+    def spawn(_paths: HubPaths) -> None:
+        nonlocal ready_at
+        events.append("spawn")
+        ready_at = clock.elapsed + 0.35
+
+    result = ensure_hub(
+        paths=paths,
+        deps=_deps(
+            clock,
+            health_ping=health_ping,
+            spawn_hub=spawn,
+            terminate_hub=terminate,
+        ),
+        startup_timeout=1.0,
+        lock_retry=0.1,
+    )
+
+    assert result == paths.socket_path
+    assert events == ["terminate", "spawn"]
+    assert clock.elapsed >= 1.25
+
+
 def test_ensure_hub_reports_persistent_mismatch_and_timeout(tmp_path: Path) -> None:
     mismatch_paths = _paths(tmp_path / "mismatch")
     mismatch_clock = _Clock()
@@ -246,6 +284,84 @@ def test_ensure_hub_reports_persistent_mismatch_and_timeout(tmp_path: Path) -> N
             ),
             startup_timeout=0.2,
         )
+
+
+def test_runtime_setup_error_uses_hub_ensure_error(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    paths = _paths(tmp_path)
+    clock = _Clock()
+    health_calls: list[Path] = []
+    spawns: list[HubPaths] = []
+
+    def fail_chmod(_path: Path, _mode: int) -> None:
+        raise PermissionError("denied")
+
+    def health_ping(path: Path, _timeout: float) -> HubHealth:
+        health_calls.append(path)
+        return HubHealth(ok=False)
+
+    monkeypatch.setattr("basecamp.hub.ensure.os.chmod", fail_chmod)
+
+    with pytest.raises(HubEnsureError, match="runtime directory") as error:
+        ensure_hub(
+            paths=paths,
+            deps=_deps(clock, health_ping=health_ping, spawn_hub=spawns.append),
+        )
+
+    assert isinstance(error.value.__cause__, PermissionError)
+    assert health_calls == []
+    assert spawns == []
+
+
+def test_spawn_lock_error_uses_hub_ensure_error(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    paths = _paths(tmp_path)
+    clock = _Clock()
+    health_calls: list[Path] = []
+    spawns: list[HubPaths] = []
+
+    def health_ping(path: Path, _timeout: float) -> HubHealth:
+        health_calls.append(path)
+        return HubHealth(ok=False)
+
+    def fail_lock(_path: Path, _now_ms: int) -> tuple[int, tuple[int, int]]:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("basecamp.hub.ensure._acquire_spawn_lock", fail_lock)
+
+    with pytest.raises(HubEnsureError, match="spawn lock") as error:
+        ensure_hub(
+            paths=paths,
+            deps=_deps(clock, health_ping=health_ping, spawn_hub=spawns.append),
+        )
+
+    assert isinstance(error.value.__cause__, PermissionError)
+    assert health_calls == [paths.socket_path]
+    assert spawns == []
+
+
+def test_stale_spawn_lock_cleanup_error_uses_hub_ensure_error(tmp_path: Path, monkeypatch: MonkeyPatch) -> None:
+    paths = _paths(tmp_path)
+    paths.runtime_dir.mkdir(parents=True)
+    paths.spawn_lock_path.write_text('{"pid":999999,"ts":0}', encoding="utf-8")
+    clock = _Clock()
+    spawns: list[HubPaths] = []
+
+    def fail_unlink(_path: Path) -> None:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr("basecamp.hub.ensure._unlink", fail_unlink)
+
+    with pytest.raises(HubEnsureError, match="spawn lock") as error:
+        ensure_hub(
+            paths=paths,
+            deps=_deps(
+                clock,
+                health_ping=lambda _path, _timeout: HubHealth(ok=False),
+                spawn_hub=spawns.append,
+            ),
+        )
+
+    assert isinstance(error.value.__cause__, PermissionError)
+    assert spawns == []
 
 
 def test_spawn_lock_release_does_not_unlink_replacement(tmp_path: Path) -> None:

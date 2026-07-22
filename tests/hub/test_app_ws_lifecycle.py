@@ -156,6 +156,101 @@ def test_ws_session_metadata_is_scoped_to_registered_node(tmp_path: Path) -> Non
     ) == ("unchanged", "other-model", "planning", "other/repo", "wt/other", "bt/other")
 
 
+def test_ws_metadata_sqlite_error_keeps_socket_usable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app, store = _build_app_with_store(tmp_path)
+    original_update = store.update_agent_metadata
+    attempts = 0
+
+    def fail_first_update(
+        *,
+        agent_id: str,
+        session_name: str,
+        model: str | None,
+        agent_mode: str,
+        repo: str | None,
+        worktree_label: str | None,
+        branch: str | None,
+    ) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise sqlite3.OperationalError
+        original_update(
+            agent_id=agent_id,
+            session_name=session_name,
+            model=model,
+            agent_mode=agent_mode,
+            repo=repo,
+            worktree_label=worktree_label,
+            branch=branch,
+        )
+
+    monkeypatch.setattr(store, "update_agent_metadata", fail_first_update)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as websocket:
+            _register_ws(websocket, node_id="node-1", role="agent", parent_id=None, sibling_group=None)
+            for session_name in ("dropped", "persisted"):
+                websocket.send_json(
+                    {
+                        "type": "session_metadata",
+                        "v": PROTOCOL_VERSION,
+                        "session_name": session_name,
+                        "model": "test-model",
+                        "agent_mode": "work",
+                        "repo": "acme/widgets",
+                        "worktree_label": None,
+                        "branch": "bt/dashboard",
+                    }
+                )
+            websocket.send_json(
+                {
+                    "type": "list_agents",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "after-metadata-error",
+                    "awaitable": False,
+                }
+            )
+            reply = websocket.receive_json()
+
+    agent = store.get_agent("node-1")
+    assert reply["type"] == "list_agents_result"
+    assert reply["request_id"] == "after-metadata-error"
+    assert attempts == 2
+    assert agent is not None
+    assert agent["session_name"] == "persisted"
+    assert agent["branch"] == "bt/dashboard"
+
+
+def test_ws_metadata_non_sqlite_error_remains_fatal(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app, store = _build_app_with_store(tmp_path)
+
+    def fail_update(**_metadata: object) -> None:
+        raise ValueError
+
+    monkeypatch.setattr(store, "update_agent_metadata", fail_update)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as websocket:
+            _register_ws(websocket, node_id="node-1", role="agent", parent_id=None, sibling_group=None)
+            websocket.send_json(
+                {
+                    "type": "session_metadata",
+                    "v": PROTOCOL_VERSION,
+                    "session_name": "updated",
+                    "model": None,
+                    "agent_mode": "work",
+                    "repo": None,
+                    "worktree_label": None,
+                    "branch": None,
+                }
+            )
+            reply = websocket.receive_json()
+
+    assert reply["type"] == "error"
+    assert reply["code"] == "invalid_frame"
+
+
 def test_ws_reregister_cancels_disconnect_reaper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     cancelled: list[str] = []
 

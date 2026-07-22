@@ -46,6 +46,14 @@ class HubEnsureError(LauncherError):
     def restart_failed(cls) -> HubEnsureError:
         return cls("Could not restart the incompatible basecamp hub process.")
 
+    @classmethod
+    def runtime_setup_failed(cls, runtime_dir: Path) -> HubEnsureError:
+        return cls(f"Could not prepare the basecamp hub runtime directory at {runtime_dir}.")
+
+    @classmethod
+    def spawn_lock_failed(cls, lock_path: Path) -> HubEnsureError:
+        return cls(f"Could not acquire the basecamp hub spawn lock at {lock_path}.")
+
 
 @dataclass(frozen=True)
 class HubPaths:
@@ -113,19 +121,23 @@ def ensure_hub(
 
     runtime = paths or default_hub_paths()
     operations = deps or default_ensure_deps()
-    runtime.runtime_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
-    os.chmod(runtime.runtime_dir, 0o700)
+    try:
+        runtime.runtime_dir.mkdir(parents=True, mode=0o700, exist_ok=True)
+        os.chmod(runtime.runtime_dir, 0o700)
+    except OSError as error:
+        raise HubEnsureError.runtime_setup_failed(runtime.runtime_dir) from error
 
     first_health = operations.health_ping(runtime.socket_path, health_timeout)
     if _health_matches(first_health):
         return runtime.socket_path
 
-    deadline = operations.monotonic() + startup_timeout
+    lock_deadline = operations.monotonic() + startup_timeout
+    readiness_deadline = lock_deadline
     lock_fd: int | None = None
     lock_identity: tuple[int, int] | None = None
     last_health = first_health
     try:
-        while operations.monotonic() <= deadline:
+        while operations.monotonic() <= lock_deadline:
             try:
                 lock_fd, lock_identity = _acquire_spawn_lock(
                     runtime.spawn_lock_path,
@@ -138,13 +150,18 @@ def ensure_hub(
                     lock_stale_after_ms,
                     operations.pid_exists,
                 ):
-                    _unlink(runtime.spawn_lock_path)
+                    try:
+                        _unlink(runtime.spawn_lock_path)
+                    except OSError as error:
+                        raise HubEnsureError.spawn_lock_failed(runtime.spawn_lock_path) from error
                     continue
                 last_health = operations.health_ping(runtime.socket_path, health_timeout)
                 if _health_matches(last_health):
                     return runtime.socket_path
                 operations.sleep(lock_retry)
                 continue
+            except OSError as error:
+                raise HubEnsureError.spawn_lock_failed(runtime.spawn_lock_path) from error
 
             locked_health = operations.health_ping(runtime.socket_path, health_timeout)
             if _health_matches(locked_health):
@@ -158,9 +175,11 @@ def ensure_hub(
                 operations.spawn_hub(runtime)
             except OSError as error:
                 raise HubEnsureError.spawn_failed() from error
+            # Contenders share the lock budget; only this caller's spawn earns a full readiness window.
+            readiness_deadline = operations.monotonic() + startup_timeout
             break
 
-        while operations.monotonic() <= deadline:
+        while operations.monotonic() <= readiness_deadline:
             last_health = operations.health_ping(runtime.socket_path, health_timeout)
             if last_health.ok:
                 break

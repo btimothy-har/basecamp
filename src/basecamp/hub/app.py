@@ -173,16 +173,20 @@ def create_app(
 
                 inbound = parse_frame(payload)
                 if isinstance(inbound, SessionMetadataFrame):
-                    await asyncio.to_thread(
-                        store.update_agent_metadata,
-                        agent_id=parsed.node_id,
-                        session_name=inbound.session_name,
-                        model=inbound.model,
-                        agent_mode=inbound.agent_mode,
-                        repo=inbound.repo,
-                        worktree_label=inbound.worktree_label,
-                        branch=inbound.branch,
-                    )
+                    try:
+                        await asyncio.to_thread(
+                            store.update_agent_metadata,
+                            agent_id=parsed.node_id,
+                            session_name=inbound.session_name,
+                            model=inbound.model,
+                            agent_mode=inbound.agent_mode,
+                            repo=inbound.repo,
+                            worktree_label=inbound.worktree_label,
+                            branch=inbound.branch,
+                        )
+                    except sqlite3.Error:
+                        # Metadata is best effort; a persistence race must not end a healthy socket.
+                        pass
                     continue
                 if isinstance(inbound, DispatchFrame):
                     await _handle_dispatch(
