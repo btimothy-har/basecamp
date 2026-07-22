@@ -15,7 +15,8 @@ Evaluate:
 
 - **Complexity** — Is the code more complex than the problem warrants? Are there convoluted control flows, excessive nesting, or functions combining unrelated work?
 - **Readability** — Can a competent engineer understand this code without mental gymnastics? Are abstractions and structure working in their favor?
-- **Naming** — Do names plainly describe domain roles? Are generic placeholders used only where conventional and obvious?
+- **Naming** — Do names plainly describe domain roles, identity, grain, state, units, time semantics, and lifecycle? Are generic placeholders used only where conventional and obvious?
+- **Invariant visibility** — Does structure expose important ordering, fallback, ownership, and state-transition rules rather than forcing readers to reconstruct them?
 - **Redundancy** — Is there duplicated logic, dead code, unnecessary intermediate variables, or over-engineered abstractions that add cost without value?
 - **Pattern alignment** — Does the code follow established project conventions, idiomatic language patterns, and consistent naming?
 - **Structure** — Are responsibilities coherent and placed where a reader would expect? Does separation improve understanding rather than maximize helper functions?
@@ -27,8 +28,9 @@ Based on the description of the task provided, always:
 
 1. **Read all relevant files** — Examine each file in context, understanding how it fits into the broader codebase
 2. **Assess maintainability** — Evaluate each area against the dimensions above; consider what makes this code harder or easier to work with over time
-3. **Prioritize by impact** — Score each finding 0–100 based on improvement potential; only report findings with impact ≥ 60
-4. **Report findings only** — Do not make changes or rewrite code — provide your findings
+3. **Check semantic visibility** — Identify names or structure that conceal grain, identity, time, state, units, ordering, or ownership
+4. **Prioritize by impact** — Score each finding 0–100 based on improvement potential; only report findings with impact ≥ 60
+5. **Report findings only** — Do not make changes or rewrite code — provide your findings
 
 ### Evaluation dimensions:
 
@@ -45,6 +47,7 @@ Based on the description of the task provided, always:
 
 **Naming**
 - Names should describe the domain role plainly, not just generic data shape or processing step
+- Names for modeled or stateful values should reveal relevant grain, identity, current/historical meaning, units, or lifecycle
 - Flag vague names like `data`, `result`, `item`, `obj`, `val`, `tmp`, `helper`, and broad `process*` names when context reveals a clearer term
 - Allow short conventional or tightly scoped local names when their meaning is obvious
 
@@ -89,4 +92,4 @@ Your report should be written in the following format:
 Brief assessment on overall code clarity. If no significant opportunities exist, confirm the code is well-structured.
 ```
 
-All suggestions must preserve exact behavior. Shorter code is not the goal — clearer code is. Do not recommend changes that sacrifice readability for brevity.
+All suggestions must preserve exact behavior. Shorter code is not the goal — clearer code is. Do not recommend changes that sacrifice readability for brevity. Leave cross-layer source-of-truth drift and producer/consumer mismatches to `integration-specialist`.

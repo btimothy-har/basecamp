@@ -19,7 +19,7 @@ Use these tools for agent delegation and collaboration; if agents are unavailabl
 ## Choosing an agent
 
 Default to the narrowest agent that fits:
-- **Named read-only agents** (`scout`, `devils-advocate`, `code-clarity-specialist`, `docs-specialist`, `security-specialist`, `testing-specialist`) may fan out for investigation, search, review, and second opinions.
+- **Named read-only agents** (`scout`, `devils-advocate`, `code-clarity-specialist`, `conventions-specialist`, `docs-specialist`, `general-reviewer`, `integration-specialist`, `security-specialist`, `testing-specialist`) may fan out for investigation, search, review, and second opinions.
 - **worker** is the only mutative agent: it works in its **own** isolated worktree (branched from your current HEAD), commits its change to a branch, and reports back — so you can run several `worker`s in parallel. Dispatching a `worker` requires you to be in an execution worktree (it branches from yours).
 - **Ad-hoc agents** are read-only by tool allowlist. Use them only for narrow tasks when no named agent fits.
 

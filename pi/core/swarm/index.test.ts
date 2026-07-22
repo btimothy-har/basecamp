@@ -90,6 +90,7 @@ describe("core/swarm primitive entrypoint", () => {
 				"devils-advocate",
 				"docs-specialist",
 				"general-reviewer",
+				"integration-specialist",
 				"scout",
 				"security-specialist",
 				"testing-specialist",

@@ -40,7 +40,8 @@ describe("ReportFindingsParams validation", () => {
 		assert.equal(Value.Check(ReportFindingsParams, payload({ ...validFinding, severity: "moderate" })), false);
 	});
 
-	it("rejects an unknown dimension", () => {
+	it("accepts the integration dimension and rejects an unknown dimension", () => {
+		assert.equal(Value.Check(ReportFindingsParams, payload({ ...validFinding, dimension: "integration" })), true);
 		assert.equal(Value.Check(ReportFindingsParams, payload({ ...validFinding, dimension: "performance" })), false);
 	});
 

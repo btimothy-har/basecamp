@@ -127,7 +127,7 @@ list_agents({ awaitable: true })
 wait_for_agent({ handles: "<agent-handle>" })
 ```
 
-Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`.
+Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`, `integration-specialist`.
 
 Named read-only agents may fan out for parallel investigation and review. Mutative workers may also run in parallel because each receives its own locked, per-run worktree and branch. Basecamp gives mutating sessions one hidden reminder to commit dirty work, reclaims clean worker worktrees automatically, and preserves live or dirty trees rather than force-removing them.
 

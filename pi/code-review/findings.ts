@@ -7,6 +7,7 @@ export const Dimension = Type.Union([
 	Type.Literal("clarity"),
 	Type.Literal("conventions"),
 	Type.Literal("general"),
+	Type.Literal("integration"),
 ]);
 export type Dimension = Static<typeof Dimension>;
 
