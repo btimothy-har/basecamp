@@ -7,9 +7,18 @@ import {
 	deriveDaemonIdentity,
 	resolveDaemonAgentTitle,
 } from "./identity.ts";
+import { startSessionMetadataPublisher } from "./metadata.ts";
 import { resolveDaemonPaths } from "./paths.ts";
 import { ensureDaemon } from "./spawn.ts";
-import { getConnectListeners, getHubConnectionState, type HubConnectionState } from "./state.ts";
+import {
+	clearHubMetadataWiring,
+	createHubMetadataWiring,
+	getConnectListeners,
+	getHubConnectionState,
+	getHubMetadataPublisher,
+	type HubConnectionState,
+	replaceHubMetadataWiring,
+} from "./state.ts";
 import { publishDaemonStatus } from "./status.ts";
 
 // The hub connection is core-owned: core/hub is the adapter for the hub daemon
@@ -75,6 +84,14 @@ export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps
 		}
 	};
 
+	pi.on("session_info_changed", (event) => {
+		getHubMetadataPublisher(state)?.updateSessionName(event.name);
+	});
+
+	pi.on("model_select", (event) => {
+		getHubMetadataPublisher(state)?.updateModel(event.model.id);
+	});
+
 	pi.on("session_start", (_event, ctx) => {
 		sessionCtx = ctx;
 
@@ -98,17 +115,24 @@ export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps
 				const activeConnection =
 					state.connection === connection ? connection : trackDaemonConnection(state, connection, ctx);
 				runCleanups();
+				// Reload-surviving source subscriptions must stop before the replacement subscribes.
+				clearHubMetadataWiring(state);
+				const publisher = startSessionMetadataPublisher(pi, activeConnection, ctx);
+				let unsubscribeClose = () => {};
+				const metadataWiring = createHubMetadataWiring(publisher, () => unsubscribeClose());
+				unsubscribeClose = activeConnection.onClose(() => {
+					if (clearHubMetadataWiring(state, metadataWiring)) runCleanups();
+				});
+				replaceHubMetadataWiring(state, metadataWiring);
 				for (const listener of getConnectListeners()) {
 					const cleanup = listener(activeConnection, ctx);
 					if (cleanup) cleanups.push(cleanup);
 				}
-				activeConnection.onClose(() => {
-					if (generation === connectionGeneration) runCleanups();
-				});
 			} catch (error) {
 				if (generation !== connectionGeneration) return;
 				const message = error instanceof Error ? error.message : String(error);
 				publishDaemonStatus(ctx, { kind: "unavailable", message });
+				clearHubMetadataWiring(state);
 				runCleanups();
 				if (isTopLevel) {
 					ctx.ui.notify(`basecamp hub unavailable: ${message}`, "warning");
@@ -126,6 +150,7 @@ export function registerHubConnection(pi: ExtensionAPI, deps: DaemonIdentityDeps
 		const ctx = sessionCtx;
 		state.connection = null;
 		state.connecting = null;
+		clearHubMetadataWiring(state);
 		runCleanups();
 		if (ctx) publishDaemonStatus(ctx, { kind: "idle" });
 		try {
@@ -166,7 +191,6 @@ export {
 export { deriveDaemonIdentity, sanitizeDisplayLabel } from "./identity.ts";
 export { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
 export { ensureDaemon } from "./spawn.ts";
-// ── core/hub public surface: connector primitives + wire protocol, for swarm/companion ──
 export {
 	awaitDaemonConnection,
 	type DaemonConnectListener,

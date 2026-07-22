@@ -16,6 +16,8 @@ _AGENTS_MIGRATED_COLUMNS = (
     ("session_file", "TEXT"),
     ("repo", "TEXT"),
     ("worktree_label", "TEXT"),
+    ("branch", "TEXT"),
+    ("agent_mode", "TEXT"),
 )
 
 
@@ -41,13 +43,16 @@ class AgentsSchemaMixin:
                 model TEXT,
                 session_file TEXT,
                 repo TEXT,
-                worktree_label TEXT
+                worktree_label TEXT,
+                branch TEXT,
+                agent_mode TEXT
             )
             """
         )
         for name, decl in _AGENTS_MIGRATED_COLUMNS:
             ensure_column(connection, "agents", name, decl)
         self._ensure_agents_agent_handle(connection)
+        connection.execute("CREATE INDEX IF NOT EXISTS idx_agents_parent_id ON agents(parent_id)")
         self._migrate_agents_role_values(connection)
         self._drop_agents_retired_columns(connection)
 

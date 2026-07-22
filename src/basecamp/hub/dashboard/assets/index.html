@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#12231f">
+  <title>Basecamp agents</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/styles.css">
+  <link rel="stylesheet" href="/assets/controls.css">
+  <link rel="stylesheet" href="/assets/chrome.css">
+  <link rel="stylesheet" href="/assets/session-rail.css">
+  <link rel="stylesheet" href="/assets/detail-shared.css">
+  <link rel="stylesheet" href="/assets/goal-stages.css">
+  <link rel="stylesheet" href="/assets/agent-topology.css">
+  <link rel="stylesheet" href="/assets/run-detail.css">
+  <link rel="stylesheet" href="/assets/states.css">
+  <link rel="stylesheet" href="/assets/responsive.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-lockup">
+      <span class="brand-mark" aria-hidden="true">B_</span>
+      <span class="brand-copy">
+        <span class="eyebrow">Basecamp · local operations</span>
+        <strong>Sessions</strong>
+      </span>
+    </div>
+    <dl class="headline-stats" aria-label="Visible dashboard totals">
+      <div><dt id="live-count">—</dt><dd>Live</dd></div>
+      <div><dt id="recent-count">—</dt><dd>Recent</dd></div>
+      <div><dt id="agent-count">—</dt><dd>Agents</dd></div>
+    </dl>
+    <div class="connection-chip" id="connection-chip">
+      <span class="connection-dot" aria-hidden="true"></span>
+      <span id="connection-label">Connecting</span>
+    </div>
+  </header>
+
+  <section class="filterbar" aria-label="Dashboard filters">
+    <label class="filter-field" for="repo-filter">
+      <span>Repository</span>
+      <select id="repo-filter"><option value="all">All repositories</option></select>
+    </label>
+    <label class="filter-field" for="worktree-filter">
+      <span>Worktree</span>
+      <select id="worktree-filter"><option value="all">All worktrees</option></select>
+    </label>
+    <label class="filter-field" for="kind-filter">
+      <span>Session kind</span>
+      <select id="kind-filter"><option value="all">All kinds</option></select>
+    </label>
+    <label class="filter-field toggle-field" for="live-filter">
+      <span>Session visibility · <b id="window-hours">72h</b></span>
+      <span class="toggle-control">
+        <input id="live-filter" type="checkbox">
+        <span class="toggle-track" aria-hidden="true"></span>
+        <span>Live only</span>
+      </span>
+    </label>
+    <label class="filter-field" for="status-filter">
+      <span>Agent status</span>
+      <select id="status-filter"><option value="all">Any status</option></select>
+    </label>
+    <label class="filter-field" for="type-filter">
+      <span>Agent type</span>
+      <select id="type-filter"><option value="all">Any agent type</option></select>
+    </label>
+    <button class="reset-button" id="reset-filters" type="button">Reset filters</button>
+  </section>
+
+  <div class="offline-banner" id="offline-banner" hidden></div>
+
+  <div class="dashboard-shell">
+    <aside class="session-panel" aria-labelledby="sessions-heading">
+      <div class="panel-heading">
+        <h2 id="sessions-heading">Sessions</h2>
+        <span id="visible-count">—</span>
+      </div>
+      <nav id="session-rail" aria-label="Sessions grouped by repository and worktree"></nav>
+    </aside>
+    <main class="workspace" id="workspace" tabindex="-1">
+      <div class="loading-state" role="status" aria-label="Loading sessions">
+        <span class="loading-line wide"></span>
+        <span class="loading-line"></span>
+        <span class="loading-block"></span>
+      </div>
+    </main>
+  </div>
+
+  <p class="visually-hidden" id="announcer" aria-live="polite"></p>
+  <noscript>Basecamp agents requires JavaScript to display the local dashboard.</noscript>
+  <script type="module" src="/assets/app.js"></script>
+</body>
+</html>

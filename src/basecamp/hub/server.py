@@ -2,17 +2,31 @@
 
 from __future__ import annotations
 
+import fcntl
 import os
 import socket as socket_module
 from pathlib import Path
 
 import uvicorn
 
+from basecamp.core.exceptions import LauncherError
+from basecamp.core.paths import DAEMON_SERVER_LOCK
+
 from .app import create_app
+from .dashboard.access import DashboardAccess
+from .dashboard.server import DashboardServer
 from .store import Store
 from .swarm.process import reconcile_orphaned_runs
 
 _SOCKET_MODE = 0o600
+_SERVER_LOCK_MODE = 0o600
+
+
+class HubAlreadyRunningError(LauncherError):
+    """Another hub process owns this runtime directory."""
+
+    def __init__(self, lock_path: Path) -> None:
+        super().__init__(f"A basecamp hub is already running ({lock_path}).")
 
 
 class UdsServer(uvicorn.Server):
@@ -36,12 +50,40 @@ class UdsServer(uvicorn.Server):
                 raise RuntimeError(msg) from exc
 
 
-def create_server(uds_path: str, store: Store, *, log_level: str = "info") -> UdsServer:
+def create_server(
+    uds_path: str,
+    store: Store,
+    *,
+    dashboard_access: DashboardAccess | None = None,
+    log_level: str = "info",
+) -> UdsServer:
     """Build a UDS-bound daemon server for the given store."""
 
-    app = create_app(store, daemon_uds=uds_path)
+    app = create_app(store, daemon_uds=uds_path, dashboard_access=dashboard_access)
     config = uvicorn.Config(app, uds=uds_path, log_level=log_level)
     return UdsServer(config)
+
+
+def _acquire_server_lock(lock_path: Path) -> int:
+    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(lock_path, flags, _SERVER_LOCK_MODE)
+    try:
+        os.fchmod(fd, _SERVER_LOCK_MODE)
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError as error:
+        os.close(fd)
+        raise HubAlreadyRunningError(lock_path) from error
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd
+
+
+def _release_server_lock(fd: int) -> None:
+    try:
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def _write_pid_file(pid_path: Path, pid: int) -> None:
@@ -73,19 +115,27 @@ def run_hub(
     """Run the hub daemon bound to a Unix domain socket."""
 
     socket_path = Path(uds_path).expanduser()
-    socket_path.parent.mkdir(parents=True, exist_ok=True)
-    if socket_path.exists():
-        socket_path.unlink()
-
+    socket_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
+    os.chmod(socket_path.parent, 0o700)
+    server_lock = _acquire_server_lock(socket_path.parent / DAEMON_SERVER_LOCK.name)
     daemon_pid = os.getpid()
     daemon_pid_path = Path(pid_path).expanduser() if pid_path is not None else None
-    if daemon_pid_path is not None:
-        _write_pid_file(daemon_pid_path, daemon_pid)
-
+    dashboard: DashboardServer | None = None
     try:
+        if socket_path.exists():
+            socket_path.unlink()
+        if daemon_pid_path is not None:
+            _write_pid_file(daemon_pid_path, daemon_pid)
+
         store = Store(db_path=db_path)
         reconcile_orphaned_runs(store)
-        create_server(str(socket_path), store).run()
+        dashboard_access = DashboardAccess()
+        dashboard = DashboardServer(access=dashboard_access, uds_path=str(socket_path))
+        dashboard.start()
+        create_server(str(socket_path), store, dashboard_access=dashboard_access).run()
     finally:
+        if dashboard is not None:
+            dashboard.stop()
         if daemon_pid_path is not None:
             _remove_pid_file(daemon_pid_path, daemon_pid)
+        _release_server_lock(server_lock)

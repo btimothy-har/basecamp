@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { RunSummaryAgent, RunSummaryResult } from "../client.ts";
-import { observeRunSummary } from "../summary-observer.ts";
 import {
 	ACTIVE_AGENTS_WIDGET_ID,
 	activeRunningAgents,
@@ -43,7 +42,7 @@ function runningAgent(overrides: Partial<RunSummaryAgent> = {}): RunSummaryAgent
 		status: "running",
 		created_at: "2026-06-21T00:00:00.000Z",
 		started_at: "2026-06-21T00:01:00.000Z",
-		task: { goal: "Implement feature", current_task: { label: "Write tests", status: "active" } },
+		task: { goal: "Implement feature", current_task: { label: "Write tests" } },
 		...overrides,
 	};
 }
@@ -164,8 +163,6 @@ describe("active agents widget lifecycle", () => {
 			],
 		};
 
-		const observed: Array<RunSummaryResult | null> = [];
-		const stopObserving = observeRunSummary((value) => observed.push(value));
 		const controller = startActiveAgentsWidget(ctx, {
 			rootId: "root-1",
 			socketPath: "/tmp/daemon.sock",
@@ -186,7 +183,6 @@ describe("active agents widget lifecycle", () => {
 		});
 
 		await controller.refresh();
-		assert.equal(observed.at(-1), summary);
 		assert.equal(widgetCalls.at(-1)?.key, ACTIVE_AGENTS_WIDGET_ID);
 		assert.equal(typeof widgetCalls.at(-1)?.value, "function");
 		const factory = widgetCalls.at(-1)?.value as (
@@ -200,7 +196,6 @@ describe("active agents widget lifecycle", () => {
 
 		summary = null;
 		await controller.refresh();
-		assert.equal(observed.at(-1), null);
 		assert.equal(widgetCalls.at(-1)?.value, undefined);
 
 		summary = { agents: [runningAgent({ agent_handle: "timer" })] };
@@ -211,11 +206,9 @@ describe("active agents widget lifecycle", () => {
 
 		shouldThrow = true;
 		await controller.refresh();
-		assert.equal(observed.at(-1), null);
+		assert.equal(widgetCalls.at(-1)?.value, undefined);
 
 		controller.stop();
-		stopObserving();
-		assert.equal(observed.at(-1), null);
 		assert.equal(widgetCalls.at(-1)?.value, undefined);
 	});
 });

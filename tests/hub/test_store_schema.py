@@ -16,6 +16,7 @@ def test_store_initializes_required_tables(tmp_path: Path) -> None:
 
     with sqlite3.connect(db_path) as connection:
         rows = connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+        indexes = {row[1]: row for row in connection.execute("PRAGMA index_list(agents)").fetchall()}
 
     table_names = {row[0] for row in rows}
     assert "agents" in table_names
@@ -28,6 +29,7 @@ def test_store_initializes_required_tables(tmp_path: Path) -> None:
     assert "analysis" not in table_names
     assert "raw_pi_thread" not in table_names
     assert "raw_pi_thread_node" not in table_names
+    assert indexes["idx_agents_parent_id"][2] == 0
 
 
 def test_store_adds_messages_table_to_existing_database(tmp_path: Path) -> None:
@@ -145,6 +147,37 @@ def test_store_migrates_agent_handle_column_and_backfills_existing_rows(tmp_path
     assert any(index[1] == "idx_agents_agent_handle_unique" and index[2] for index in indexes)
 
 
+def test_store_adds_parent_index_to_existing_agents_table(tmp_path: Path) -> None:
+    db_path = tmp_path / "daemon.db"
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE agents (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                sibling_group TEXT,
+                depth INTEGER,
+                role TEXT,
+                session_name TEXT,
+                cwd TEXT,
+                created_at TEXT,
+                last_seen_at TEXT,
+                current_run_id TEXT,
+                agent_handle TEXT,
+                agent_type TEXT,
+                model TEXT
+            )
+            """
+        )
+
+    Store(db_path=db_path)
+
+    with sqlite3.connect(db_path) as connection:
+        indexes = {row[1]: row for row in connection.execute("PRAGMA index_list(agents)").fetchall()}
+
+    assert indexes["idx_agents_parent_id"][2] == 0
+
+
 def test_store_migrates_agent_model_column(tmp_path: Path) -> None:
     db_path = tmp_path / "daemon.db"
     with sqlite3.connect(db_path) as connection:
@@ -251,4 +284,4 @@ def test_store_drops_retired_columns_on_modern_sqlite(tmp_path: Path) -> None:
 
     assert "product_role" not in columns
     assert "run_kind" not in columns
-    assert {"repo", "worktree_label"} <= columns
+    assert {"repo", "worktree_label", "branch", "agent_mode"} <= columns

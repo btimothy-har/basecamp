@@ -1,6 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { RunSummaryAgent, RunSummaryResult } from "./client.ts";
-import { publishRunSummary } from "./summary-observer.ts";
 
 export const ACTIVE_AGENTS_WIDGET_ID = "basecamp-swarm-agents";
 
@@ -202,17 +201,13 @@ export function startActiveAgentsWidget(
 		try {
 			const summary = await options.fetchSummary(options.socketPath, options.rootId, fetchLimit);
 			if (stopped) return;
-			publishRunSummary(summary);
 			if (!summary) {
 				clearActiveAgentsWidget(ctx);
 				return;
 			}
 			publishActiveAgentsWidget(ctx, summary.agents, { limit: displayLimit, nowMs: nowFn() });
 		} catch {
-			if (!stopped) {
-				publishRunSummary(null);
-				clearActiveAgentsWidget(ctx);
-			}
+			if (!stopped) clearActiveAgentsWidget(ctx);
 		} finally {
 			refreshing = false;
 		}
@@ -228,7 +223,6 @@ export function startActiveAgentsWidget(
 		stop() {
 			stopped = true;
 			clearIntervalFn(timer);
-			publishRunSummary(null);
 			clearActiveAgentsWidget(ctx);
 		},
 		clear() {

@@ -287,7 +287,6 @@ def test_get_root_agent_directory_excludes_ask_agents_but_run_summary_includes_t
 
     assert [row["agent_id"] for row in directory_rows] == ["normal-agent"]
     assert {agent["agent_handle"] for agent in summary["agents"]} == {"normal-agent", "ask-agent"}
-    assert summary["counts"]["total"] == 2
 
 
 def test_get_root_agent_directory_filters_awaitable_agents_only(tmp_path: Path) -> None:

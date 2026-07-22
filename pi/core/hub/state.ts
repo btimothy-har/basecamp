@@ -1,21 +1,82 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { processScoped } from "../global-registry.ts";
 import type { DaemonConnection } from "./connection.ts";
+import type { SessionMetadataPublisher } from "./metadata.ts";
 
-// Connection state + accessors + the connect seam. Split out of index.ts so
-// consumers can depend on connection state without importing registration wiring.
+// Connection state, metadata ownership, and the connect seam. Split out of index.ts
+// so consumers can depend on live state without importing registration wiring.
+
+export interface HubMetadataWiring {
+	publisher: SessionMetadataPublisher;
+	stop: () => void;
+}
 
 export interface HubConnectionState {
 	connection: DaemonConnection | null;
 	connecting: Promise<void> | null;
+	// A state object allocated before this field existed can survive the first upgraded reload.
+	metadataWiring?: HubMetadataWiring | null;
 }
 
-// Surviving state: the live daemon WebSocket outlives /reload. Key unchanged
-// across the swarm→core relocation (processScoped keys are location-independent).
+// Surviving state: the live daemon WebSocket and its metadata subscriptions outlive
+// /reload. Key unchanged across the swarm→core relocation (processScoped keys are
+// location-independent).
 export const getHubConnectionState = processScoped<HubConnectionState>("basecamp.daemonClient", () => ({
 	connection: null,
 	connecting: null,
+	metadataWiring: null,
 }));
+
+export function createHubMetadataWiring(
+	publisher: SessionMetadataPublisher,
+	unsubscribeClose: () => void,
+): HubMetadataWiring {
+	let stopped = false;
+	return {
+		publisher,
+		stop() {
+			if (stopped) return;
+			stopped = true;
+			for (const cleanup of [unsubscribeClose, () => publisher.stop()]) {
+				try {
+					cleanup();
+				} catch {
+					// best effort
+				}
+			}
+		},
+	};
+}
+
+export function replaceHubMetadataWiring(state: HubConnectionState, wiring: HubMetadataWiring): void {
+	if (state.metadataWiring === wiring) return;
+	const previous = state.metadataWiring;
+	state.metadataWiring = null;
+	try {
+		previous?.stop();
+	} catch {
+		// best effort
+	}
+	state.metadataWiring = wiring;
+}
+
+export function clearHubMetadataWiring(
+	state: HubConnectionState,
+	owner: HubMetadataWiring | null = state.metadataWiring ?? null,
+): boolean {
+	if (!owner || state.metadataWiring !== owner) return false;
+	state.metadataWiring = null;
+	try {
+		owner.stop();
+	} catch {
+		// best effort
+	}
+	return true;
+}
+
+export function getHubMetadataPublisher(state: HubConnectionState): SessionMetadataPublisher | null {
+	return state.metadataWiring?.publisher ?? null;
+}
 
 export function getActiveDaemonConnection(): DaemonConnection | null {
 	return getHubConnectionState().connection;

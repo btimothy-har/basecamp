@@ -23,7 +23,6 @@ const CONTEXTS = [
 	"bash-reviewer",
 	"engineering",
 	"browser",
-	"companion",
 	"code-review",
 	"workstreams",
 ] as const;

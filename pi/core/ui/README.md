@@ -1,6 +1,6 @@
 # ui (core submodule)
 
-Framework UI for a basecamp session — status footer, title auto-naming, and the interactive mode editor. Lives in `core` (`pi/core/ui/`) and is registered by `registerCore` alongside core's other in-session surfaces (`escalate`, `capabilities`), on the principle that *framework* chrome belongs with the framework. Feature-specific widgets (task cards, agent rows, companion panes) stay with their own domains.
+Framework UI for a basecamp session — status footer, title auto-naming, and the interactive mode editor. Lives in `core` (`pi/core/ui/`) and is registered by `registerCore` alongside core's other in-session surfaces (`escalate`, `capabilities`), on the principle that *framework* chrome belongs with the framework. Feature-specific widgets such as task cards and agent rows stay with their owning domains.
 
 ## What it does
 

@@ -148,4 +148,25 @@ describe("ensureDaemon", () => {
 		assert.equal(calls.length, 1);
 		assert.equal(fs.existsSync(lockPath), false);
 	});
+
+	it("does not remove a spawn lock that replaced the acquired inode", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "daemon-ensure-"));
+		const paths = daemonPaths(root);
+		const replacement = JSON.stringify({ pid: 777, ts: Date.now() });
+		let healthy = false;
+
+		await ensureDaemon({
+			resolvePathsFn: () => paths,
+			healthPingFn: async () => (healthy ? { ok: true, protocol: PROTOCOL_VERSION } : { ok: false }),
+			spawnFn: () => {
+				fs.unlinkSync(paths.spawnLockPath);
+				fs.writeFileSync(paths.spawnLockPath, replacement);
+				healthy = true;
+				return fakeSpawn();
+			},
+			sleepFn: async () => {},
+		});
+
+		assert.equal(fs.readFileSync(paths.spawnLockPath, "utf8"), replacement);
+	});
 });

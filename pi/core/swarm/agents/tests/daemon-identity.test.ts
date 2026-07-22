@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { deriveDaemonIdentity } from "../../../hub/identity.ts";
+import type { WorkspaceState } from "../../../project/workspace/state.ts";
 import { installDaemonToolTestHooks } from "./harness.ts";
 
 describe("deriveDaemonIdentity", () => {
@@ -119,6 +120,23 @@ describe("deriveDaemonIdentity", () => {
 			if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
 			else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
 		}
+	});
+
+	it("deriveDaemonIdentity sources current model, mode, and worktree branch", () => {
+		const identity = deriveDaemonIdentity(
+			{
+				model: { id: "claude-sonnet-4-5" },
+				sessionManager: { getSessionId: () => "session-metadata" },
+			} as any,
+			{
+				getAgentMode: () => "planning",
+				getWorkspaceState: () => ({ activeWorktree: { branch: "bt/dashboard" } }) as WorkspaceState,
+			},
+		);
+
+		assert.equal(identity.model, "claude-sonnet-4-5");
+		assert.equal(identity.agent_mode, "planning");
+		assert.equal(identity.branch, "bt/dashboard");
 	});
 
 	it("deriveDaemonIdentity includes session file when available", () => {

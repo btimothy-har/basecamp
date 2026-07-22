@@ -292,29 +292,6 @@ def _migrate_model_aliases_file(home: Path, options: MigrationOptions, actions: 
         _write_json_object(target, payload)
 
 
-def _migrate_companion(home: Path, options: MigrationOptions, actions: list[Action]) -> None:
-    source_dir = pi_dir(home) / "companion"
-    snapshots_dir = basecamp_dir(home) / "companion" / "snapshots"
-
-    _ensure_dir(snapshots_dir, options, actions)
-
-    if not source_dir.exists():
-        _record(actions, "missing", source_dir, snapshots_dir.parent, "legacy companion directory is absent")
-        return
-    if not source_dir.is_dir() or source_dir.is_symlink():
-        _record(actions, "skip", source_dir, snapshots_dir.parent, "legacy companion path is not a directory")
-        return
-
-    for source in sorted(source_dir.iterdir()):
-        if source.name.endswith(".analysis.json"):
-            _record(actions, "skip", source, None, "retired companion analysis sidecar")
-            continue
-        if source.suffix != ".json":
-            _record(actions, "skip", source, None, "not a companion JSON snapshot")
-            continue
-        _copy_regular_file(source, snapshots_dir / source.name, options, actions)
-
-
 def _migrate_swarm(home: Path, options: MigrationOptions, actions: list[Action]) -> None:
     legacy_dir = pi_dir(home) / "agent" / "basecamp"
     swarm_dir = basecamp_dir(home) / "swarm"
@@ -343,7 +320,6 @@ def _prune_empty_legacy_dirs(home: Path, options: MigrationOptions, actions: lis
         pi_dir(home) / "session-state",
         pi_dir(home) / "model-aliases",
         pi_dir(home) / "tasks",
-        pi_dir(home) / "companion",
         pi_dir(home) / "agent" / "basecamp",
     ]
 
@@ -391,7 +367,6 @@ def run(options: MigrationOptions) -> list[Action]:
     _copy_directory_tree(pi_dir(home) / "session-state", target_basecamp / "core" / "session-state", options, actions)
     _migrate_model_aliases_file(home, options, actions)
     _copy_directory_tree(pi_dir(home) / "tasks", target_basecamp / "tasks", options, actions)
-    _migrate_companion(home, options, actions)
     _migrate_swarm(home, options, actions)
     _prune_empty_legacy_dirs(home, options, actions)
 

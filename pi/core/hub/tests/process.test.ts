@@ -23,6 +23,6 @@ describe("isDaemonCommandForSocket", () => {
 
 	it("rejects an unrelated command that merely mentions the socket", () => {
 		assert.equal(isDaemonCommandForSocket(`cat ${SOCKET}`, SOCKET), false);
-		assert.equal(isDaemonCommandForSocket(`basecamp companion --snapshot ${SOCKET}`, SOCKET), false);
+		assert.equal(isDaemonCommandForSocket(`basecamp agents --socket ${SOCKET}`, SOCKET), false);
 	});
 });

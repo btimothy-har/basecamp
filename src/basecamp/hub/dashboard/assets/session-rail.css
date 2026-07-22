@@ -1,0 +1,205 @@
+.repo-group {
+	padding: 14px 14px 2px;
+}
+
+.repo-heading,
+.worktree-heading {
+	position: relative;
+	font-family: var(--mono);
+	font-weight: 700;
+	color: var(--muted);
+}
+
+.repo-heading {
+	padding-left: 18px;
+	font-size: 11px;
+}
+
+.repo-heading::before {
+	position: absolute;
+	left: 1px;
+	top: 3px;
+	width: 8px;
+	height: 8px;
+	content: "";
+	border: 1px solid #8fa097;
+	transform: rotate(45deg);
+}
+
+.worktree-heading {
+	margin: 11px 0 8px;
+	padding-left: 20px;
+	font-size: 10px;
+}
+
+.worktree-heading::before {
+	position: absolute;
+	left: 1px;
+	top: 6px;
+	width: 11px;
+	height: 1px;
+	content: "";
+	background: #a6b5ac;
+}
+
+.session-button {
+	display: grid;
+	grid-template-columns: 12px minmax(0, 1fr) auto;
+	grid-template-areas:
+		"dot title age"
+		"blank meta meta"
+		"blank signal signal";
+	align-items: center;
+	gap: 5px 8px;
+	width: 100%;
+	min-height: 76px;
+	margin: 0 0 4px;
+	padding: 10px 11px 9px 9px;
+	text-align: left;
+	cursor: pointer;
+	border: 1px solid transparent;
+	border-left: 3px solid transparent;
+	border-radius: 5px;
+	background: transparent;
+}
+
+.session-button:hover {
+	background: rgb(255 255 255 / 52%);
+}
+
+.session-button.selected {
+	border-color: #8ebbb0;
+	border-left-color: var(--teal);
+	background: var(--paper-strong);
+	box-shadow: 0 8px 22px rgb(30 62 52 / 5%);
+}
+
+.session-button .session-state-dot {
+	grid-area: dot;
+}
+
+.session-title {
+	grid-area: title;
+	overflow: hidden;
+	font-size: 13px;
+	font-weight: 750;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.session-age {
+	grid-area: age;
+	font-family: var(--mono);
+	font-size: 10px;
+	font-weight: 700;
+	color: var(--muted);
+}
+
+.session-meta {
+	display: flex;
+	grid-area: meta;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+}
+
+.session-meta-text {
+	overflow: hidden;
+	font-family: var(--mono);
+	font-size: 10px;
+	color: var(--muted);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.kind-badge {
+	flex: 0 0 auto;
+	padding: 2px 4px;
+	font-family: var(--mono);
+	font-size: 8px;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: #53615b;
+	border: 1px solid #acb8b0;
+	background: #f5f7f4;
+}
+
+.kind-badge.workstream {
+	color: #315b9e;
+	border-color: #9fb7da;
+	background: #edf4ff;
+}
+
+.kind-badge.copilot {
+	color: #895c0b;
+	border-color: #dab56e;
+	background: #fff2d6;
+}
+
+.agent-signal {
+	display: flex;
+	grid-area: signal;
+	gap: 3px;
+	min-height: 3px;
+}
+
+.signal-segment {
+	width: 20px;
+	height: 3px;
+	background: var(--faint);
+}
+
+.signal-empty {
+	grid-area: signal;
+	font-family: var(--mono);
+	font-size: 9px;
+	color: #87938d;
+}
+
+.rail-empty,
+.rail-skeleton {
+	padding: 28px 18px;
+	font-size: 13px;
+	color: var(--muted);
+}
+
+.root-loader {
+	padding: 14px;
+	border-top: 1px solid var(--line);
+}
+
+.load-more-button {
+	width: 100%;
+	min-height: 40px;
+	padding: 9px 12px;
+	font-family: var(--mono);
+	font-size: 10px;
+	font-weight: 800;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--teal);
+	cursor: pointer;
+	border: 1px solid #8ebbb0;
+	border-radius: 4px;
+	background: var(--paper-strong);
+}
+
+.load-more-button:hover:not([aria-disabled="true"]) {
+	background: #f4faf7;
+}
+
+.load-more-button[aria-disabled="true"] {
+	color: var(--muted);
+	cursor: wait;
+	border-color: var(--line-strong);
+}
+
+.root-limit-note {
+	padding: 16px 14px 4px;
+	font-family: var(--mono);
+	font-size: 9px;
+	text-align: center;
+	text-transform: uppercase;
+	color: var(--muted);
+}
