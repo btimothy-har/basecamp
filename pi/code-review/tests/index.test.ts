@@ -78,6 +78,9 @@ describe("code-review skill", () => {
 			"wait_for_agent",
 			"report_findings",
 			"adaptive general reviewers",
+			"review chair",
+			"Show the exact summary to the user",
+			"report_findings({ scope, summary, findings })",
 		]) {
 			assert.equal(content.includes(token), true, `skill should reference ${token}`);
 		}

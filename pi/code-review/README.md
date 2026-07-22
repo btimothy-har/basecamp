@@ -1,6 +1,6 @@
 # code-review
 
-A primary-only, user-invoked independent review of the current branch. `/skill:code-review [base]` dispatches fixed and risk-driven read-only reviewers, then calls `report_findings` for a deterministic verdict, annotation pane, and private packet. The skill is hidden from model invocation and never exposed in subagents.
+A primary-only, user-invoked independent review of the current branch. `/skill:code-review [base]` dispatches fixed and risk-driven read-only reviewers; the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill is hidden from model invocation and never exposed in subagents.
 
 ## Review method
 
@@ -15,23 +15,26 @@ Reviewers may inspect PR descriptions, commits, and linked issues for claimed in
 3. Dispatch seven fixed read-only lenses: security, testing, docs, clarity, conventions, general correctness, and integration.
 4. Dispatch focused adaptive `general-reviewer`s for each material data/migration, API/protocol, UI/data, async/retry, concurrency/state, performance, build/deploy, or broad-refactor aspect; add another narrow specialist only when its lens needs an independent second pass.
 5. Wait for all reviewers and record any coverage failures.
-6. Transpose reviewer findings into the structured schema and call `report_findings` once.
-7. Discuss the packet with the user; never start fixes automatically.
+6. Verify and normalize reports, merge only semantic duplicates, preserve unique substantive findings, and dispatch independent verification for any concern first noticed by the primary.
+7. Write and show one concise summary, then call `report_findings({ scope, summary, findings })` with the same summary and synthesized final set.
+8. Discuss the packet with the user; never start fixes automatically.
 
 The integration lens owns cross-layer producer/consumer contracts, semantic parity, runtime wiring, temporal alignment, source-of-truth drift, rollout compatibility, and operational completion. It leaves local functional logic, exploitability, test quality, documentation-only drift, pure clarity, and codified conventions to their dedicated lenses.
 
 ## Result handling
 
-`report_findings` sorts findings and computes the verdict from severity counts (any critical → Request Changes; at least three high → Request Changes; one or two high → Comment; medium/low only → Approve with notes; none → Approve). A per-finding `response` can contest or contextualize a finding but never changes the verdict.
+The primary may rewrite and regroup findings based on verified root cause and impact; source selection and semantic deduplication are editorial model judgment. Independent reviewers remain the source of defects, and the primary must obtain a focused reviewer report before adding a concern it noticed itself. The verdict is deterministic only after this synthesis.
 
-The annotation pane collects optional user reactions. The private packet is written under session scratch with mode `0600`; its directory is `0700`.
+`report_findings` sorts the final findings and computes the verdict from severity counts (any critical → Request Changes; at least three high → Request Changes; one or two high → Comment; medium/low only → Approve with notes; none → Approve). A per-finding `response` can contest or contextualize a finding but never changes the verdict.
+
+The annotation pane collects optional user reactions. The private packet stores the primary summary, synthesized findings, responses, and reactions under session scratch with mode `0600`; its directory is `0700`. Raw reviewer reports and provenance mappings are not retained.
 
 ## Layout
 
 - `index.ts` — registers `report_findings` and exposes the skill primary-only.
 - `skills/code-review/SKILL.md` — orchestration contract.
 - `skills/code-review/references/review-method.md` — shared reviewer method and finding contract.
-- `tools.ts` — result tool and reviewee handoff.
+- `tools.ts` — result tool and review-chair handoff.
 - `findings.ts` — dimensions, severities, scope, and tool schemas.
 - `synthesis.ts` — stable finding order and deterministic verdict.
 - `annotate-pane.ts` — finding reactions.

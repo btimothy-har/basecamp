@@ -52,6 +52,7 @@ export type ReviewScope = Static<typeof ReviewScope>;
 export const ReportFindingsParams = Type.Object(
 	{
 		scope: ReviewScope,
+		summary: Type.String({ minLength: 1 }),
 		findings: Type.Array(Finding),
 	},
 	{ additionalProperties: false },

@@ -7,6 +7,7 @@ import type { Verdict } from "./synthesis.ts";
 
 export interface ReviewResult {
 	scope: ReviewScope;
+	summary: string;
 	verdict: Verdict;
 	findings: Finding[];
 	createdAt: string;
@@ -30,6 +31,7 @@ export function persistReviewArtifact(result: ReviewResult, reactions: (string |
 	}));
 	const artifact: ReviewArtifact = {
 		scope: result.scope,
+		summary: result.summary,
 		verdict: result.verdict,
 		findings,
 		createdAt: result.createdAt,

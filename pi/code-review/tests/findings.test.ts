@@ -4,6 +4,7 @@ import { Value } from "@sinclair/typebox/value";
 import { ReportFindingsParams } from "../findings.ts";
 
 const scope = { base: "origin/main", mergeBase: "abc1234", cwd: "/repo", label: "branch x → origin/main" };
+const summary = "Synthesized review summary.";
 
 const validFinding = {
 	dimension: "security",
@@ -17,7 +18,7 @@ const validFinding = {
 };
 
 function payload(finding: Record<string, unknown>): unknown {
-	return { scope, findings: [finding] };
+	return { scope, summary, findings: [finding] };
 }
 
 describe("ReportFindingsParams validation", () => {
@@ -67,7 +68,12 @@ describe("ReportFindingsParams validation", () => {
 		assert.equal(Value.Check(ReportFindingsParams, payload({ ...validFinding, bogus: true })), false);
 	});
 
+	it("requires a non-empty synthesized summary", () => {
+		assert.equal(Value.Check(ReportFindingsParams, { scope, findings: [validFinding] }), false);
+		assert.equal(Value.Check(ReportFindingsParams, { scope, summary: "", findings: [validFinding] }), false);
+	});
+
 	it("rejects a payload with no scope", () => {
-		assert.equal(Value.Check(ReportFindingsParams, { findings: [validFinding] }), false);
+		assert.equal(Value.Check(ReportFindingsParams, { summary, findings: [validFinding] }), false);
 	});
 });

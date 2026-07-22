@@ -115,7 +115,7 @@ Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`,
 
 ### Code Review
 
-`/skill:code-review` runs an **independent** third-party review of the current branch. It is a user-invoked skill (`disable-model-invocation` — hidden from the model, primary-only). The session dispatches read-only reviewer specialists, transposes their reports into the `Finding` schema, and calls `report_findings`, which merges the findings and computes the verdict **deterministically** — no LLM synthesis, and the verdict ignores the reviewee's opinion. The top-level session is the reviewee: it orchestrates and relays but never decides the verdict, carries every finding through verbatim, and may attach a `response` to contest one but never drops or softens it. Reviewer independence lives in the persona prompts, not an orchestration boundary. Manual only.
+`/skill:code-review` runs an **independently sourced** review of the current branch. It is user-invoked (`disable-model-invocation` — hidden from the model, primary-only) and dispatches seven fixed read-only lenses plus risk-driven adaptive general reviewers. The primary acts as review chair: it verifies and normalizes reports, semantically deduplicates shared root causes, reconciles severity, and summarizes the final set, but it must obtain an independent reviewer report before adding a concern it noticed itself. `report_findings` computes the verdict deterministically from that synthesized set; a per-finding `response` never changes it. Source selection and semantic deduplication are deliberately model judgment, raw reviewer reports/provenance are not retained, and the verdict is deterministic only after synthesis. Manual only.
 
 ### Model Aliases
 
