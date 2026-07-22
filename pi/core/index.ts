@@ -2,7 +2,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerModeShortcut } from "./agent-mode/toggle.ts";
 import { registerCatalogProviders } from "./catalog/providers.ts";
 import { registerEscalate } from "./escalate/tool.ts";
-import { registerGit } from "./git/index.ts";
 import { isSubagent } from "./host/env.ts";
 import { registerHubConnection } from "./hub/index.ts";
 import registerModelAliases from "./model/index.ts";
@@ -21,10 +20,8 @@ export default function (pi: ExtensionAPI): void {
 	registerCatalogProviders(pi);
 	registerModelAliases(pi);
 
-	// The active project: workspace runtime + config resolution + context injection
-	// (registerProject sequences them), then the git command surface.
+	// The active project: workspace runtime + config resolution + context injection.
 	registerProject(pi);
-	registerGit(pi);
 
 	// The hub-daemon connector (adapter): connects at session_start for top-level
 	// sessions and daemon-spawned agents. Consumers ride on it.

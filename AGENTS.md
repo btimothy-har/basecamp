@@ -24,11 +24,12 @@ scripts/check-file-length.ts               # Hard caps: .ts ≤ 350; .py/.html/.
 pi/                            # ① the Pi extension (TypeScript)
 ├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
 ├── core/                       # agent-mode/ (+copilot·toggle) · session/ (+state) · project/ (config·context·injection·logseq · workspace/ runtime+guards+/worktree) ·
-│                               #   git/ (worktrees/ crud·target·migrate · repo · /create-pr) · skills/ · catalog/ · model/ · ui/ (framework chrome) · escalate/ (+dialog/) · host/ (env·exec·paths·config) ·
+│                               #   git/ (worktrees/ crud·target·migrate · repo) · skills/ · catalog/ · model/ · ui/ (framework chrome) · escalate/ (+dialog/) · host/ (env·exec·paths·config) ·
 │                               #   hub/ (hub-daemon connector: protocol/ TS↔Python contract · connection · ensure · identity · status) ·
 │                               #   swarm/ (the agent-dispatch primitive: agents/ = tools·catalog·launch·hub client·reporter·widget·observability·skills) · global-registry.ts
 ├── system-prompt/              # before_agent_start prompt assembly: prompt.ts · context-builders.ts · defaults/ (modes·styles·environment)
 ├── code-review/                # /skill:code-review feature domain (user-invoked skill + report_findings tool: findings·synthesis·annotate-pane·artifact)
+├── pull-request/               # primary-only model-invocable PR preparation, CI, readiness, and review lifecycle skill
 ├── workstreams/                # durable repo-neutral workstream coordination (create·edit·launch·list·status·start·herdr) over #core/swarm
 ├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
 ├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
@@ -110,7 +111,7 @@ The initial Terminal-Bench adapter exposes the worker-like `basecamp-pi-single` 
 
 All TypeScript ships as **one** Pi extension (`pi/extension.ts`; manifest = the repo-root `package.json`). It composes the domain modules in a **fixed order, core first**, so init is deterministic and identical on `/reload`. Each domain exposes a `register*` default export; cross-domain imports go only through `#`-subpath aliases and are boundary-checked (core imports no other domain).
 
-Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `code-review` and `workstreams` consume `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
+Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `pull-request` owns the primary-only PR lifecycle skill, while `code-review` and `workstreams` consume `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
 
 ### Code Review
 
@@ -170,9 +171,12 @@ These repository caps are hard and take precedence over the shipped Pi agent's s
 
 ## Pull Requests
 
-Open every PR **as a draft** and drive it to done in order — never skip a step or open one ready for review:
+Open every PR **as a draft** and drive it to the user-selected stopping state in order:
 
 1. **Open in draft.** No PR starts ready for review.
-2. **Get CI green.** Poll the PR's checks (`.github/workflows/ci.yml`) and fix whatever fails; do not proceed while CI is red.
-3. **Mark ready once CI is green.** Flipping the PR out of draft is also what triggers `.github/workflows/claude-review.yml` (it skips drafts), so the reviewer only ever sees a green, ready PR.
-4. **Clear the review.** Poll for the Claude review, fix every issue it raises, and reply to and/or resolve every review comment before treating the PR as done.
+2. **Get CI green.** Poll the PR's checks (`.github/workflows/ci.yml`) and fix branch-caused failures; do not mark a red PR ready.
+3. **Confirm readiness.** Green CI does not imply consent to publish for review. Ask whether to leave the PR draft or mark it ready; without explicit ready intent, stop at the green draft.
+4. **Mark ready only when confirmed.** This triggers `.github/workflows/claude-review.yml`, which skips drafts.
+5. **Clear the review.** Poll for the Claude review, fix every valid issue, and reply to and/or resolve every review comment before treating a ready PR as done.
+
+The pull-request workflow never merges, closes, or approves the PR.

@@ -97,10 +97,12 @@ Use it to list, add, edit, or remove configured projects.
 |---------|-------------|
 | `/show-plan` | Show the current plan and task progress |
 | `/worktree [label]` | Switch to an existing Git-registered worktree |
-| `/create-pr` | Create or update a pull request |
+| `/skill:pull-request` | Prepare or publish a pull request and carry it through CI |
 | `/skill:code-review` | Run an independent multi-agent review of the current branch |
 | `/title [text]` | Generate a session title from the conversation, or set one manually |
 | `/model-aliases` | Manage model aliases (list, add, edit, remove) |
+
+The model-invocable `pull-request` skill is primary-only. New PRs stay draft through CI, and the skill asks before marking one ready; without explicit ready intent it stops at the green draft. It follows repository-required reviews after readiness and never merges the PR.
 
 ### Browser Automation
 
