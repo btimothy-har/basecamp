@@ -144,12 +144,11 @@ async function sweepSessionWorktreesForSession(
 		if (!state.repo) return;
 
 		const result = await sweepSessionWorktrees(pi, state.repo.root, state.repo.name);
-		if (result.reclaimed.length > 0) {
-			ctx.ui.notify(`basecamp: reclaimed ${result.reclaimed.length} cold worktree(s)`, "info");
-		}
-		if (result.surfaced.length > 0) {
-			ctx.ui.notify(`basecamp: ${result.surfaced.length} dirty worktree(s) reclaimable — /worktree prune`, "info");
-		}
+		const parts: string[] = [];
+		if (result.reclaimed.length > 0) parts.push(`reclaimed ${result.reclaimed.length} cold worktree(s)`);
+		if (result.surfaced.length > 0)
+			parts.push(`${result.surfaced.length} dirty worktree(s) kept — /worktree prune to remove`);
+		if (parts.length > 0) ctx.ui.notify(`basecamp: ${parts.join("; ")}`, "info");
 	} catch {
 		/* sweep is best-effort and must not interrupt session start */
 	}

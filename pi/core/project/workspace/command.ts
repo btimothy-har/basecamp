@@ -4,6 +4,7 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { listWorktrees, type WorktreeSummary } from "../../git/worktrees/crud.ts";
+import { runWorktreePrune } from "./prune.ts";
 import { requireWorkspaceRuntime } from "./runtime.ts";
 
 function formatWorktreeChoice(wt: WorktreeSummary, activeLabel: string | null): string {
@@ -53,8 +54,12 @@ async function selectWorktreeLabel(
 
 export function registerWorktreeCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("worktree", {
-		description: "Switch the active workspace worktree",
+		description: "Switch the active workspace worktree, or `/worktree prune` to reclaim dormant ones",
 		handler: async (args, ctx) => {
+			if (args?.trim() === "prune") {
+				await runWorktreePrune(pi, ctx);
+				return;
+			}
 			const workspace = requireWorkspaceRuntime();
 			const state = workspace.current();
 			const worktrees = await getRegisteredWorktrees(pi, ctx);
