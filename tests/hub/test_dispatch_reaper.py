@@ -249,6 +249,7 @@ def test_reconcile_orphaned_runs_marks_nonterminal_failed(
     store.set_run_pgid(run_id="run-running", pgid=321)
     store.set_run_pgid(run_id="run-pending", pgid=654)
     monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: False)
 
     reconcile_orphaned_runs(store)
 
@@ -301,6 +302,7 @@ def test_reconcile_orphaned_runs_kills_verified_runner_group(
         calls.append((pgid or 0, escalation_s, poll_s))
 
     monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: False)
 
     reconcile_orphaned_runs(store)
 
@@ -325,6 +327,7 @@ def test_reconcile_orphaned_runs_skips_unverified_group_but_marks_failed(
 
     monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
     monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: False)
 
     reconcile_orphaned_runs(store)
 
