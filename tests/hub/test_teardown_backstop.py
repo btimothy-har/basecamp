@@ -38,21 +38,26 @@ def test_reconcile_reclaims_terminal_row_with_surviving_worktree(
 ) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
     teardowns: list[str] = []
-    monkeypatch.setattr("basecamp.hub.swarm.process.os.path.exists", lambda p: p == "/wt/surviving")
+    wt = tmp_path / "wt-surviving"
+    wt.mkdir()
+
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: True)
     monkeypatch.setattr(
         "basecamp.hub.swarm.process.teardown_agent_workspace",
-        lambda wt, **_kw: teardowns.append(wt),
+        lambda worktree, **_kw: teardowns.append(worktree),
     )
-    _create_terminal_run(
-        store,
+    store.create_run(
         run_id="run-surviving",
         agent_id="agent-surviving",
-        spec={"owned_worktree": "/wt/surviving", "owned_branch": "agent/surv", "branch_created": True},
+        dispatcher_id="root",
+        spec={"owned_worktree": str(wt), "owned_branch": "agent/surv", "branch_created": True},
     )
+    store.set_run_pgid(run_id="run-surviving", pgid=888)
+    store.set_run_result(run_id="run-surviving", status="completed", result="done", error=None)
 
     reconcile_orphaned_runs(store)
 
-    assert teardowns == ["/wt/surviving"]
+    assert teardowns == [str(wt)]
 
 
 def test_reconcile_skips_terminal_row_whose_worktree_is_gone(
@@ -148,33 +153,48 @@ def test_reconcile_skips_unverified_liveness_row_but_processes_remaining(
     store = Store(db_path=tmp_path / "daemon.db")
     teardowns: list[str] = []
 
-    # First row: unverified liveness (ps probe fails). Second row: no pgid at all
-    # so liveness is trivially unverified via the None path — but we want one row
-    # that *is* verified and gets torn down. Use three rows: unverified, verified, no-pgid.
+    wt_unverified = tmp_path / "wt-unverified"
+    wt_unverified.mkdir()
+    wt_verified = tmp_path / "wt-verified"
+    wt_verified.mkdir()
+
+    # pgid 999 is a live runner that gets terminated; pgid 777 is not a runner and
+    # its liveness is unverifiable (ps probe shows a live, non-runner process).
     monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda pgid: pgid == 999)
+    monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
+    # pgid 777 is unverifiable (alive or probe failed); pgid 999 is verified dead
+    # after termination, but the nonterminal pass tears it down via terminated_runner
+    # so verified_dead is only consulted for the unverified row.
+    monkeypatch.setattr(
+        "basecamp.hub.swarm.process._process_group_verified_dead",
+        lambda pgid: pgid != 777,
+    )
     monkeypatch.setattr(
         "basecamp.hub.swarm.process.teardown_agent_workspace",
-        lambda wt, **_kw: teardowns.append(wt),
+        lambda worktree, **_kw: teardowns.append(worktree),
     )
     store.create_run(
         run_id="run-unverified",
         agent_id="agent-unverified",
         dispatcher_id="root",
-        spec={"owned_worktree": "/wt/unverified", "owned_branch": "agent/u", "branch_created": True},
+        spec={"owned_worktree": str(wt_unverified), "owned_branch": "agent/u", "branch_created": True},
     )
     store.set_run_pgid(run_id="run-unverified", pgid=777)
     store.create_run(
         run_id="run-verified",
         agent_id="agent-verified",
         dispatcher_id="root",
-        spec={"owned_worktree": "/wt/verified", "owned_branch": "agent/v", "branch_created": True},
+        spec={"owned_worktree": str(wt_verified), "owned_branch": "agent/v", "branch_created": True},
     )
     store.set_run_pgid(run_id="run-verified", pgid=999)
 
     reconcile_orphaned_runs(store)
 
-    assert "/wt/unverified" not in teardowns
-    assert "/wt/verified" in teardowns
+    # The unverified row's worktree exists on disk but must NOT be torn down —
+    # neither the nonterminal pass (unverifiable) nor the terminal sweep (pgid
+    # not provably dead) may touch it. The verified row IS torn down.
+    assert str(wt_unverified) not in teardowns
+    assert str(wt_verified) in teardowns
 
 
 def test_teardown_timeout_expired_does_not_propagate(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -262,6 +282,7 @@ def test_reconcile_terminal_sweep_one_row_failure_does_not_abort_remaining(
             raise RuntimeError("boom")
         teardowns.append(wt)
 
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: True)
     monkeypatch.setattr("basecamp.hub.swarm.process.os.path.exists", lambda _p: True)
     monkeypatch.setattr("basecamp.hub.swarm.process.teardown_agent_workspace", flaky_teardown)
     _create_terminal_run(
@@ -288,17 +309,22 @@ def test_reconcile_nonterminal_no_pgid_skips_teardown(
 ) -> None:
     # A nonterminal row with no pgid has unverified liveness: teardown must be
     # skipped (left for the next reconcile) rather than force-removing a possibly-live tree.
+    # The worktree exists on disk so the terminal sweep's os.path.exists check does NOT
+    # accidentally filter it — the liveness gate is what protects it.
     store = Store(db_path=tmp_path / "daemon.db")
     teardowns: list[str] = []
+    wt = tmp_path / "wt-no-pgid"
+    wt.mkdir()
+
     monkeypatch.setattr(
         "basecamp.hub.swarm.process.teardown_agent_workspace",
-        lambda wt, **_kw: teardowns.append(wt),
+        lambda worktree, **_kw: teardowns.append(worktree),
     )
     store.create_run(
         run_id="run-no-pgid",
         agent_id="agent-no-pgid",
         dispatcher_id="root",
-        spec={"owned_worktree": "/wt/no-pgid", "owned_branch": "agent/n", "branch_created": True},
+        spec={"owned_worktree": str(wt), "owned_branch": "agent/n", "branch_created": True},
     )
 
     reconcile_orphaned_runs(store)
@@ -307,3 +333,64 @@ def test_reconcile_nonterminal_no_pgid_skips_teardown(
     run = store.get_run("run-no-pgid")
     assert run is not None
     assert run["status"] == "failed"
+
+
+def test_reconcile_terminal_sweep_tears_down_verified_dead_pgid(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A terminal row with a provably-dead pgid and a surviving real worktree IS
+    # torn down by the terminal sweep — the liveness gate passes.
+    store = Store(db_path=tmp_path / "daemon.db")
+    teardowns: list[str] = []
+    wt = tmp_path / "wt-dead"
+    wt.mkdir()
+
+    monkeypatch.setattr(
+        "basecamp.hub.swarm.process._process_group_verified_dead",
+        lambda pgid: pgid == 555,
+    )
+    monkeypatch.setattr(
+        "basecamp.hub.swarm.process.teardown_agent_workspace",
+        lambda worktree, **_kw: teardowns.append(worktree),
+    )
+    store.create_run(
+        run_id="run-dead",
+        agent_id="agent-dead",
+        dispatcher_id="root",
+        spec={"owned_worktree": str(wt), "owned_branch": "agent/dead", "branch_created": True},
+    )
+    store.set_run_pgid(run_id="run-dead", pgid=555)
+    store.set_run_result(run_id="run-dead", status="completed", result="done", error=None)
+
+    reconcile_orphaned_runs(store)
+
+    assert teardowns == [str(wt)]
+
+
+def test_reconcile_terminal_sweep_skips_null_pgid_with_surviving_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A terminal row with pgid None and a surviving real worktree is skipped —
+    # the liveness gate cannot verify a null pgid, so the worktree is left for
+    # the session-start sweep rather than force-removed.
+    store = Store(db_path=tmp_path / "daemon.db")
+    teardowns: list[str] = []
+    wt = tmp_path / "wt-null-pgid"
+    wt.mkdir()
+
+    monkeypatch.setattr(
+        "basecamp.hub.swarm.process.teardown_agent_workspace",
+        lambda worktree, **_kw: teardowns.append(worktree),
+    )
+    _create_terminal_run(
+        store,
+        run_id="run-null",
+        agent_id="agent-null",
+        spec={"owned_worktree": str(wt), "owned_branch": "agent/null", "branch_created": True},
+    )
+
+    reconcile_orphaned_runs(store)
+
+    assert teardowns == []

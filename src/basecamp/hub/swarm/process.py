@@ -168,6 +168,27 @@ def _process_group_is_runner(pgid: int) -> bool:
     return any(f"-m {module}" in result.stdout for module in _RUNNER_MODULE_MATCHES)
 
 
+def _process_group_verified_dead(pgid: int | None) -> bool:
+    """True only when the ps probe ran and found no live process in the group.
+
+    Returns False when pgid is None, the probe raised OSError, or a live process
+    was found — callers must defer teardown in all those cases rather than risk
+    force-removing a possibly-live runner's workspace.
+    """
+    if pgid is None or pgid <= 1:
+        return False
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pgid), "-o", "pid="],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return not result.stdout.strip()
+
+
 def terminate_process_group_if_runner(
     pgid: int | None,
     *,
@@ -259,12 +280,13 @@ def reconcile_orphaned_runs(store: Store) -> None:
 
 def _reconcile_nonterminal_row(store: Store, row: dict[str, object]) -> None:
     pgid = row.get("pgid")
-    liveness_verified = isinstance(pgid, int)
-    if liveness_verified:
+    pgid_int = pgid if isinstance(pgid, int) else None
+    terminated_runner = False
+    if pgid_int is not None:
         try:
-            liveness_verified = terminate_process_group_if_runner(pgid, escalation_s=2.0)
+            terminated_runner = terminate_process_group_if_runner(pgid_int, escalation_s=2.0)
         except OSError:
-            liveness_verified = False
+            terminated_runner = False
 
     status, result, error = _restart_reconcile_outcome(row)
     store.set_run_result_if_unset(
@@ -276,10 +298,12 @@ def _reconcile_nonterminal_row(store: Store, row: dict[str, object]) -> None:
 
     # A run orphaned by a daemon crash never had its reaper fire, so tear down its workspace
     # here — the reaper's counterpart. The merged-worktree sweep can't cover this case: a
-    # crash-interrupted run's branch has not been merged yet. Skip teardown when process
-    # liveness was unverified (pgid missing or ps probe failed): force-removing a possibly-live
-    # runner's tree would corrupt its workspace. Leave it for the next reconcile.
-    if not liveness_verified:
+    # crash-interrupted run's branch has not been merged yet. Teardown proceeds when the group
+    # was a live runner we terminated, or when it is provably dead (ps ran, no live process).
+    # Skip only when liveness is genuinely unverifiable (pgid missing or ps probe failed):
+    # force-removing a possibly-live runner's tree would corrupt its workspace. Leave it for
+    # the next reconcile.
+    if not (terminated_runner or _process_group_verified_dead(pgid_int)):
         return
     spec = row.get("spec_json")
     owned_worktree = _spec_owned_worktree(spec)
@@ -290,13 +314,20 @@ def _reconcile_nonterminal_row(store: Store, row: dict[str, object]) -> None:
 def _reconcile_terminal_worktrees(store: Store) -> None:
     # A run finalized via result_report whose daemon died before the reaper's teardown fired
     # leaks its workspace forever — the nonterminal pass above never sees it. Sweep recently
-    # terminal rows and tear down any whose worktree path still exists on disk. Do not
-    # re-finalize their status.
+    # terminal rows and tear down any whose worktree path still exists on disk and whose pgid
+    # is provably dead. Do not re-finalize their status.
     for row in store.get_recent_runs_with_owned_worktree():
         try:
             worktree = row["spec_json"].get("owned_worktree")
-            if isinstance(worktree, str) and os.path.exists(worktree):
-                _teardown_from_spec(worktree, row["spec_json"])
+            if not (isinstance(worktree, str) and os.path.exists(worktree)):
+                continue
+            # Tear down only when the row's pgid is provably dead; a None or unverifiable
+            # pgid means a possibly-live runner still owns the tree. Deferred/unverifiable
+            # residue falls to the session-start sweep (the documented last resort; a
+            # zero-commit agent branch at its base reads as integrated there, so it self-heals).
+            if not _process_group_verified_dead(row.get("pgid")):
+                continue
+            _teardown_from_spec(worktree, row["spec_json"])
         except Exception:
             continue
 
