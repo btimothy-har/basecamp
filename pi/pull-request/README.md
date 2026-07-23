@@ -17,4 +17,4 @@ A primary-only feature domain that exposes the model-invocable `pull-request` sk
 - `skills/pull-request/SKILL.md` — drafting, publication, CI, readiness, and review lifecycle.
 - `tests/index.test.ts` — primary/subagent discovery and lifecycle contract coverage.
 
-The domain registers no custom tool. GitHub publication continues to use the bash reviewer and its user confirmation boundary.
+The domain registers no custom tool and adds no new hard gate. GitHub publication runs through the existing bash reviewer, whose routing is LLM-judgment plus human confirmation rather than a guaranteed block; the skill also hard-stops at the green draft when no interactive UI can confirm readiness.

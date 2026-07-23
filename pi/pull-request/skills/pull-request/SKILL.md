@@ -125,7 +125,7 @@ For an existing PR:
 - update stale title, scope, decisions, validation, and follow-ups
 - preserve its draft/ready state unless the user requests a change
 
-Let Basecamp's command gate present every externally visible `git` or `gh` mutation to the user. Never bypass that gate.
+Every externally visible `git` and `gh` mutation runs through the bash reviewer. Never bypass or suppress it. Its routing is LLM-judgment plus human confirmation, not a guaranteed hard gate, so do not assume a publication command paused for a human and never force one through — publication safety depends on your own human-in-the-loop discipline as well.
 
 ## 6. Carry CI to completion
 
@@ -144,14 +144,16 @@ Do not churn on infrastructure or unrelated failures. Report the evidence and su
 
 ## 7. Confirm readiness
 
-Green CI does not authorize changing PR state.
+Green CI does not authorize changing PR state. Marking a PR ready requires an explicit, interactive human decision.
 
-For a new or existing draft PR, use `escalate` after CI is green unless the user already explicitly chose the stopping state:
+If no interactive UI is available to answer — `escalate` cannot pause for a real response in a headless session — hard-stop at the green draft, never run `gh pr ready`, and report that marking ready needs an interactive confirmation. A returned escalation question that no human answered is not ready intent.
+
+Otherwise, unless the user already explicitly chose the stopping state, `escalate` after CI is green:
 
 - **Leave draft** — stop with the PR in draft.
 - **Mark ready** — run `gh pr ready`, then follow repository-required reviews.
 
-Without affirmative ready intent, leave the PR in draft. Do not infer readiness from green CI, completed implementation, or absence of known issues. Do not convert an existing ready PR back to draft unless the user asks.
+Treat only an explicit affirmative answer as ready intent. Do not infer readiness from green CI, completed implementation, or absence of known issues. Do not convert an existing ready PR back to draft unless the user asks.
 
 ## 8. Follow required reviews
 

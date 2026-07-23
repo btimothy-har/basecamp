@@ -70,8 +70,10 @@ describe("pull-request skill", () => {
 			"Do not rebase",
 			"always create it as a draft",
 			"gh pr checks --watch --fail-fast",
-			"use `escalate`",
-			"Without affirmative ready intent",
+			"If no interactive UI is available to answer",
+			"never run `gh pr ready`",
+			"Treat only an explicit affirmative answer as ready intent",
+			"not a guaranteed hard gate",
 			"Never merge, close, or approve",
 		]) {
 			assert.ok(content.includes(contract), `skill should state: ${contract}`);
