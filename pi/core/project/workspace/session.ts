@@ -9,7 +9,6 @@ import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendi
 import { reapOwnedSessionWorktree } from "../../git/worktrees/lease.ts";
 import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
 import { sweepSessionWorktrees } from "../../git/worktrees/session-sweep.ts";
-import { sweepAgentWorktrees } from "../../git/worktrees/sweep.ts";
 import { readLogseqGraphDir, readWorktreeSetupCommand } from "../../host/config.ts";
 import { getAgentDepth, getBasecampEnv } from "../../host/env.ts";
 import { getCurrentSessionState } from "../../session/state/index.ts";
@@ -133,26 +132,6 @@ async function migrateLegacyWorktreesForSession(
 	}
 }
 
-async function sweepAgentWorktreesForSession(
-	pi: ExtensionAPI,
-	ctx: ExtensionContext,
-	isSubagent: boolean,
-): Promise<void> {
-	if (isSubagent) return;
-
-	try {
-		const state = requireWorkspaceState();
-		if (!state.repo) return;
-
-		const result = await sweepAgentWorktrees(pi, state.repo.root, state.repo.name);
-		if (result.removed.length > 0) {
-			ctx.ui.notify(`basecamp: reclaimed ${result.removed.length} merged agent worktree(s)`, "info");
-		}
-	} catch {
-		/* sweep is best-effort and must not interrupt session start */
-	}
-}
-
 async function sweepSessionWorktreesForSession(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
@@ -248,7 +227,6 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 		});
 
 		await migrateLegacyWorktreesForSession(pi, ctx, launchCwd, isSubagent);
-		await sweepAgentWorktreesForSession(pi, ctx, isSubagent);
 		await sweepSessionWorktreesForSession(pi, ctx, isSubagent);
 
 		if (worktreeDir) {
