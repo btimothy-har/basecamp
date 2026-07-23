@@ -132,9 +132,9 @@ const SUPPORT_TOOLS = [
 
 const PARENT_ONLY_TOOLS = ["plan", "escalate"];
 
-describe("uniform agent toolset", () => {
-	it("gives every dispatched agent the full toolset including write/edit", () => {
-		const { args } = buildToolArgs(null);
+describe("agent toolset", () => {
+	it("gives every workspaced run the full toolset including write/edit", () => {
+		const { args } = buildToolArgs(null, { kind: "report" });
 		const tools = toolNamesFromArgs(args);
 
 		for (const tool of ["read", "write", "edit", "bash", "grep", "find", "ls", ...SUPPORT_TOOLS]) {
@@ -145,8 +145,21 @@ describe("uniform agent toolset", () => {
 		}
 	});
 
+	it("withholds write/edit when the run has no workspace (capability follows workspace)", () => {
+		const tools = toolNamesFromArgs(buildToolArgs(null, null).args);
+		assert.equal(tools.includes("write"), false);
+		assert.equal(tools.includes("edit"), false);
+		assert.equal(tools.includes("read"), true);
+		assert.equal(tools.includes("bash"), true);
+	});
+
 	it("never launches an agent with --read-only", () => {
-		const workspaces: RunWorkspace[] = [null, { kind: "dispatch", branch: "agent/h" }, { kind: "ask" }];
+		const workspaces: RunWorkspace[] = [
+			null,
+			{ kind: "deliverable", branch: "agent/h" },
+			{ kind: "report" },
+			{ kind: "ask" },
+		];
 		for (const workspace of workspaces) {
 			assert.equal(buildToolArgs(null, workspace).args.includes("--read-only"), false);
 		}
@@ -154,7 +167,26 @@ describe("uniform agent toolset", () => {
 });
 
 describe("workspace contract prompt layer", () => {
-	it("injects the dispatch contract with the run's branch, composed after the persona prompt", () => {
+	it("injects the deliverable contract with the run's branch, composed after the persona prompt", () => {
+		const agent: AgentConfig = {
+			name: "worker",
+			description: "d",
+			model: "default",
+			systemPrompt: "You are a worker.",
+			source: "builtin",
+			filePath: "/w.md",
+			deliverable: true,
+		};
+		const { prompt } = buildToolArgs(agent, { kind: "deliverable", branch: "agent/quiet-badger-3dc450" });
+
+		assert.ok(prompt, "prompt file written");
+		assert.ok(prompt.startsWith("You are a worker."), "persona prompt leads");
+		assert.match(prompt, /## Workspace contract/);
+		assert.match(prompt, /`agent\/quiet-badger-3dc450`/);
+		assert.match(prompt, /only commits on your branch survive/i);
+	});
+
+	it("gives a persona the report-scratch contract for report runs", () => {
 		const agent: AgentConfig = {
 			name: "scout",
 			description: "d",
@@ -162,30 +194,31 @@ describe("workspace contract prompt layer", () => {
 			systemPrompt: "You are a scout.",
 			source: "builtin",
 			filePath: "/s.md",
+			deliverable: false,
 		};
-		const { prompt } = buildToolArgs(agent, { kind: "dispatch", branch: "agent/quiet-badger-3dc450" });
-
-		assert.ok(prompt, "prompt file written");
-		assert.ok(prompt.startsWith("You are a scout."), "persona prompt leads");
-		assert.match(prompt, /## Workspace contract/);
-		assert.match(prompt, /`agent\/quiet-badger-3dc450`/);
-		assert.match(prompt, /only commits on your branch survive/i);
+		const { prompt } = buildToolArgs(agent, { kind: "report" });
+		assert.match(prompt ?? "", /detached scratch workspace/);
+		assert.match(prompt ?? "", /your report is your only deliverable/i);
 	});
 
-	it("gives ad-hoc dispatches a contract-only prompt", () => {
-		const { prompt } = buildToolArgs(null, { kind: "dispatch", branch: "agent/h1" });
-		assert.ok(prompt?.startsWith("## Workspace contract"));
+	it("keeps default prompt assembly for persona-less runs: contract rides in the task text", () => {
+		const { args, prompt } = buildToolArgs(null, { kind: "report" });
+		assert.equal(prompt, null, "no --agent-prompt for ad-hoc runs");
+		assert.match(args.at(-1) ?? "", /## Workspace contract/);
+		assert.match(args.at(-1) ?? "", /Task: inspect tools/);
 	});
 
-	it("uses the detached-answer variant for asks", () => {
-		const { prompt } = buildToolArgs(null, { kind: "ask" });
-		assert.match(prompt ?? "", /detached snapshot workspace/);
-		assert.match(prompt ?? "", /nothing you write here survives/i);
+	it("uses the detached-answer variant for asks (in the task text)", () => {
+		const { args, prompt } = buildToolArgs(null, { kind: "ask" });
+		assert.equal(prompt, null);
+		assert.match(args.at(-1) ?? "", /detached snapshot workspace/);
+		assert.match(args.at(-1) ?? "", /nothing you write here survives/i);
 	});
 
 	it("omits the contract when the run has no isolated workspace", () => {
-		const { prompt } = buildToolArgs(null, null);
-		assert.equal(prompt, null, "no workspace, no contract, no prompt file for ad-hoc");
+		const { args, prompt } = buildToolArgs(null, null);
+		assert.equal(prompt, null);
+		assert.doesNotMatch(args.at(-1) ?? "", /Workspace contract/);
 	});
 });
 

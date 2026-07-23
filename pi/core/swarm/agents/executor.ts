@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isWithin } from "../../host/paths.ts";
-import { type AgentConfig, getAgentToolAllowlist } from "./types.ts";
+import { type AgentConfig, getAgentToolAllowlist, getWorkspacelessAgentToolAllowlist } from "./types.ts";
 
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
@@ -67,11 +67,12 @@ export function buildAgentRunName(prefix: string, suffix?: string): string {
 }
 
 /**
- * The run's workspace posture, driving the contract layer of the agent prompt:
- * a dispatch run works on its own branch, an ask run answers from a detached snapshot,
- * and a non-repo run has no isolated workspace (and no contract).
+ * The run's workspace posture, driving the contract layer of the agent prompt and the
+ * toolset: a deliverable run works on its own branch, report/ask runs use branchless
+ * detached scratch workspaces, and a non-repo run has no workspace — and therefore no
+ * structured mutation tools (capability follows workspace).
  */
-export type RunWorkspace = { kind: "dispatch"; branch: string } | { kind: "ask" } | null;
+export type RunWorkspace = { kind: "deliverable"; branch: string } | { kind: "report" } | { kind: "ask" } | null;
 
 export interface PiArgsOpts {
 	name: string;
@@ -98,6 +99,11 @@ function workspaceContract(workspace: RunWorkspace): string | null {
 		return `## Workspace contract
 
 You are answering a question from a detached snapshot workspace. It is discarded when this run ends — nothing you write here survives, so do not produce work products. Read whatever you need, then answer.`;
+	}
+	if (workspace.kind === "report") {
+		return `## Workspace contract
+
+You work in your own detached scratch workspace — a disposable copy of the parent's current state. It is discarded entirely when this run ends: **your report is your only deliverable**. Write freely for exploration (notes, experiments, builds); nothing here survives and commits are pointless. Never write outside your workspace.`;
 	}
 	return `## Workspace contract
 
@@ -139,19 +145,22 @@ export function buildPiArgs(
 
 	args.push("--no-prompt-templates");
 
+	// A persona replaces the default prompt assembly, so its contract rides in the prompt
+	// file. A persona-less run keeps the full default assembly (posture, working style) —
+	// its contract rides in the task text instead of suppressing that assembly.
 	const contract = workspaceContract(opts.workspace);
-	const effectivePrompt = [agent?.systemPrompt, contract].filter(Boolean).join("\n\n");
-
-	if (effectivePrompt) {
+	if (agent?.systemPrompt) {
 		const promptFile = path.join(agentDir, "prompt.md");
-		fs.writeFileSync(promptFile, effectivePrompt, { mode: 0o600 });
+		fs.writeFileSync(promptFile, [agent.systemPrompt, contract].filter(Boolean).join("\n\n"), { mode: 0o600 });
 		args.push("--agent-prompt", promptFile);
 	}
 
-	const tools = [...new Set([...getAgentToolAllowlist(), ...opts.extensionTools])];
+	const baseTools = opts.workspace ? getAgentToolAllowlist() : getWorkspacelessAgentToolAllowlist();
+	const tools = [...new Set([...baseTools, ...opts.extensionTools])];
 	args.push("--tools", tools.join(","));
 
-	const taskText = buildAgentTaskText(task);
+	const taskText =
+		agent?.systemPrompt || !contract ? buildAgentTaskText(task) : `${contract}\n\n${buildAgentTaskText(task)}`;
 	if (taskText.length > TASK_ARG_LIMIT) {
 		const taskFile = path.join(agentDir, "task.md");
 		fs.writeFileSync(taskFile, taskText, { mode: 0o600 });

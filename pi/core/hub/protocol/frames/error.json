@@ -2,5 +2,5 @@
 	"type": "error",
 	"v": 27,
 	"code": "protocol_version",
-	"message": "Unsupported protocol version 1; expected 26."
+	"message": "Unsupported protocol version 1; expected 27."
 }

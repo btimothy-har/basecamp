@@ -222,12 +222,13 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 	}
 	const extensionTools = getBasecampExtensionToolNames(input.pi, input.basecampExtensionRoot);
 	// The agent spawns inside its own workspace (auto-adopted via isLinkedWorktree); only a
-	// non-repo session runs at the launch cwd with no workspace at all.
+	// non-repo session runs at the launch cwd with no workspace — and, per capability-follows-
+	// workspace, without structured mutation tools.
 	const spawnCwd = input.agentWorkspace?.worktreeDir ?? fallbackSpawnCwd(input.workspace);
 	const runWorkspace: RunWorkspace = input.agentWorkspace
-		? input.agentWorkspace.branch
-			? { kind: "dispatch", branch: input.agentWorkspace.branch }
-			: { kind: "ask" }
+		? input.agentWorkspace.kind === "deliverable"
+			? { kind: "deliverable", branch: input.agentWorkspace.branch ?? "" }
+			: { kind: input.agentWorkspace.kind }
 		: null;
 
 	const sessionDir = resolveSessionDir(input.agentId);

@@ -99,13 +99,16 @@ function checkoutArgs(checkout: AgentCheckout, worktreeDir: string): string[] {
  * bases on the parent's tree, not on a clean protected checkout. Creation and locking use
  * one git command so no cleanup process can observe an unlocked live worktree.
  */
+export const AGENT_LOCK_REASON_PREFIX = "basecamp agent run";
+
 export async function createAgentWorktree(
 	pi: ExtensionAPI,
 	repoRoot: string,
 	repoName: string,
 	label: string,
 	checkout: AgentCheckout,
-	lockReason = "basecamp agent run",
+	// The timestamp lets the session-start sweep age-gate provably-stale locked residue.
+	lockReason = `${AGENT_LOCK_REASON_PREFIX} ${new Date().toISOString()}`,
 ): Promise<AgentWorktreeResult> {
 	ensureWorktreeLabel(label);
 	const worktreeDir = path.join(WORKTREES_ROOT, repoName, label);

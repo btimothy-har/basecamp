@@ -5,112 +5,177 @@ import { sweepAgentWorktrees } from "../worktrees/sweep.ts";
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 
-function porcelain(entries: Array<{ path: string; branch: string | null; locked?: boolean }>): string {
+const FRESH_LOCK = `basecamp agent run ${new Date().toISOString()}`;
+const STALE_LOCK = `basecamp agent run ${new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString()}`;
+
+function porcelain(entries: Array<{ path: string; branch: string | null; lockReason?: string }>): string {
 	return `${entries
 		.map((entry) =>
 			[
 				`worktree ${entry.path}`,
 				entry.branch ? `branch refs/heads/${entry.branch}` : "detached",
-				...(entry.locked ? ["locked basecamp agent run"] : []),
+				...(entry.lockReason ? [`locked ${entry.lockReason}`] : []),
 			].join("\n"),
 		)
 		.join("\n\n")}\n\n`;
 }
 
-function execPi(handler: (args: string[]) => ExecResult, calls: string[][] = []): ExtensionAPI {
+function execPi(handler: (args: string[]) => ExecResult | null, calls: string[][] = []): ExtensionAPI {
 	return {
 		async exec(command: string, args: string[]): Promise<ExecResult> {
 			assert.equal(command, "git");
 			calls.push(args);
-			return handler(args);
+			const result = handler(args);
+			if (result) return result;
+			if (args.includes("--format=%(refname:short)")) return { code: 0, stdout: "main\n", stderr: "" };
+			return { code: 0, stdout: "", stderr: "" };
 		},
-	} as ExtensionAPI;
+	} as unknown as ExtensionAPI;
 }
 
 describe("sweepAgentWorktrees", () => {
-	it("reclaims agent worktrees whose branch is merged into a non-agent branch, keeps the rest", async () => {
+	it("reclaims unlocked agent worktrees with integrated branches, keeps outstanding work", async () => {
 		const list = porcelain([
 			{ path: "/repo", branch: "main" },
 			{ path: "/wt/w0", branch: "wt-bt/feat" },
-			{ path: "/wt/agent-merged", branch: "agent-aaa/worker" },
+			{ path: "/wt/agent-merged", branch: "agent/idle-fox-0a1b2c" },
 			{ path: "/wt/agent-open", branch: "agent-bbb/worker" },
 		]);
 		const calls: string[][] = [];
 		const pi = execPi((args) => {
 			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
 			if (args.includes("merge-base")) {
-				// agent-aaa is an ancestor of wt-bt/feat (merged); agent-bbb is merged nowhere.
-				const merged = args.at(-2) === "agent-aaa/worker" && args.at(-1) === "wt-bt/feat";
+				const merged = args.at(-2) === "agent/idle-fox-0a1b2c" && args.at(-1) === "wt-bt/feat";
 				return { code: merged ? 0 : 1, stdout: "", stderr: "" };
 			}
-			return { code: 0, stdout: "", stderr: "" }; // unlock / remove / branch -D
+			return null;
 		}, calls);
 
 		const result = await sweepAgentWorktrees(pi, "/repo");
 
 		assert.deepEqual(result.removed, ["/wt/agent-merged"]);
 		assert.equal(result.kept, 1);
-		assert.ok(
-			calls.some((a) => a.includes("remove") && a.includes("/wt/agent-merged")),
-			"removes the merged agent worktree",
-		);
-		assert.ok(
-			calls.some((a) => a.includes("-D") && a.includes("agent-aaa/worker")),
-			"deletes the merged branch",
-		);
+		assert.ok(calls.some((a) => a.includes("-D") && a.includes("agent/idle-fox-0a1b2c")));
 		assert.ok(
 			!calls.some((a) => a.includes("remove") && a.includes("/wt/agent-open")),
-			"leaves the unmerged agent worktree",
-		);
-		assert.equal(
-			calls.some((args) => args.includes("--force")),
-			false,
-		);
-		assert.equal(
-			calls.some((args) => args.includes("unlock")),
-			false,
+			"unintegrated real work survives",
 		);
 	});
 
-	it("never inspects or removes a locked agent worktree", async () => {
+	it("reclaims an unlocked detached agent workspace (report/ask residue)", async () => {
 		const list = porcelain([
 			{ path: "/repo", branch: "main" },
-			{ path: "/wt/agent-live", branch: "agent-live/worker", locked: true },
+			{ path: "/Users/u/.worktrees/o/r/agent-abc123/ask", branch: null },
 		]);
-		const pi = execPi((args) => {
-			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
-			throw new Error(`locked worktree should be untouched: ${args.join(" ")}`);
-		});
+		const calls: string[][] = [];
+		const pi = execPi((args) => (args.includes("list") ? { code: 0, stdout: list, stderr: "" } : null), calls);
 
 		const result = await sweepAgentWorktrees(pi, "/repo");
 
-		assert.deepEqual(result, { removed: [], kept: 1 });
+		assert.deepEqual(result.removed, ["/Users/u/.worktrees/o/r/agent-abc123/ask"]);
+		assert.equal(
+			calls.some((a) => a.includes("-D")),
+			false,
+			"detached residue has no branch to delete",
+		);
 	});
 
-	it("preserves a dirty merged worktree and its branch", async () => {
+	it("never touches a freshly locked live workspace", async () => {
 		const list = porcelain([
 			{ path: "/repo", branch: "main" },
-			{ path: "/wt/agent-dirty", branch: "agent-dirty/worker" },
+			{ path: "/wt/agent-live", branch: "agent/busy-elk-9f8e7d", lockReason: FRESH_LOCK },
+			{ path: "/Users/u/.worktrees/o/r/agent-def456/ask", branch: null, lockReason: FRESH_LOCK },
+		]);
+		const pi = execPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
+			if (args.includes("merge-base")) return { code: 0, stdout: "", stderr: "" }; // even integrated
+			if (args.includes("remove") || args.includes("unlock")) throw new Error("live workspace touched");
+			return null;
+		});
+
+		const result = await sweepAgentWorktrees(pi, "/repo");
+		assert.deepEqual(result.removed, []);
+	});
+
+	it("breaks a provably stale agent lock and reclaims integrated/detached residue", async () => {
+		const list = porcelain([
+			{ path: "/repo", branch: "main" },
+			{ path: "/wt/agent-stale", branch: "agent/gone-owl-112233", lockReason: STALE_LOCK },
+			{ path: "/Users/u/.worktrees/o/r/agent-ghi789/ask", branch: null, lockReason: STALE_LOCK },
 		]);
 		const calls: string[][] = [];
 		const pi = execPi((args) => {
 			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
-			if (args.includes("merge-base")) return { code: 0, stdout: "", stderr: "" };
-			if (args.includes("remove")) return { code: 1, stdout: "", stderr: "worktree contains modified files" };
-			return { code: 0, stdout: "", stderr: "" };
+			if (args.includes("merge-base")) return { code: 0, stdout: "", stderr: "" }; // integrated
+			return null;
 		}, calls);
 
 		const result = await sweepAgentWorktrees(pi, "/repo");
 
-		assert.deepEqual(result, { removed: [], kept: 1 });
-		assert.ok(calls.some((args) => args.includes("remove") && args.includes("/wt/agent-dirty")));
+		assert.deepEqual(result.removed.sort(), ["/Users/u/.worktrees/o/r/agent-ghi789/ask", "/wt/agent-stale"]);
+		const unlockIdx = calls.findIndex((a) => a.includes("unlock"));
+		const removeIdx = calls.findIndex((a) => a.includes("remove"));
+		assert.ok(unlockIdx !== -1 && unlockIdx < removeIdx, "unlocks before removing");
+	});
+
+	it("keeps a stale-locked workspace whose branch has unintegrated commits", async () => {
+		const list = porcelain([
+			{ path: "/repo", branch: "main" },
+			{ path: "/wt/agent-wip", branch: "agent/late-bee-445566", lockReason: STALE_LOCK },
+		]);
+		const pi = execPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
+			if (args.includes("merge-base")) return { code: 1, stdout: "", stderr: "" }; // unmerged
+			if (args.includes("remove")) throw new Error("unintegrated work must survive");
+			return null;
+		});
+
+		const result = await sweepAgentWorktrees(pi, "/repo");
+		assert.deepEqual(result.removed, []);
+		assert.equal(result.kept, 1);
+	});
+
+	it("skips locked workspaces with untimestamped legacy lock reasons", async () => {
+		const list = porcelain([
+			{ path: "/repo", branch: "main" },
+			{ path: "/wt/agent-legacy", branch: "agent-aaa/worker", lockReason: "basecamp agent run" },
+		]);
+		const pi = execPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
+			if (args.includes("merge-base")) return { code: 0, stdout: "", stderr: "" };
+			if (args.includes("remove")) throw new Error("cannot age-gate without a timestamp");
+			return null;
+		});
+
+		const result = await sweepAgentWorktrees(pi, "/repo");
+		assert.deepEqual(result.removed, []);
+	});
+
+	it("deletes integrated orphan agent branches with no worktree, keeps unintegrated ones", async () => {
+		const list = porcelain([
+			{ path: "/repo", branch: "main" },
+			{ path: "/wt/w0", branch: "wt-bt/feat" },
+		]);
+		const calls: string[][] = [];
+		const pi = execPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
+			if (args.includes("--format=%(refname:short)")) {
+				return { code: 0, stdout: "main\nwt-bt/feat\nagent/orphan-merged-1\nagent/orphan-open-2\n", stderr: "" };
+			}
+			if (args.includes("merge-base")) {
+				const merged = args.at(-2) === "agent/orphan-merged-1";
+				return { code: merged ? 0 : 1, stdout: "", stderr: "" };
+			}
+			return null;
+		}, calls);
+
+		await sweepAgentWorktrees(pi, "/repo");
+
+		assert.ok(calls.some((a) => a.includes("-D") && a.includes("agent/orphan-merged-1")));
 		assert.equal(
-			calls.some((args) => args.includes("--force") || args.includes("unlock")),
+			calls.some((a) => a.includes("-D") && a.includes("agent/orphan-open-2")),
 			false,
-		);
-		assert.equal(
-			calls.some((args) => args.includes("-D") && args.includes("agent-dirty/worker")),
-			false,
+			"unintegrated orphan branches are kept",
 		);
 	});
 
@@ -123,80 +188,10 @@ describe("sweepAgentWorktrees", () => {
 			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
 			if (args.includes("merge-base")) return { code: 0, stdout: "", stderr: "" };
 			if (args.includes("-D")) return { code: 1, stdout: "", stderr: "branch cleanup failed" };
-			return { code: 0, stdout: "", stderr: "" };
+			return null;
 		});
 
 		const result = await sweepAgentWorktrees(pi, "/repo");
-
-		assert.deepEqual(result, { removed: ["/wt/agent-merged"], kept: 0 });
-	});
-
-	it("reaps nothing when there are no non-agent branches to merge into", async () => {
-		const list = porcelain([{ path: "/wt/agent-x", branch: "agent-xxx/worker" }]);
-		const pi = execPi((args) => {
-			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
-			if (args.includes("log")) return { code: 0, stdout: "real work\n", stderr: "" };
-			throw new Error(`no merge-base/remove should run: ${args.join(" ")}`);
-		});
-
-		const result = await sweepAgentWorktrees(pi, "/repo");
-
-		assert.deepEqual(result.removed, []);
-		assert.equal(result.kept, 1);
-	});
-
-	it("recognizes per-agent `agent/<handle>` branches alongside legacy `agent-` ones", async () => {
-		const list = porcelain([
-			{ path: "/repo", branch: "main" },
-			{ path: "/wt/agent-new", branch: "agent/quiet-badger-3dc450" },
-			{ path: "/wt/agent-old", branch: "agent-aaa/worker" },
-		]);
-		const calls: string[][] = [];
-		const pi = execPi((args) => {
-			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
-			if (args.includes("merge-base")) return { code: 0, stdout: "", stderr: "" };
-			return { code: 0, stdout: "", stderr: "" };
-		}, calls);
-
-		const result = await sweepAgentWorktrees(pi, "/repo");
-
-		assert.deepEqual(result.removed.sort(), ["/wt/agent-new", "/wt/agent-old"]);
-		assert.ok(calls.some((args) => args.includes("-D") && args.includes("agent/quiet-badger-3dc450")));
-	});
-
-	it("reaps a snapshot-only branch (run committed nothing) even when unmerged", async () => {
-		const list = porcelain([
-			{ path: "/repo", branch: "main" },
-			{ path: "/wt/agent-snap", branch: "agent/idle-fox-0a1b2c" },
-		]);
-		const calls: string[][] = [];
-		const pi = execPi((args) => {
-			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
-			if (args.includes("log")) return { code: 0, stdout: "basecamp dispatch snapshot\n", stderr: "" };
-			if (args.includes("merge-base")) throw new Error("snapshot-only short-circuits the merge probe");
-			return { code: 0, stdout: "", stderr: "" };
-		}, calls);
-
-		const result = await sweepAgentWorktrees(pi, "/repo");
-
-		assert.deepEqual(result.removed, ["/wt/agent-snap"]);
-		assert.ok(calls.some((args) => args.includes("-D") && args.includes("agent/idle-fox-0a1b2c")));
-	});
-
-	it("keeps an unmerged branch with real commits", async () => {
-		const list = porcelain([
-			{ path: "/repo", branch: "main" },
-			{ path: "/wt/agent-work", branch: "agent/busy-elk-9f8e7d" },
-		]);
-		const pi = execPi((args) => {
-			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
-			if (args.includes("log")) return { code: 0, stdout: "implement the fix\n", stderr: "" };
-			if (args.includes("merge-base")) return { code: 1, stdout: "", stderr: "" };
-			throw new Error(`unmerged real work must not be removed: ${args.join(" ")}`);
-		});
-
-		const result = await sweepAgentWorktrees(pi, "/repo");
-
-		assert.deepEqual(result, { removed: [], kept: 1 });
+		assert.deepEqual(result.removed, ["/wt/agent-merged"]);
 	});
 });

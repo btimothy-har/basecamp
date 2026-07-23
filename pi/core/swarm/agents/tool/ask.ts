@@ -195,6 +195,11 @@ export function registerAskAgentTool(
 				}
 				accepted = true;
 				return await awaitAnswer(daemonClient, agentHandle, params.timeout_s, signal);
+			} catch (error) {
+				// Provisioning/launch failures (git worktree errors are a real source now) return
+				// as structured tool errors, matching dispatch_agent's contract.
+				if (accepted) throw error;
+				return { content: [{ type: "text", text: errorMessage(error) }], isError: true, details: null };
 			} finally {
 				if (!accepted) await discardAgentWorkspace(pi, provision);
 			}

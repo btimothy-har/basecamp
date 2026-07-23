@@ -9,6 +9,7 @@ const REPO_ROOT = "/repo/main-checkout";
 
 function provision(overrides: Partial<AgentWorkspaceProvision> = {}): AgentWorkspaceProvision {
 	return {
+		kind: "deliverable",
 		worktreeDir: "/worktrees/repo/agent-abc123/scout",
 		label: "agent-abc123/scout",
 		branch: "agent/quiet-badger-3dc450",
@@ -118,8 +119,8 @@ describe("buildAgentLaunchSpec workspace resolution", () => {
 		}
 	});
 
-	it("uses the ask contract for a detached workspace (null branch)", () => {
-		const p = provision({ branch: null, branchCreated: false, label: "agent-abc123/ask" });
+	it("puts the ask contract in the task text for a detached persona-less workspace", () => {
+		const p = provision({ kind: "ask", branch: null, branchCreated: false, label: "agent-abc123/ask" });
 		const result = buildAgentLaunchSpec(
 			launchInput({ protectedRoot: REPO_ROOT, repo: { root: REPO_ROOT }, activeWorktree: null }, "ask", {
 				agentWorkspace: p,
@@ -129,10 +130,9 @@ describe("buildAgentLaunchSpec workspace resolution", () => {
 		assert.equal(result.ok, true);
 		if (!result.ok) return;
 		try {
-			const promptIndex = result.plan.args.indexOf("--agent-prompt");
-			assert.notEqual(promptIndex, -1, "ask runs get a contract prompt");
-			const prompt = fs.readFileSync(result.plan.args[promptIndex + 1] as string, "utf8");
-			assert.match(prompt, /detached snapshot workspace/);
+			// Persona-less runs keep the default prompt assembly; the contract rides in the task.
+			assert.equal(result.plan.args.includes("--agent-prompt"), false);
+			assert.match(result.plan.args.at(-1) ?? "", /detached snapshot workspace/);
 		} finally {
 			fs.rmSync(result.plan.agentDir, { recursive: true, force: true });
 		}

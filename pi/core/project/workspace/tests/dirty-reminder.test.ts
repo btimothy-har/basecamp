@@ -149,7 +149,7 @@ describe("dirty worktree reminder", () => {
 		assert.deepEqual(harness.sent, []);
 	});
 
-	it("uses the teardown-aware variant for dispatched agents", async () => {
+	it("uses the teardown-aware variant for dispatched deliverable agents", async () => {
 		const harness = createHarness({ subagent: true });
 
 		await harness.end();
@@ -158,6 +158,26 @@ describe("dirty worktree reminder", () => {
 		assert.match(harness.sent[0]?.message.content ?? "", /discarded at teardown/);
 		assert.match(harness.sent[0]?.message.content ?? "", /only commits on your branch survive/);
 		assert.match(harness.sent[0]?.message.content ?? "", /scratch or exploration files/);
+	});
+
+	it("stays silent for branchless agent workspaces (report/ask runs)", async () => {
+		const harness = createHarness({
+			subagent: true,
+			state: activeWorktreeState({
+				activeWorktree: {
+					kind: "git-worktree",
+					label: "agent-abc/scout",
+					path: WORKTREE_DIR,
+					branch: null,
+					created: false,
+				},
+			}),
+		});
+
+		await harness.end();
+
+		assert.equal(harness.sent.length, 0, "scratch workspaces are dirty by design");
+		assert.equal(harness.execCalls(), 0, "no status probe for branchless agent workspaces");
 	});
 
 	it("does not inspect worktrees for read-only agents", async () => {

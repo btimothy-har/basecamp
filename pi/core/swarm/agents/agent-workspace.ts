@@ -1,15 +1,15 @@
 /**
- * Transient-workspace provisioning for dispatched agents (issue #310, Phase 1).
+ * Transient-workspace provisioning for dispatched agents (issue #310, Phase 1, revised).
  *
- * Every repo-backed run gets its own locked worktree; non-repo sessions provision nothing.
- * Branches are per-agent (`agent/<handle>`), worktrees per-run (`agent-<runToken>/<name>`):
- * a retask continues the agent's outstanding branch (or bases fresh once it was merged),
- * while an ask gets a detached checkout and never mints a branch. The base is the parent
- * worktree's HEAD — or a snapshot commit of its dirty state, so agents always see the
- * parent's WIP without the parent committing first.
+ * Deliverable runs (persona `deliverable: true` — the worker) mint an `agent/<handle>`
+ * branch from a CLEAN parent HEAD; a retask continues the outstanding branch. Report runs
+ * (every other persona, ad-hoc) and asks get branchless detached workspaces at the parent's
+ * HEAD — or a snapshot commit of its dirty state, so reviewers see uncommitted WIP without
+ * the snapshot ever entering branch topology. Non-repo sessions provision nothing.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { AGENT_BRANCH_NAMESPACE } from "../../git/constants.ts";
 import {
 	branchTip,
 	createSnapshotCommit,
@@ -23,22 +23,23 @@ import { readWorktreeSetupCommand } from "../../host/config.ts";
 import { runWorktreeSetup } from "../../project/workspace/setup.ts";
 import type { WorkspaceState } from "../../project/workspace/state.ts";
 
-export const AGENT_BRANCH_NAMESPACE = "agent/";
-
 export function agentBranchName(agentHandle: string): string {
 	return `${AGENT_BRANCH_NAMESPACE}${agentHandle}`;
 }
 
+export type AgentWorkspaceKind = "deliverable" | "report" | "ask";
+
 export type AgentWorkspaceRequest =
 	| {
-			kind: "dispatch";
-			/** Durable public handle keying the agent's branch. */
+			kind: "deliverable";
+			/** Durable public handle keying the run's branch. */
 			agentHandle: string;
 			/** Continuing an existing daemon-validated agent? Only retasks may continue a branch. */
 			isRetask: boolean;
 			runToken: string;
 			agentName: string;
 	  }
+	| { kind: "report"; runToken: string; agentName: string }
 	| {
 			kind: "ask";
 			/** The ask target's handle — the answerer detaches at that agent's branch tip when it exists. */
@@ -48,10 +49,11 @@ export type AgentWorkspaceRequest =
 	  };
 
 export interface AgentWorkspaceProvision {
+	kind: AgentWorkspaceKind;
 	worktreeDir: string;
 	/** Worktree label (`agent-<runToken>/<name>`) — stamped on the child env pre-adoption. */
 	label: string;
-	/** The run's branch (`agent/<handle>`) — null for a detached ask workspace. */
+	/** The run's branch — set for deliverable runs only; report/ask workspaces are detached. */
 	branch: string | null;
 	/** Commit OID the run started from; teardown's zero-commit check compares against this. */
 	baseOid: string;
@@ -67,7 +69,20 @@ function workspaceLabelName(name: string): string {
 	return cleaned || "agent";
 }
 
-async function resolveBaseOid(pi: ExtensionAPI, parentWorktree: string): Promise<string> {
+function friendlyGitError(error: unknown): Error {
+	const message = error instanceof Error ? error.message : String(error);
+	if (/already (?:used by|checked out)/i.test(message)) {
+		return new Error(
+			"The agent's branch is still checked out in a previous run's workspace (likely still tearing down). Retry shortly.",
+		);
+	}
+	if (/unknown revision|ambiguous argument 'HEAD'|Needed a single revision/i.test(message)) {
+		return new Error("This repository has no commits yet; make an initial commit before dispatching agents.");
+	}
+	return error instanceof Error ? error : new Error(message);
+}
+
+async function detachedBaseOid(pi: ExtensionAPI, parentWorktree: string): Promise<string> {
 	if (await isWorktreeClean(pi, parentWorktree)) {
 		return await gitOutput(pi, parentWorktree, ["rev-parse", "HEAD"]);
 	}
@@ -91,12 +106,25 @@ async function integrationBranches(pi: ExtensionAPI, repoRoot: string, parentWor
 	return [...candidates];
 }
 
-async function resolveDispatchCheckout(
+// Clean-base rule: a deliverable branch roots on committed history only, so integration is
+// always a plain merge and a WIP snapshot can never enter durable history. Applies whenever
+// a branch root is minted; continuing an outstanding branch mints nothing.
+async function requireCleanBase(pi: ExtensionAPI, parentWorktree: string): Promise<string> {
+	if (!(await isWorktreeClean(pi, parentWorktree))) {
+		throw new Error(
+			"Parent worktree has uncommitted changes. Deliverable agents branch from committed history only — " +
+				"commit your WIP first, then re-dispatch.",
+		);
+	}
+	return await gitOutput(pi, parentWorktree, ["rev-parse", "HEAD"]);
+}
+
+async function resolveDeliverableCheckout(
 	pi: ExtensionAPI,
-	request: Extract<AgentWorkspaceRequest, { kind: "dispatch" }>,
+	request: Extract<AgentWorkspaceRequest, { kind: "deliverable" }>,
 	repoRoot: string,
 	parentWorktree: string,
-): Promise<{ branch: string; baseOid: string; branchCreated: boolean; existing: boolean }> {
+): Promise<{ branch: string; baseOid: string; branchCreated: boolean }> {
 	const branch = agentBranchName(request.agentHandle);
 	const tip = await branchTip(pi, repoRoot, branch);
 
@@ -114,22 +142,20 @@ async function resolveDispatchCheckout(
 			if (await isMergedInto(pi, repoRoot, branch, candidate)) {
 				// Integrated: the work is in the candidate's history — start fresh from the parent.
 				await deleteBranch(pi, repoRoot, branch);
-				const baseOid = await resolveBaseOid(pi, parentWorktree);
-				return { branch, baseOid, branchCreated: true, existing: false };
+				return { branch, baseOid: await requireCleanBase(pi, parentWorktree), branchCreated: true };
 			}
 		}
 		// Outstanding: continue the agent's own branch so its memory and tree agree.
-		return { branch, baseOid: tip, branchCreated: false, existing: true };
+		return { branch, baseOid: tip, branchCreated: false };
 	}
 
-	const baseOid = await resolveBaseOid(pi, parentWorktree);
-	return { branch, baseOid, branchCreated: true, existing: false };
+	return { branch, baseOid: await requireCleanBase(pi, parentWorktree), branchCreated: true };
 }
 
 /**
  * Provision a dispatched run's own workspace. Returns null for a session without a repo
- * (nothing to isolate — the run keeps the launch cwd). Setup hooks run for dispatch runs
- * only (blocking, nonfatal); asks skip them for latency.
+ * (nothing to isolate — the run keeps the launch cwd and a report-only toolset). Setup
+ * hooks run for deliverable and report runs (blocking, nonfatal); asks skip them for latency.
  */
 export async function provisionAgentWorkspace(
 	pi: ExtensionAPI,
@@ -143,43 +169,66 @@ export async function provisionAgentWorkspace(
 	const parentWorktree = workspace?.activeWorktree?.path ?? repoRoot;
 	const label = `agent-${request.runToken}/${workspaceLabelName(request.agentName)}`;
 
-	if (request.kind === "ask") {
-		const targetTip = await branchTip(pi, repoRoot, agentBranchName(request.targetHandle));
-		const baseOid = targetTip ?? (await resolveBaseOid(pi, parentWorktree));
-		const worktree = await createAgentWorktree(pi, repoRoot, repo.name, label, { kind: "detached", baseRef: baseOid });
-		return { worktreeDir: worktree.worktreeDir, label, branch: null, baseOid, branchCreated: false, repoRoot };
-	}
-
-	const checkout = await resolveDispatchCheckout(pi, request, repoRoot, parentWorktree);
-	const worktree = await createAgentWorktree(
-		pi,
-		repoRoot,
-		repo.name,
-		label,
-		checkout.existing
-			? { kind: "existing-branch", branch: checkout.branch }
-			: { kind: "new-branch", branch: checkout.branch, baseRef: checkout.baseOid },
-	);
-
-	const provision: AgentWorkspaceProvision = {
-		worktreeDir: worktree.worktreeDir,
-		label,
-		branch: checkout.branch,
-		baseOid: checkout.baseOid,
-		branchCreated: checkout.branchCreated,
-		repoRoot,
-	};
-
-	const setupCommand = readWorktreeSetupCommand(repo.name);
-	if (setupCommand) {
-		const result = await runWorktreeSetup(pi, { command: setupCommand, worktreeDir: worktree.worktreeDir, repoRoot });
-		if (result.exitCode !== 0 || result.timedOut) {
-			const reason = result.timedOut ? "timed out" : `exited ${result.exitCode}`;
-			provision.setupWarning = `Workspace setup hook ${reason}: ${result.stderrTail || "(no stderr)"}`;
+	try {
+		if (request.kind === "deliverable") {
+			const checkout = await resolveDeliverableCheckout(pi, request, repoRoot, parentWorktree);
+			const worktree = await createAgentWorktree(
+				pi,
+				repoRoot,
+				repo.name,
+				label,
+				checkout.branchCreated
+					? { kind: "new-branch", branch: checkout.branch, baseRef: checkout.baseOid }
+					: { kind: "existing-branch", branch: checkout.branch },
+			);
+			const provision: AgentWorkspaceProvision = {
+				kind: request.kind,
+				...checkout,
+				...worktreeFields(worktree, label),
+				repoRoot,
+			};
+			await runSetupHook(pi, repo.name, repoRoot, provision);
+			return provision;
 		}
-	}
 
-	return provision;
+		const baseOid =
+			request.kind === "ask"
+				? ((await branchTip(pi, repoRoot, agentBranchName(request.targetHandle))) ??
+					(await detachedBaseOid(pi, parentWorktree)))
+				: await detachedBaseOid(pi, parentWorktree);
+		const worktree = await createAgentWorktree(pi, repoRoot, repo.name, label, { kind: "detached", baseRef: baseOid });
+		const provision: AgentWorkspaceProvision = {
+			kind: request.kind,
+			...worktreeFields(worktree, label),
+			branch: null,
+			baseOid,
+			branchCreated: false,
+			repoRoot,
+		};
+		if (request.kind === "report") await runSetupHook(pi, repo.name, repoRoot, provision);
+		return provision;
+	} catch (error) {
+		throw friendlyGitError(error);
+	}
+}
+
+function worktreeFields(worktree: { worktreeDir: string; branch: string | null }, label: string) {
+	return { worktreeDir: worktree.worktreeDir, label, branch: worktree.branch };
+}
+
+async function runSetupHook(
+	pi: ExtensionAPI,
+	repoName: string,
+	repoRoot: string,
+	provision: AgentWorkspaceProvision,
+): Promise<void> {
+	const command = readWorktreeSetupCommand(repoName);
+	if (!command) return;
+	const result = await runWorktreeSetup(pi, { command, worktreeDir: provision.worktreeDir, repoRoot });
+	if (result.exitCode !== 0 || result.timedOut) {
+		const reason = result.timedOut ? "timed out" : `exited ${result.exitCode}`;
+		provision.setupWarning = `Workspace setup hook ${reason}: ${result.stderrTail || "(no stderr)"}`;
+	}
 }
 
 /**

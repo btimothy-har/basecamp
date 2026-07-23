@@ -6,8 +6,9 @@ import type { DaemonConnection } from "../../../hub/index.ts";
 import { buildAgentHandle } from "../../../hub/index.ts";
 import { type AgentWorkspaceProvision, discardAgentWorkspace, provisionAgentWorkspace } from "../agent-workspace.ts";
 import { discoverAgents } from "../discovery.ts";
+import { dispatchWithHandleRetry } from "../dispatch-retry.ts";
 import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn, resolveParentSession } from "../launch.ts";
-import { createDaemonClient, type DaemonDispatchResult } from "../rpc.ts";
+import { createDaemonClient } from "../rpc.ts";
 import {
 	type DaemonToolDeps,
 	DispatchAgentParams,
@@ -87,97 +88,90 @@ export function registerDispatchAgentTool(
 				agentId = existing.agent_id;
 			}
 
-			const localId = randomUUID().slice(0, 6);
-			const namePrefix = `agent-${localId}`;
+			const namePrefix = `agent-${randomUUID().slice(0, 6)}`;
 			const workspaceState = deps.getWorkspaceState();
 			const requestedAgentConfig = requestedAgent
 				? (discoverAgents().find((candidate) => candidate.name === requestedAgent) ?? null)
 				: null;
+			// Deliverable-anchored posture: only a `deliverable: true` persona (worker) mints a
+			// branch; every other persona and ad-hoc runs are branchless report runs.
+			const kind = requestedAgentConfig?.deliverable ? ("deliverable" as const) : ("report" as const);
 
-			// The branch is keyed to the agent handle, so provisioning happens per dispatch
-			// attempt: a duplicate-handle rejection discards the workspace and re-provisions
-			// under the next candidate handle. Only a successful dispatch keeps the workspace
-			// (the running agent needs it); the daemon owns teardown from acceptance on.
-			const attempts = requestedHandle ? 1 : 3;
-			let agentHandle = requestedHandle ?? buildAgentHandle();
+			// Deliverable branches are handle-keyed, so provisioning happens per dispatch attempt
+			// with a fresh per-attempt worktree token: a duplicate-handle rejection discards the
+			// workspace and re-provisions under the next candidate handle. Only a successful
+			// dispatch keeps the workspace; the daemon owns teardown from acceptance on.
 			let provision: AgentWorkspaceProvision | null = null;
-			let result: DaemonDispatchResult | null = null;
 			let agentLabel = requestedAgent ?? "ad-hoc";
 			let dispatched = false;
 			try {
-				for (let attempt = 0; attempt < attempts; attempt++) {
-					provision = await provisionAgentWorkspace(
-						pi,
-						{
-							kind: "dispatch",
-							agentHandle,
-							isRetask: Boolean(requestedHandle),
-							runToken: localId,
-							agentName: requestedAgent ?? "adhoc",
-						},
-						workspaceState,
-					);
+				const { agentHandle, result } = await dispatchWithHandleRetry(
+					daemonClient,
+					async (candidateHandle) => {
+						const runToken = randomUUID().slice(0, 6);
+						const agentName = requestedAgent ?? "adhoc";
+						provision = await provisionAgentWorkspace(
+							pi,
+							kind === "deliverable"
+								? { kind, agentHandle: candidateHandle, isRetask: Boolean(requestedHandle), runToken, agentName }
+								: { kind, runToken, agentName },
+							workspaceState,
+						);
 
-					const agentLaunch = buildAgentLaunchSpec({
-						pi,
-						getAgents: discoverAgents,
-						resolvedAgent: requestedAgentConfig,
-						basecampExtensionRoot: deps.basecampExtensionRoot,
-						agentId,
-						requestedAgent,
-						namePrefix,
-						nameSuffix: params.name,
-						task: params.task,
-						modelContext: ctx.model,
-						resolveModelAlias: deps.resolveModelAlias,
-						workspace: workspaceState,
-						parentSession: resolveParentSession(pi, ctx),
-						project: process.env.BASECAMP_PROJECT ?? "default",
-						agentWorkspace: provision,
-					});
-					if (!agentLaunch.ok) {
-						return { content: [{ type: "text", text: agentLaunch.message }], isError: true, details: null };
-					}
+						const agentLaunch = buildAgentLaunchSpec({
+							pi,
+							getAgents: discoverAgents,
+							resolvedAgent: requestedAgentConfig,
+							basecampExtensionRoot: deps.basecampExtensionRoot,
+							agentId,
+							requestedAgent,
+							namePrefix,
+							nameSuffix: params.name,
+							task: params.task,
+							modelContext: ctx.model,
+							resolveModelAlias: deps.resolveModelAlias,
+							workspace: workspaceState,
+							parentSession: resolveParentSession(pi, ctx),
+							project: process.env.BASECAMP_PROJECT ?? "default",
+							agentWorkspace: provision,
+						});
+						if (!agentLaunch.ok) throw new Error(agentLaunch.message);
 
-					const { plan } = agentLaunch;
-					agentLabel = plan.agentLabel ?? "ad-hoc";
-					const taskSpec = plan.args.at(-1);
-					if (!taskSpec) {
-						return {
-							content: [{ type: "text", text: "Unable to build async task argument." }],
-							isError: true,
-							details: null,
+						const { plan } = agentLaunch;
+						agentLabel = plan.agentLabel ?? "ad-hoc";
+						const taskSpec = plan.args.at(-1);
+						if (!taskSpec) throw new Error("Unable to build async task argument.");
+
+						const dispatchEnv = {
+							...processEnvForSpawn(),
+							...plan.environment,
+							BASECAMP_AGENT_TITLE: buildAgentTitleBase(requestedAgent, params.task),
 						};
-					}
 
-					const dispatchEnv = {
-						...processEnvForSpawn(),
-						...plan.environment,
-						BASECAMP_AGENT_TITLE: buildAgentTitleBase(requestedAgent, params.task),
-					};
-
-					result = await daemonClient.dispatchAgent({
-						agentId,
-						agentHandle,
-						agentType: agentLabel,
-						model: plan.model ?? "default",
-						argv: plan.args.slice(0, -1),
-						task: taskSpec,
-						cwd: plan.spawnCwd,
-						env: { ...dispatchEnv, BASECAMP_AGENT_HANDLE: agentHandle },
-						ownedWorktree: provision?.worktreeDir ?? null,
-						ownedBranch: provision?.branch ?? null,
-						branchBase: provision?.baseOid ?? null,
-						branchCreated: provision?.branchCreated ?? false,
-					});
-
-					if (result.status !== "rejected" || result.reason !== "duplicate_agent_handle" || attempt === attempts - 1) {
-						break;
-					}
-					await discardAgentWorkspace(pi, provision);
-					provision = null;
-					agentHandle = buildAgentHandle();
-				}
+						return {
+							agentId,
+							agentHandle: candidateHandle,
+							agentType: agentLabel,
+							model: plan.model ?? "default",
+							argv: plan.args.slice(0, -1),
+							task: taskSpec,
+							cwd: plan.spawnCwd,
+							env: { ...dispatchEnv, BASECAMP_AGENT_HANDLE: candidateHandle },
+							ownedWorktree: provision?.worktreeDir ?? null,
+							ownedBranch: provision?.branch ?? null,
+							branchBase: provision?.baseOid ?? null,
+							branchCreated: provision?.branchCreated ?? false,
+						};
+					},
+					{
+						initialHandle: requestedHandle ?? buildAgentHandle(),
+						attempts: requestedHandle ? 1 : 3,
+						onRetry: async () => {
+							await discardAgentWorkspace(pi, provision);
+							provision = null;
+						},
+					},
+				);
 
 				if (!result || result.status === "rejected") {
 					return {
@@ -188,9 +182,11 @@ export function registerDispatchAgentTool(
 				}
 
 				dispatched = true;
-				const setupNote = provision?.setupWarning ? `\n⚠ ${provision.setupWarning}` : "";
-				const branchNote = provision
-					? ` → branch \`${provision.branch}\` (when it finishes, \`git merge\` it to integrate; retasking the handle continues the same branch)`
+				// The closure assigned this; TS's flow analysis cannot see across the callback.
+				const live = provision as AgentWorkspaceProvision | null;
+				const setupNote = live?.setupWarning ? `\n⚠ ${live.setupWarning}` : "";
+				const branchNote = live?.branch
+					? ` → branch \`${live.branch}\` (when it finishes, \`git merge\` it to integrate; retasking the handle continues the same branch)`
 					: "";
 				return {
 					content: [

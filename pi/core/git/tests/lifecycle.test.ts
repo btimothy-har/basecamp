@@ -68,11 +68,14 @@ describe("createAgentWorktree", () => {
 			throw new Error(`Unexpected git args: ${JSON.stringify(args)}`);
 		}, calls);
 
-		const result = await createAgentWorktree(pi, repoRoot, repoName, label, {
-			kind: "new-branch",
-			branch,
-			baseRef: "abc123",
-		});
+		const result = await createAgentWorktree(
+			pi,
+			repoRoot,
+			repoName,
+			label,
+			{ kind: "new-branch", branch, baseRef: "abc123" },
+			"basecamp agent run",
+		);
 
 		assert.deepEqual(result, { worktreeDir, label, branch });
 		assert.equal(calls.filter((args) => argsEqual(args, addArgs)).length, 1);

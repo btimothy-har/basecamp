@@ -80,6 +80,10 @@ export async function createSnapshotCommit(pi: ExtensionAPI, worktreeDir: string
 		return result.stdout.trim();
 	};
 	try {
+		// Seed from HEAD so ignore rules only affect genuinely untracked files: with an empty
+		// index, `add -A` would silently drop tracked-but-ignored files, recording them as
+		// deletions in the snapshot tree.
+		await run(["read-tree", "HEAD"]);
 		await run(["add", "-A"]);
 		const tree = await run(["write-tree"]);
 		return await run(["commit-tree", tree, "-p", "HEAD", "-m", "basecamp dispatch snapshot"]);

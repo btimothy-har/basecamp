@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import { resolveDaemonPaths } from "../../../hub/index.ts";
@@ -13,7 +12,6 @@ import {
 	daemonToolDeps,
 	installDaemonToolTestHooks,
 	MockConnection,
-	setCurrentWorkspaceState,
 	toolByName,
 	trackSkillInvocation,
 } from "./harness.ts";
@@ -181,123 +179,4 @@ describe("dispatch_agent", () => {
 		});
 		await executePromise;
 	});
-
-	it("dispatch_agent provisions an own workspace for a repo-backed session and sends the branch spec", async (t) => {
-		trackSkillInvocation("agents");
-		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}`;
-		t.after(() => fs.rmSync(path.join(os.homedir(), ".worktrees", "bc-tool-test"), { recursive: true, force: true }));
-		setCurrentWorkspaceState(repoWorkspaceState(repoName));
-
-		try {
-			const connection = new MockConnection();
-			const { pi, tools } = createMockPi();
-			pi.execScript = gitProvisionScript();
-			registerDaemonTools(pi, async () => connection, daemonToolDeps);
-			const dispatchTool = toolByName(tools, "dispatch_agent");
-
-			const executePromise = dispatchTool.execute(
-				"1",
-				{ task: "hello world" },
-				new AbortController().signal,
-				() => {},
-				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
-			);
-
-			await new Promise((resolve) => setImmediate(resolve));
-			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
-			assert.equal(outbound.spec.owned_worktree?.includes("agent-"), true, "own workspace provisioned");
-			assert.equal(outbound.spec.cwd, outbound.spec.owned_worktree, "spawns inside its own workspace");
-			assert.equal(outbound.spec.owned_branch, `agent/${outbound.agent_handle}`);
-			assert.equal(outbound.spec.branch_base, "headoid");
-			assert.equal(outbound.spec.branch_created, true);
-			assert.equal(outbound.spec.argv.includes("--read-only"), false);
-			assert.equal(outbound.spec.argv.includes("--worktree-dir"), false);
-			assert.equal(outbound.spec.env.BASECAMP_WORKTREE_DIR, outbound.spec.owned_worktree);
-
-			connection.emit({
-				type: "dispatch_ack",
-				v: PROTOCOL_VERSION,
-				run_id: outbound.run_id,
-				status: "spawned",
-				reason: null,
-			});
-			const result = await executePromise;
-			assert.equal(result.isError, undefined);
-			assert.equal(
-				pi.execCalls.some((call: { args: string[] }) => call.args.includes("remove")),
-				false,
-				"accepted dispatch keeps the workspace",
-			);
-		} finally {
-			setCurrentWorkspaceState(null);
-		}
-	});
-
-	it("dispatch_agent discards the minted workspace and branch when the daemon rejects", async (t) => {
-		trackSkillInvocation("agents");
-		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}-rej`;
-		t.after(() => fs.rmSync(path.join(os.homedir(), ".worktrees", "bc-tool-test"), { recursive: true, force: true }));
-		setCurrentWorkspaceState(repoWorkspaceState(repoName));
-
-		try {
-			const connection = new MockConnection();
-			const { pi, tools } = createMockPi();
-			pi.execScript = gitProvisionScript();
-			registerDaemonTools(pi, async () => connection, daemonToolDeps);
-			const dispatchTool = toolByName(tools, "dispatch_agent");
-
-			const executePromise = dispatchTool.execute(
-				"1",
-				{ task: "hello world" },
-				new AbortController().signal,
-				() => {},
-				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
-			);
-
-			await new Promise((resolve) => setImmediate(resolve));
-			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
-			connection.emit({
-				type: "dispatch_ack",
-				v: PROTOCOL_VERSION,
-				run_id: outbound.run_id,
-				status: "rejected",
-				reason: "boom",
-			});
-			const result = await executePromise;
-			assert.equal(result.isError, true);
-
-			const removeCall = pi.execCalls.find((call: { args: string[] }) => call.args.includes("remove"));
-			assert.ok(removeCall?.args.includes("--force"), "rejected dispatch force-discards the workspace");
-			assert.ok(
-				pi.execCalls.some((call: { args: string[] }) => call.args.includes("-D")),
-				"rejected dispatch deletes the branch it minted",
-			);
-		} finally {
-			setCurrentWorkspaceState(null);
-		}
-	});
 });
-
-function repoWorkspaceState(repoName: string) {
-	return {
-		launchCwd: "/wt",
-		effectiveCwd: "/wt",
-		scratchDir: "/tmp/pi/repo",
-		unsafeEdit: false,
-		repo: { root: "/repo-root", isRepo: true, name: repoName, remoteUrl: null },
-		protectedRoot: "/repo-root",
-		activeWorktree: { path: "/wt", kind: "git-worktree" as const, label: "wt", branch: null, created: false },
-	};
-}
-
-/** Answers the provisioning git sequence: no existing branch, clean parent at `headoid`. */
-function gitProvisionScript() {
-	return (_cmd: string, args: string[]): { code: number; stdout: string; stderr: string } | null => {
-		if (args.includes("--verify")) return { code: 1, stdout: "", stderr: "" };
-		if (args.includes("status")) return { code: 0, stdout: "", stderr: "" };
-		if (args.includes("rev-parse") && args.includes("HEAD")) return { code: 0, stdout: "headoid\n", stderr: "" };
-		if (args.includes("list"))
-			return { code: 0, stdout: "worktree /repo-root\nbranch refs/heads/main\n\n", stderr: "" };
-		return null;
-	};
-}

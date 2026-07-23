@@ -65,29 +65,41 @@ function repoName(tag: string): string {
 	return `basecamp-ws-fx/${tag}-${process.pid}-${Date.now()}`;
 }
 
-const dispatchRequest = {
-	kind: "dispatch",
+const deliverableRequest = {
+	kind: "deliverable",
 	agentHandle: "h1",
 	isRetask: false,
 	runToken: "abc123",
-	agentName: "scout",
+	agentName: "worker",
 } as const;
 
 describe("provisionAgentWorkspace — setup hook", () => {
-	it("runs the configured setup hook in the new workspace (blocking, ok)", async (t) => {
+	it("runs the configured setup hook via env(1) in the new workspace (blocking, ok)", async (t) => {
 		const repo = repoName("setup-ok");
 		withTempHome(t, repo, "make setup");
 		cleanupWorktrees(t);
 		const calls: Call[] = [];
 		const pi = fakePi((call) => (call.args.includes("--verify") ? { code: 1, stdout: "", stderr: "" } : null), calls);
 
-		const provision = await provisionAgentWorkspace(pi, dispatchRequest, workspace(repo));
+		const provision = await provisionAgentWorkspace(pi, deliverableRequest, workspace(repo));
 
-		const setup = calls.find((call) => call.cmd === "bash");
+		const setup = calls.find((call) => call.cmd === "env" && call.args.includes("bash"));
 		assert.ok(setup, "setup hook runs");
-		assert.deepEqual(setup.args, ["-lc", "make setup"]);
+		assert.deepEqual(setup.args, [`BASECAMP_REPO_ROOT=${REPO_ROOT}`, "bash", "-lc", "make setup"]);
 		assert.equal(setup.opts?.cwd, provision?.worktreeDir, "hook runs inside the agent workspace");
 		assert.equal(provision?.setupWarning, undefined);
+	});
+
+	it("runs the setup hook for report runs too (reviewers need environments)", async (t) => {
+		const repo = repoName("setup-report");
+		withTempHome(t, repo, "make setup");
+		cleanupWorktrees(t);
+		const calls: Call[] = [];
+		const pi = fakePi(() => null, calls);
+
+		await provisionAgentWorkspace(pi, { kind: "report", runToken: "cafe12", agentName: "scout" }, workspace(repo));
+
+		assert.ok(calls.some((call) => call.cmd === "env" && call.args.includes("bash")));
 	});
 
 	it("surfaces a nonfatal warning when the setup hook fails", async (t) => {
@@ -95,12 +107,12 @@ describe("provisionAgentWorkspace — setup hook", () => {
 		withTempHome(t, repo, "make setup");
 		cleanupWorktrees(t);
 		const pi = fakePi((call) => {
-			if (call.cmd === "bash") return { code: 2, stdout: "", stderr: "boom" };
+			if (call.cmd === "env" && call.args.includes("bash")) return { code: 2, stdout: "", stderr: "boom" };
 			if (call.args.includes("--verify")) return { code: 1, stdout: "", stderr: "" };
 			return null;
 		});
 
-		const provision = await provisionAgentWorkspace(pi, dispatchRequest, workspace(repo));
+		const provision = await provisionAgentWorkspace(pi, deliverableRequest, workspace(repo));
 
 		assert.ok(provision, "dispatch proceeds despite the failed hook");
 		assert.match(provision.setupWarning ?? "", /exited 2/);
@@ -122,7 +134,7 @@ describe("provisionAgentWorkspace — setup hook", () => {
 
 		assert.ok(provision);
 		assert.equal(
-			calls.some((call) => call.cmd === "bash"),
+			calls.some((call) => call.args.includes("bash")),
 			false,
 			"asks pay no setup latency",
 		);
@@ -131,6 +143,7 @@ describe("provisionAgentWorkspace — setup hook", () => {
 
 describe("discardAgentWorkspace", () => {
 	const provision = (branchCreated: boolean): AgentWorkspaceProvision => ({
+		kind: "deliverable",
 		worktreeDir: "/worktrees/repo/agent-abc123/scout",
 		label: "agent-abc123/scout",
 		branch: "agent/h1",

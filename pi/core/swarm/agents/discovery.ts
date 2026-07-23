@@ -30,6 +30,10 @@ export interface AgentConfig {
 	systemPrompt: string;
 	source: "builtin";
 	filePath: string;
+	// Fail-closed: report-only unless the frontmatter explicitly sets `deliverable: true`.
+	// A deliverable run mints an `agent/<handle>` branch from a clean parent HEAD; report
+	// runs get branchless detached workspaces — their report is the deliverable.
+	deliverable: boolean;
 }
 
 // ============================================================================
@@ -104,6 +108,7 @@ function loadAgentsFromDir(dir: string): AgentConfig[] {
 			systemPrompt: body,
 			source: "builtin",
 			filePath,
+			deliverable: fm.deliverable === "true",
 		});
 	}
 

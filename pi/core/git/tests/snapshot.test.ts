@@ -60,6 +60,22 @@ describe("createSnapshotCommit (real git)", () => {
 		assert.ok(!tree.includes("ignored.txt"), "gitignored files stay out of the snapshot");
 	});
 
+	it("preserves tracked-but-ignored files (index seeded from HEAD)", async (t) => {
+		const repo = initRepo(t);
+		// Commit a file first, then ignore it — the classic tracked-but-ignored state.
+		fs.writeFileSync(path.join(repo, "config.local"), "keep me\n");
+		git(repo, "add", "-f", "config.local");
+		git(repo, "commit", "-q", "-m", "add local config");
+		fs.appendFileSync(path.join(repo, ".gitignore"), "config.local\n");
+		fs.writeFileSync(path.join(repo, "tracked.txt"), "dirty\n"); // make the tree dirty
+
+		const snapshot = await createSnapshotCommit(realPi(), repo);
+
+		const tree = git(repo, "ls-tree", "-r", "--name-only", snapshot);
+		assert.ok(tree.includes("config.local"), "tracked-but-ignored file is not recorded as deleted");
+		assert.equal(git(repo, "show", `${snapshot}:config.local`), "keep me");
+	});
+
 	it("captures deletions of tracked files", async (t) => {
 		const repo = initRepo(t);
 		fs.writeFileSync(path.join(repo, "doomed.txt"), "bye\n");

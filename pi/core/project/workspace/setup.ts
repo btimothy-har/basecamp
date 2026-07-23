@@ -24,24 +24,17 @@ function tail(value: string): string {
 
 export async function runWorktreeSetup(pi: ExtensionAPI, opts: WorktreeSetupOptions): Promise<WorktreeSetupResult> {
 	const timeoutMs = opts.timeoutMs ?? 180_000;
-	const prev = process.env.BASECAMP_REPO_ROOT;
-	process.env.BASECAMP_REPO_ROOT = opts.repoRoot;
-	try {
-		const result = await pi.exec("bash", ["-lc", opts.command], {
-			cwd: opts.worktreeDir,
-			timeout: timeoutMs,
-		});
-		return {
-			ran: true,
-			exitCode: result.code,
-			timedOut: result.killed === true,
-			stderrTail: tail(result.stderr),
-		};
-	} finally {
-		if (prev === undefined) {
-			delete process.env.BASECAMP_REPO_ROOT;
-		} else {
-			process.env.BASECAMP_REPO_ROOT = prev;
-		}
-	}
+	// The hook sees BASECAMP_REPO_ROOT via env(1) rather than a process.env mutation: setup
+	// now runs concurrently (one per dispatch), and a shared global would race — vanishing
+	// mid-hook or leaking into a concurrent child's persistent environment.
+	const result = await pi.exec("env", [`BASECAMP_REPO_ROOT=${opts.repoRoot}`, "bash", "-lc", opts.command], {
+		cwd: opts.worktreeDir,
+		timeout: timeoutMs,
+	});
+	return {
+		ran: true,
+		exitCode: result.code,
+		timedOut: result.killed === true,
+		stderrTail: tail(result.stderr),
+	};
 }

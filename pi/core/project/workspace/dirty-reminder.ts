@@ -35,8 +35,12 @@ export function registerDirtyWorktreeReminder(pi: ExtensionAPI, options: DirtyWo
 		if (reminderQueued || reminderTurnActive) return;
 		if (isReadOnly()) return;
 
-		const worktreeDir = getState()?.activeWorktree?.path;
+		const activeWorktree = getState()?.activeWorktree;
+		const worktreeDir = activeWorktree?.path;
 		if (!worktreeDir) return;
+		// Branchless agent workspaces (report/ask runs) are scratch by contract: commits cannot
+		// survive a detached teardown, so nagging about dirt would only induce futile commits.
+		if (isSubagent() && !activeWorktree?.branch) return;
 
 		try {
 			const status = await pi.exec("git", ["-C", worktreeDir, "status", "--porcelain"], {
