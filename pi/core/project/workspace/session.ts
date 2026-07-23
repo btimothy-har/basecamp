@@ -8,11 +8,12 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
 import { sweepAgentWorktrees } from "../../git/worktrees/sweep.ts";
-import { readLogseqGraphDir } from "../../host/config.ts";
+import { readLogseqGraphDir, readWorktreeSetupCommand } from "../../host/config.ts";
 import { getAgentDepth, getBasecampEnv } from "../../host/env.ts";
 import { getCurrentSessionState } from "../../session/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "./affinity.ts";
 import { requireWorkspaceRuntime } from "./runtime.ts";
+import { runWorktreeSetup, shouldRunWorktreeSetup } from "./setup.ts";
 import {
 	attachWorkspaceWorktreePath,
 	initializeWorkspace,
@@ -28,7 +29,7 @@ async function attachWorktree(worktreeDir: string): Promise<WorkspaceWorktree> {
 
 const WORKTREE_STATE_RESTORE_REASONS = new Set<SessionStartEvent["reason"]>(["resume", "reload", "fork"]);
 
-async function restoreActiveWorktreeState(ctx: ExtensionContext): Promise<void> {
+async function restoreActiveWorktreeState(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 	const workspaceState = requireWorkspaceState();
 	if (!workspaceState.repo) return;
 
@@ -36,8 +37,7 @@ async function restoreActiveWorktreeState(ctx: ExtensionContext): Promise<void> 
 	// initialized state for this event.
 	const activeWorktree = getCurrentSessionState().activeWorktree;
 	if (!activeWorktree || !workspaceMatchesActiveWorktreeState(workspaceState, activeWorktree)) return;
-	// Init already recognized this linked worktree; re-attaching would re-run validateProtectedCheckout and
-	// fail on a dirty or off-branch main checkout.
+	// Init already recognized this linked worktree (and leased it); nothing to restore.
 	if (
 		workspaceState.activeWorktree &&
 		path.resolve(workspaceState.activeWorktree.path) === path.resolve(activeWorktree.worktree.path)
@@ -45,12 +45,47 @@ async function restoreActiveWorktreeState(ctx: ExtensionContext): Promise<void> 
 		return;
 	}
 
+	const saved = activeWorktree.worktree;
 	try {
-		const wt = await attachWorktree(activeWorktree.worktree.path);
-		ctx.ui.notify(`basecamp: restored worktree → ${wt.label}`, "info");
+		// Adopt-or-rebuild: activateWorktree reuses the worktree if it still exists, or rebuilds it
+		// from the surviving branch if a prior exit reaped it, and (re)leases it either way. A rebuild
+		// re-pays the setup hook to reprovision the environment.
+		const wt = await requireWorkspaceRuntime().activateWorktree(saved.label, saved.branch ?? undefined);
+		if (wt.created) {
+			await runRebuiltWorktreeSetup(pi, ctx, workspaceState.repo.name, workspaceState.repo.root, wt);
+			ctx.ui.notify(`basecamp: rebuilt worktree → ${wt.label}`, "info");
+		} else {
+			ctx.ui.notify(`basecamp: restored worktree → ${wt.label}`, "info");
+		}
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		ctx.ui.notify(`basecamp: saved worktree restore skipped — ${msg}`, "warning");
+	}
+}
+
+/** Re-run the per-repo setup hook after resume rebuilt a reaped worktree from its branch. */
+async function runRebuiltWorktreeSetup(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	repoName: string,
+	repoRoot: string,
+	wt: WorkspaceWorktree,
+): Promise<void> {
+	const setupCommand = readWorktreeSetupCommand(repoName);
+	if (!shouldRunWorktreeSetup(wt.created, setupCommand)) return;
+	ctx.ui.notify("basecamp: rebuilding worktree — running setup (up to 3 min)…", "info");
+	try {
+		const result = await runWorktreeSetup(pi, { command: setupCommand as string, worktreeDir: wt.path, repoRoot });
+		if (result.timedOut) {
+			ctx.ui.notify("basecamp: worktree setup timed out — continuing.", "warning");
+		} else if (result.exitCode !== 0) {
+			ctx.ui.notify(`basecamp: worktree setup exited ${result.exitCode} — continuing.`, "warning");
+		}
+	} catch (err) {
+		ctx.ui.notify(
+			`basecamp: worktree setup error — continuing: ${err instanceof Error ? err.message : String(err)}`,
+			"warning",
+		);
 	}
 }
 
@@ -171,9 +206,12 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 		const worktreeDir = (pi.getFlag("worktree-dir") as string | undefined) ?? null;
 		const launchCwd = path.resolve(ctx.cwd);
 		const isSubagent = getAgentDepth() > 0;
+		// Only top-level sessions lease their worktree; subagents keep their daemon-owned agent lock.
+		const sessionId = isSubagent ? null : ctx.sessionManager.getSessionId();
 
 		const { unsafeEditResult } = await initializeWorkspace({
 			launchCwd,
+			sessionId,
 			unsafeEditFlag: pi.getFlag("unsafe-edit") === true,
 			unsafeEditConstraints: {
 				readOnly: pi.getFlag("read-only") === true,
@@ -198,7 +236,7 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 			// Worktree-state restore is a human convenience for reopened sessions. Daemon-spawned
 			// runs are born inside their own workspace — a forked ask answerer would otherwise
 			// inherit and re-attach the ask target's live worktree.
-			await restoreActiveWorktreeState(ctx);
+			await restoreActiveWorktreeState(pi, ctx);
 		}
 
 		notifyUnsafeEditResult(ctx, unsafeEditResult);
