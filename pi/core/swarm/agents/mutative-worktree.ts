@@ -48,8 +48,12 @@ export async function provisionMutativeWorktree(
 	const baseRef = await gitOutput(pi, parentWorktree, ["rev-parse", "HEAD"], 15_000);
 	const label = `agent-${runToken}/${agent.name}`;
 
-	const worktree = await createAgentWorktree(pi, repoRoot, repo.name, label, baseRef);
-	return { worktreeDir: worktree.worktreeDir, branch: worktree.branch, repoRoot };
+	const worktree = await createAgentWorktree(pi, repoRoot, repo.name, label, {
+		kind: "new-branch",
+		branch: label,
+		baseRef,
+	});
+	return { worktreeDir: worktree.worktreeDir, branch: label, repoRoot };
 }
 
 /**

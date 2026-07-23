@@ -28,12 +28,21 @@ function execPi(handler: (args: string[]) => ExecResult, calls: string[][] = [])
 	} as ExtensionAPI;
 }
 
+function listOnlyRoot(repoRoot: string) {
+	return (args: string[]): ExecResult => {
+		if (argsEqual(args, ["-C", repoRoot, "worktree", "list", "--porcelain"])) {
+			return { code: 0, stdout: `worktree ${repoRoot}\nbranch refs/heads/main\n\n`, stderr: "" };
+		}
+		return { code: 0, stdout: "", stderr: "" };
+	};
+}
+
 describe("createAgentWorktree", () => {
-	it("atomically branches from baseRef and locks the worktree", async (t) => {
+	it("atomically creates a new branch from baseRef and locks the worktree", async (t) => {
 		const repoRoot = "/repo";
 		const repoName = `repo-agent-${process.pid}-${Date.now()}`;
 		const label = "agent-3f9a2c/worker";
-		const baseRef = "abc123";
+		const branch = "agent/quiet-badger-3dc450";
 		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-3f9a2c", "worker");
 		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
 
@@ -46,9 +55,9 @@ describe("createAgentWorktree", () => {
 			"--reason",
 			"basecamp agent run",
 			"-b",
-			label,
+			branch,
 			worktreeDir,
-			baseRef,
+			"abc123",
 		];
 		const calls: string[][] = [];
 		const pi = execPi((args) => {
@@ -59,9 +68,13 @@ describe("createAgentWorktree", () => {
 			throw new Error(`Unexpected git args: ${JSON.stringify(args)}`);
 		}, calls);
 
-		const result = await createAgentWorktree(pi, repoRoot, repoName, label, baseRef);
+		const result = await createAgentWorktree(pi, repoRoot, repoName, label, {
+			kind: "new-branch",
+			branch,
+			baseRef: "abc123",
+		});
 
-		assert.deepEqual(result, { worktreeDir, label, branch: label, created: true });
+		assert.deepEqual(result, { worktreeDir, label, branch });
 		assert.equal(calls.filter((args) => argsEqual(args, addArgs)).length, 1);
 		assert.equal(
 			calls.some((args) => args.includes("lock") && !args.includes("--lock")),
@@ -69,11 +82,60 @@ describe("createAgentWorktree", () => {
 		);
 	});
 
+	it("checks out an existing branch without -b", async (t) => {
+		const repoRoot = "/repo";
+		const repoName = `repo-existing-${process.pid}-${Date.now()}`;
+		const branch = "agent/quiet-badger-3dc450";
+		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-3f9a2c", "worker");
+		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+
+		const calls: string[][] = [];
+		const pi = execPi(listOnlyRoot(repoRoot), calls);
+		const result = await createAgentWorktree(pi, repoRoot, repoName, "agent-3f9a2c/worker", {
+			kind: "existing-branch",
+			branch,
+		});
+
+		assert.equal(result.branch, branch);
+		const add = calls.find((args) => args.includes("add"));
+		assert.ok(add, "runs worktree add");
+		assert.deepEqual(add.slice(-2), [worktreeDir, branch], "checks out the existing branch");
+		assert.equal(add.includes("-b"), false, "does not create a branch");
+	});
+
+	it("creates a detached workspace with --detach and a null branch", async (t) => {
+		const repoRoot = "/repo";
+		const repoName = `repo-detached-${process.pid}-${Date.now()}`;
+		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-3f9a2c", "ask");
+		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+
+		const calls: string[][] = [];
+		const pi = execPi(listOnlyRoot(repoRoot), calls);
+		const result = await createAgentWorktree(pi, repoRoot, repoName, "agent-3f9a2c/ask", {
+			kind: "detached",
+			baseRef: "abc123",
+		});
+
+		assert.equal(result.branch, null);
+		const add = calls.find((args) => args.includes("add"));
+		assert.ok(add, "runs worktree add");
+		assert.ok(add.includes("--detach"), "detached checkout");
+		assert.deepEqual(add.slice(-2), [worktreeDir, "abc123"]);
+	});
+
 	it("rejects a malformed label before touching git", async () => {
 		const pi = execPi(() => {
 			throw new Error("git should not run for an invalid label");
 		});
-		await assert.rejects(() => createAgentWorktree(pi, "/repo", "repo", "bad label", "HEAD"), /Invalid worktree label/);
+		await assert.rejects(
+			() =>
+				createAgentWorktree(pi, "/repo", "repo", "bad label", {
+					kind: "new-branch",
+					branch: "agent/h",
+					baseRef: "HEAD",
+				}),
+			/Invalid worktree label/,
+		);
 	});
 
 	it("does not clean unrelated state when git rolls back a failed add", async (t) => {
@@ -89,7 +151,12 @@ describe("createAgentWorktree", () => {
 		}, calls);
 
 		await assert.rejects(
-			() => createAgentWorktree(pi, repoRoot, repoName, "agent-cleanup/worker", "HEAD"),
+			() =>
+				createAgentWorktree(pi, repoRoot, repoName, "agent-cleanup/worker", {
+					kind: "new-branch",
+					branch: "agent/handle",
+					baseRef: "HEAD",
+				}),
 			/atomic add failed/,
 		);
 		assert.equal(
@@ -105,25 +172,65 @@ describe("createAgentWorktree", () => {
 		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-deadbe", "worker");
 		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
 
+		const branch = "agent/quiet-badger-3dc450";
 		let listCalls = 0;
 		const calls: string[][] = [];
 		const pi = execPi((args) => {
 			if (argsEqual(args, ["-C", repoRoot, "worktree", "list", "--porcelain"])) {
 				listCalls++;
-				const partial = `worktree ${worktreeDir}\nbranch refs/heads/${label}\nlocked basecamp agent run\n\n`;
+				const partial = `worktree ${worktreeDir}\nbranch refs/heads/${branch}\nlocked basecamp agent run\n\n`;
 				return { code: 0, stdout: listCalls === 1 ? `worktree ${repoRoot}\n\n` : partial, stderr: "" };
 			}
 			if (args.includes("add")) return { code: 1, stdout: "", stderr: "fatal: atomic add failed" };
 			return { code: 0, stdout: "", stderr: "" };
 		}, calls);
 
-		await assert.rejects(() => createAgentWorktree(pi, repoRoot, repoName, label, "HEAD"), /atomic add failed/);
+		await assert.rejects(
+			() => createAgentWorktree(pi, repoRoot, repoName, label, { kind: "new-branch", branch, baseRef: "HEAD" }),
+			/atomic add failed/,
+		);
 		const removeIndex = calls.findIndex((args) => args.includes("remove"));
 		const deleteIndex = calls.findIndex((args) => args.includes("-D"));
 		assert.notEqual(removeIndex, -1, "removes the partial worktree");
 		assert.ok(calls[removeIndex]?.includes("--force"), "force-removes pre-execution residue");
 		assert.notEqual(deleteIndex, -1, "deletes the partial branch");
+		assert.ok(calls[deleteIndex]?.includes(branch), "deletes the minted branch, not the label");
 		assert.ok(removeIndex < deleteIndex, "removes the worktree before deleting its branch");
+	});
+
+	it("does not delete the branch when a continued-branch add fails", async (t) => {
+		const repoRoot = "/repo";
+		const repoName = `repo-keep-${process.pid}-${Date.now()}`;
+		const label = "agent-deadbe/worker";
+		const branch = "agent/quiet-badger-3dc450";
+		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-deadbe", "worker");
+		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+
+		let listCalls = 0;
+		const calls: string[][] = [];
+		const pi = execPi((args) => {
+			if (argsEqual(args, ["-C", repoRoot, "worktree", "list", "--porcelain"])) {
+				listCalls++;
+				const partial = `worktree ${worktreeDir}\nbranch refs/heads/${branch}\n\n`;
+				return { code: 0, stdout: listCalls === 1 ? `worktree ${repoRoot}\n\n` : partial, stderr: "" };
+			}
+			if (args.includes("add")) return { code: 1, stdout: "", stderr: "fatal: atomic add failed" };
+			return { code: 0, stdout: "", stderr: "" };
+		}, calls);
+
+		await assert.rejects(
+			() => createAgentWorktree(pi, repoRoot, repoName, label, { kind: "existing-branch", branch }),
+			/atomic add failed/,
+		);
+		assert.ok(
+			calls.some((args) => args.includes("remove")),
+			"removes the partial worktree",
+		);
+		assert.equal(
+			calls.some((args) => args.includes("-D")),
+			false,
+			"an outstanding branch survives a failed checkout",
+		);
 	});
 });
 
