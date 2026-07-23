@@ -14,8 +14,8 @@ class RunsReaderMixin:
     def get_nonterminal_runs(self) -> list[dict[str, Any]]:
         """Return runs that are not in a terminal status.
 
-        Includes the parsed ``spec_json`` so restart reconciliation can reclaim a mutative
-        agent's ``owned_worktree`` (the reaper's counterpart after a daemon crash).
+        Includes the parsed ``spec_json`` so restart reconciliation can tear down a mutative
+        agent's workspace (the reaper's counterpart after a daemon crash).
         """
 
         with self._reading() as connection:
