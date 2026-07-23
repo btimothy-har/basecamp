@@ -133,5 +133,13 @@ export async function migrateLegacyWorktrees(
 		}
 	}
 
+	// The legacy bare-name root is empty once its worktrees moved out; a non-recursive rmdir
+	// reclaims it. A skipped move leaves residue, so rmdir fails (ENOTEMPTY) and the root stays.
+	try {
+		fs.rmdirSync(path.join(worktreesRoot(), bareName));
+	} catch {
+		/* ENOTEMPTY (residue remains) or ENOENT (already gone) are benign */
+	}
+
 	return result;
 }
