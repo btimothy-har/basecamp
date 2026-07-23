@@ -62,6 +62,44 @@ function formatCandidate(candidate: PruneCandidate): string {
 	return `${candidate.label} — ${branch}${candidate.dirty ? "  (uncommitted changes)" : ""}`;
 }
 
+/**
+ * Confirm and remove a chosen candidate. A dirty worktree is force-removed only after an
+ * explicit confirmation (the sole guard against discarding uncommitted work via the picker);
+ * its branch is deleted only on a second opt-in. Returns whether the worktree was removed.
+ */
+export async function confirmAndPrune(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	repoRoot: string,
+	target: PruneCandidate,
+): Promise<boolean> {
+	if (target.dirty) {
+		const proceed = await ctx.ui.confirm(
+			"Uncommitted changes",
+			`${target.label} has uncommitted changes that will be lost. Remove it anyway?`,
+		);
+		if (!proceed) {
+			ctx.ui.notify("Prune cancelled", "info");
+			return false;
+		}
+	}
+
+	const deleteBranchToo =
+		target.branch !== null && (await ctx.ui.confirm("Delete branch", `Also delete branch ${target.branch}?`));
+
+	try {
+		await pruneWorktree(pi, repoRoot, target, deleteBranchToo);
+		ctx.ui.notify(
+			`Pruned ${target.label}${deleteBranchToo ? ` and deleted ${target.branch}` : ` (branch ${target.branch ?? "none"} kept)`}`,
+			"info",
+		);
+		return true;
+	} catch (err) {
+		ctx.ui.notify(`Prune failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+		return false;
+	}
+}
+
 export async function runWorktreePrune(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
 	const state = requireWorkspaceRuntime().current();
 	if (!state?.repo) {
@@ -89,27 +127,5 @@ export async function runWorktreePrune(pi: ExtensionAPI, ctx: ExtensionContext):
 		return;
 	}
 
-	if (target.dirty) {
-		const proceed = await ctx.ui.confirm(
-			"Uncommitted changes",
-			`${target.label} has uncommitted changes that will be lost. Remove it anyway?`,
-		);
-		if (!proceed) {
-			ctx.ui.notify("Prune cancelled", "info");
-			return;
-		}
-	}
-
-	const deleteBranchToo =
-		target.branch !== null && (await ctx.ui.confirm("Delete branch", `Also delete branch ${target.branch}?`));
-
-	try {
-		await pruneWorktree(pi, state.repo.root, target, deleteBranchToo);
-		ctx.ui.notify(
-			`Pruned ${target.label}${deleteBranchToo ? ` and deleted ${target.branch}` : ` (branch ${target.branch ?? "none"} kept)`}`,
-			"info",
-		);
-	} catch (err) {
-		ctx.ui.notify(`Prune failed: ${err instanceof Error ? err.message : String(err)}`, "error");
-	}
+	await confirmAndPrune(pi, ctx, state.repo.root, target);
 }

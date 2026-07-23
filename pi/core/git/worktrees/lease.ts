@@ -50,8 +50,12 @@ export function leaseOwnedBy(lockReason: string | null | undefined, sessionId: s
 
 /**
  * Acquire or refresh this session's lease on a worktree by (re)locking it with a fresh
- * timestamp. Git has no lock-reason update, so this unlocks then locks; the brief unlocked
- * window is harmless for an advisory lease. Throws only if the final lock fails.
+ * timestamp. Git has no lock-reason update, so this unlocks then locks. That leaves a brief
+ * unlocked window in which a *concurrent* session-start sweep could classify this worktree as
+ * cold (leaseless) and, if it is also clean, reap it — a narrow race inherent to using the git
+ * lock as the lease. It is bounded (two sequential git calls, victim is the live session
+ * re-leasing) and never loses committed work; a stronger liveness signal is deferred hardening
+ * (see AGENTS.md). Throws only if the final lock fails.
  */
 export async function acquireSessionLease(
 	pi: ExtensionAPI,

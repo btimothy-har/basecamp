@@ -5,7 +5,12 @@
 import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
-import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionContext,
+	SessionShutdownEvent,
+	SessionStartEvent,
+} from "@earendil-works/pi-coding-agent";
 import { reapOwnedSessionWorktree } from "../../git/worktrees/lease.ts";
 import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
 import { sweepSessionWorktrees } from "../../git/worktrees/session-sweep.ts";
@@ -175,6 +180,15 @@ function loadDotenv(root: string): void {
 	}
 }
 
+/**
+ * Whether a top-level session reaps its own worktree at shutdown: only at a genuine exit
+ * (`quit`) and only for a non-subagent (depth 0). Subagent worktrees are daemon-owned, and
+ * `reload`/`new`/`resume`/`fork` are transitions, not exits.
+ */
+export function shouldReapOnShutdown(reason: SessionShutdownEvent["reason"], agentDepth: number): boolean {
+	return agentDepth === 0 && reason === "quit";
+}
+
 export function registerLogseqAllowedRootProvider(homeDir?: string): void {
 	registerWorkspaceAllowedRootsProvider({
 		id: "logseq",
@@ -251,10 +265,8 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 	});
 
 	pi.on("session_shutdown", async (event, ctx) => {
-		// Primary session teardown: a top-level session at genuine exit reaps its own worktree.
-		// Subagents are daemon-owned; reload/new/resume/fork are transitions, not exits. The cold
-		// backstop sweep covers a crash that never fires this handler.
-		if (getAgentDepth() > 0 || event.reason !== "quit") return;
+		// The cold backstop sweep covers a crash that never fires this handler.
+		if (!shouldReapOnShutdown(event.reason, getAgentDepth())) return;
 		const state = getWorkspaceState();
 		if (!state?.repo || state.activeWorktree?.kind !== "git-worktree") return;
 		await reapOwnedSessionWorktree(

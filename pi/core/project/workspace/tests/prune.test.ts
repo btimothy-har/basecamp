@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { worktreesRoot } from "../../../git/constants.ts";
 import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
-import { collectPruneCandidates, type PruneCandidate, pruneWorktree } from "../prune.ts";
+import { collectPruneCandidates, confirmAndPrune, type PruneCandidate, pruneWorktree } from "../prune.ts";
 
 useTempWorktreesRoot();
 
@@ -88,5 +88,40 @@ describe("pruneWorktree", () => {
 		const { pi, calls } = listPi([]);
 		await pruneWorktree(pi, REPO_ROOT, { ...target, branch: null }, true);
 		assert.ok(!calls.some((c) => c.includes("branch")));
+	});
+});
+
+describe("confirmAndPrune dirty-confirmation gate", () => {
+	const dirty: PruneCandidate = { label: "wt-bt/wip", path: wt("wt-bt/wip"), branch: "bt/wip", dirty: true };
+
+	function ctxWithConfirms(answers: boolean[]): { ctx: ExtensionContext; notes: string[] } {
+		const notes: string[] = [];
+		const queue = [...answers];
+		const ctx = {
+			ui: {
+				confirm: async () => queue.shift() ?? false,
+				notify: (m: string) => notes.push(m),
+			},
+		} as unknown as ExtensionContext;
+		return { ctx, notes };
+	}
+
+	it("does not remove a dirty worktree when the confirmation is declined", async () => {
+		const { pi, calls } = listPi([]);
+		const { ctx, notes } = ctxWithConfirms([false]);
+		const removed = await confirmAndPrune(pi, ctx, REPO_ROOT, dirty);
+		assert.equal(removed, false);
+		assert.ok(!calls.some((c) => c.includes("remove")), "declined dirty prune must not remove");
+		assert.ok(notes.some((n) => /cancelled/i.test(n)));
+	});
+
+	it("removes a dirty worktree only after explicit confirmation (branch kept by default)", async () => {
+		const { pi, calls } = listPi([]);
+		// first confirm = remove-anyway (true), second confirm = delete-branch (false)
+		const { ctx } = ctxWithConfirms([true, false]);
+		const removed = await confirmAndPrune(pi, ctx, REPO_ROOT, dirty);
+		assert.equal(removed, true);
+		assert.ok(calls.some((c) => c.includes("remove") && c.includes("--force")));
+		assert.ok(!calls.some((c) => c.includes("branch")), "branch kept unless delete is confirmed");
 	});
 });

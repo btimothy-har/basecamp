@@ -3,8 +3,24 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { registerLogseqAllowedRootProvider } from "../session.ts";
+import { registerLogseqAllowedRootProvider, shouldReapOnShutdown } from "../session.ts";
 import { listWorkspaceAllowedRoots } from "../state.ts";
+
+describe("shouldReapOnShutdown", () => {
+	it("reaps only on a top-level quit", () => {
+		assert.equal(shouldReapOnShutdown("quit", 0), true);
+	});
+
+	it("never reaps for a subagent, even on quit", () => {
+		assert.equal(shouldReapOnShutdown("quit", 1), false);
+	});
+
+	it("never reaps on reload/new/resume/fork transitions", () => {
+		for (const reason of ["reload", "new", "resume", "fork"] as const) {
+			assert.equal(shouldReapOnShutdown(reason, 0), false, `reason ${reason} must not reap`);
+		}
+	});
+});
 
 function createHome(t: { after(fn: () => void): void }): string {
 	const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-logseq-home-"));
