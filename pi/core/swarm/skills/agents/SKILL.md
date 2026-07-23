@@ -88,6 +88,6 @@ A worker's only durable output is what it commits to its branch (`agent/<handle>
 
 1. `wait_for_agent` on its handle and read its final report (a PR-style summary of what changed).
 2. From your own worktree, `git merge agent/<handle>` to bring the change in, resolving any conflicts as normal.
-3. Then `git branch -d agent/<handle>` to delete the merged branch (allowed — it is not a `git worktree` command). Never run `git worktree remove` (that is blocked; workspace lifecycle is system-managed).
+3. Once the work is integrated, delete the now-merged local branch with `git branch -d <branch>` (allowed — it is not a `git worktree` command). This applies to the worker's `agent/<handle>` branch and any other local branch you merged — e.g. `git branch -d agent/<handle>` — so merged branches do not accumulate. Never run `git worktree remove` (that is blocked; workspace lifecycle is system-managed).
 
 Retasking a worker handle continues the same branch: its earlier commits are in its next workspace, and once you have merged, its next run bases fresh from your clean HEAD. If a worker's change isn't wanted, do not merge it — the unmerged branch remains until you explicitly delete it, and deleting it is the explicit rejection.
