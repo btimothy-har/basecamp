@@ -1,12 +1,12 @@
 """Daemon-side periodic backstop sweep for agent worktrees.
 
-Mirrors ``pi/core/git/worktrees/sweep.ts`` (issue #310 Phase 2): the daemon becomes the
-sole owner of agent-worktree teardown by running a periodic sweep that reclaims
-integrated, detached, and age-stale locked agent residue — so a never-restarted daemon
-cannot leak agent workspaces.  Session worktrees (``wt-*``, ``copilot/*``, direct labels)
-are handled entirely in TypeScript and are always ignored here.
+The daemon is the sole owner of agent-worktree teardown (issue #310 Phase 2 removed the
+former TypeScript session-start agent sweep): a periodic pass reclaims integrated,
+detached, and age-stale locked agent residue so a never-restarted daemon cannot leak
+agent workspaces.  Session worktrees (``wt-*``, ``copilot/*``, direct labels) are the
+TypeScript tier's responsibility and are always ignored here.
 
-Coverage (categories from sweep.ts):
+Coverage:
 
 1.  **Integrated agent worktrees** — a worktree whose branch is a recognized agent branch
     AND is an ancestor of some non-agent checked-out branch → unlock if locked, force-remove,
@@ -16,8 +16,9 @@ Coverage (categories from sweep.ts):
 3.  **Age-stale locked agent residue** — lock reason ``basecamp agent run <ISO ts>`` older
     than 24h → unlock + remove per the rules above.  A fresh lock (< 24h) means a live run
     holds it → SKIP.
-4.  **Orphan integrated ``agent/*`` branches** with no worktree → delete once integrated.
-    Unintegrated agent branches are always kept.
+4.  **Orphan integrated ``agent/*`` branches** with no worktree → delete once integrated,
+    for any repo still discoverable under the worktrees root (a repo whose worktree dirs
+    are all gone is not discovered until it regains one).  Unintegrated branches are kept.
 
 All git operations are strictly local (no network, no fetch/prune).  The sweep is
 best-effort: OSError and SubprocessError are suppressed so it never crashes the daemon.
@@ -61,7 +62,10 @@ class SweepResult:
 
 
 def _worktrees_root() -> str:
-    return os.path.join(os.path.expanduser("~"), ".worktrees")
+    # Honor the same override the TypeScript resolver (worktreesRoot()) uses, so both tiers
+    # agree on where worktrees live; default to ~/.worktrees.
+    override = os.environ.get("BASECAMP_WORKTREES_ROOT")
+    return override or os.path.join(os.path.expanduser("~"), ".worktrees")
 
 
 def is_agent_branch(branch: str | None) -> bool:
@@ -69,19 +73,6 @@ def is_agent_branch(branch: str | None) -> bool:
     if not branch:
         return False
     return branch.startswith(AGENT_BRANCH_NAMESPACE) or bool(LEGACY_AGENT_BRANCH_RE.match(branch))
-
-
-def is_agent_workspace_path(wt_path: str, identity_root: str) -> bool:
-    """True when *wt_path* is exactly ``<identity_root>/agent-<token>/<name>``.
-
-    The identity root may be one or two path segments (``<repo>`` or ``<org>/<repo>``);
-    the label must be the two-segment ``agent-<token>/<name>`` shape relative to it.
-    """
-    relative = os.path.relpath(os.path.abspath(wt_path), os.path.abspath(identity_root))
-    if relative.startswith("..") or os.path.isabs(relative):
-        return False
-    segments = relative.split(os.sep)
-    return len(segments) == 2 and bool(AGENT_LABEL_DIR_RE.match(segments[0]))
 
 
 def _agent_lock_age_seconds(lock_reason: str | None, now: float) -> float | None:
@@ -170,14 +161,16 @@ def _unlock(repo_root: str, wt_path: str) -> None:
         pass
 
 
-def _remove_worktree(repo_root: str, wt_path: str) -> None:
+def _remove_worktree(repo_root: str, wt_path: str) -> bool:
+    """Force-remove a worktree; return True only when git reported success."""
     try:
-        _run_git(
+        result = _run_git(
             ["git", "-C", repo_root, "worktree", "remove", "--force", wt_path],
             timeout=_GIT_LONG_TIMEOUT,
         )
     except (OSError, subprocess.SubprocessError):
-        pass
+        return False
+    return result.returncode == 0
 
 
 def _delete_branch(repo_root: str, branch: str) -> None:
@@ -335,7 +328,10 @@ def _sweep_repo(
                 continue
             _unlock(repo_root, record.path)
 
-        _remove_worktree(repo_root, record.path)
+        # Skip the removed-count and branch deletion when removal failed; git also refuses to
+        # delete a branch still checked out in the surviving worktree.
+        if not _remove_worktree(repo_root, record.path):
+            continue
         removed.append(record.path)
         if record.branch is not None:
             _delete_branch(repo_root, record.branch)

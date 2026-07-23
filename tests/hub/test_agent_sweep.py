@@ -22,8 +22,8 @@ from basecamp.hub.server import (
 from basecamp.hub.store import Store
 from basecamp.hub.swarm.sweep import (
     SweepResult,
+    _worktrees_root,
     is_agent_branch,
-    is_agent_workspace_path,
     run_periodic_sweep,
     sweep_agent_worktrees,
 )
@@ -370,25 +370,6 @@ def test_is_agent_branch_recognizes_namespaces() -> None:
     assert not is_agent_branch("agent-foo")  # bare agent-* without slash
 
 
-def test_is_agent_workspace_path_matches() -> None:
-    assert is_agent_workspace_path(
-        "/home/user/.worktrees/org/repo/agent-abc/worker",
-        "/home/user/.worktrees/org/repo",
-    )
-    assert is_agent_workspace_path(
-        "/home/user/.worktrees/repo/agent-abc/worker",
-        "/home/user/.worktrees/repo",
-    )
-    assert not is_agent_workspace_path(
-        "/home/user/.worktrees/org/repo/wt-ab/feature",
-        "/home/user/.worktrees/org/repo",
-    )
-    assert not is_agent_workspace_path(
-        "/home/user/.worktrees/org/repo/agent-abc",
-        "/home/user/.worktrees/org/repo",
-    )
-
-
 # --------------------------------------------------------------------------- periodic task
 
 
@@ -460,6 +441,17 @@ def test_resolve_sweep_interval_disabled(monkeypatch: pytest.MonkeyPatch) -> Non
 def test_resolve_sweep_interval_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BASECAMP_AGENT_SWEEP_INTERVAL_S", "not-a-number")
     assert _resolve_sweep_interval_s() == _DEFAULT_SWEEP_INTERVAL_S
+
+
+def test_worktrees_root_honors_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Parity with the TypeScript worktreesRoot() resolver so both tiers agree on the root.
+    monkeypatch.setenv("BASECAMP_WORKTREES_ROOT", "/tmp/basecamp-custom-root")
+    assert _worktrees_root() == "/tmp/basecamp-custom-root"
+
+
+def test_worktrees_root_defaults_to_home(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BASECAMP_WORKTREES_ROOT", raising=False)
+    assert _worktrees_root().endswith(".worktrees")
 
 
 def test_create_server_passes_sweep_interval(tmp_path: Path) -> None:
