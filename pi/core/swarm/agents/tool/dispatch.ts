@@ -104,10 +104,17 @@ export function registerDispatchAgentTool(
 			let provision: AgentWorkspaceProvision | null = null;
 			let agentLabel = requestedAgent ?? "ad-hoc";
 			let dispatched = false;
+			// Whether the final attempt's dispatch frame reached the socket. Reset per attempt so it
+			// reflects the last attempt only; a post-send failure leaves teardown to the daemon.
+			let frameSent = false;
+			// A daemon rejected-ack means no run was spawned, so the workspace is safe to discard
+			// even though the frame was sent.
+			let rejectedByDaemon = false;
 			try {
 				const { agentHandle, result } = await dispatchWithHandleRetry(
 					daemonClient,
 					async (candidateHandle) => {
+						frameSent = false;
 						const runToken = randomUUID().slice(0, 6);
 						const agentName = requestedAgent ?? "adhoc";
 						provision = await provisionAgentWorkspace(
@@ -161,6 +168,9 @@ export function registerDispatchAgentTool(
 							ownedBranch: provision?.branch ?? null,
 							branchBase: provision?.baseOid ?? null,
 							branchCreated: provision?.branchCreated ?? false,
+							onSent: () => {
+								frameSent = true;
+							},
 						};
 					},
 					{
@@ -174,6 +184,7 @@ export function registerDispatchAgentTool(
 				);
 
 				if (!result || result.status === "rejected") {
+					rejectedByDaemon = result?.status === "rejected";
 					return {
 						content: [{ type: "text", text: `dispatch rejected: ${result?.reason ?? "unknown"}` }],
 						isError: true,
@@ -198,7 +209,11 @@ export function registerDispatchAgentTool(
 				const msg = errorMessage(error);
 				return { content: [{ type: "text", text: msg }], isError: true, details: null };
 			} finally {
-				if (!dispatched) await discardAgentWorkspace(pi, provision);
+				// Discard only when the daemon cannot own the run: the frame never reached it
+				// (pre-send failure) or it explicitly rejected (dispatched stays false, but a rejected
+				// ack means no run was spawned). A post-send failure with no ack is ambiguous — the
+				// daemon may have spawned the run — so leave teardown to its reap/reconcile chain.
+				if (!dispatched && (!frameSent || rejectedByDaemon)) await discardAgentWorkspace(pi, provision);
 			}
 		},
 		renderResult(result, _opts, theme) {

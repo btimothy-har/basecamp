@@ -160,6 +160,8 @@ describe("dirty worktree reminder", () => {
 		assert.match(harness.sent[0]?.message.content ?? "", /scratch or exploration files/);
 	});
 
+	// A detached report/ask workspace adopts with branch: null (verified in service-cwd.test.ts
+	// "recognizes a detached-HEAD linked worktree as branchless"); here we assert null → skip.
 	it("stays silent for branchless agent workspaces (report/ask runs)", async () => {
 		const harness = createHarness({
 			subagent: true,

@@ -93,14 +93,14 @@ function checkoutArgs(checkout: AgentCheckout, worktreeDir: string): string[] {
 	}
 }
 
+export const AGENT_LOCK_REASON_PREFIX = "basecamp agent run";
+
 /**
  * Create a dispatched agent's own worktree per `checkout`, then lock it. Unlike
  * `getOrCreateWorktree`, this does NOT run `validateProtectedCheckout`: an agent worktree
  * bases on the parent's tree, not on a clean protected checkout. Creation and locking use
  * one git command so no cleanup process can observe an unlocked live worktree.
  */
-export const AGENT_LOCK_REASON_PREFIX = "basecamp agent run";
-
 export async function createAgentWorktree(
 	pi: ExtensionAPI,
 	repoRoot: string,

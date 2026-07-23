@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { WORKTREES_ROOT } from "../constants.ts";
 import { sweepAgentWorktrees } from "../worktrees/sweep.ts";
+
+const DETACHED = (token: string, name: string) => path.join(WORKTREES_ROOT, "o", "r", `agent-${token}`, name);
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 
@@ -65,14 +69,14 @@ describe("sweepAgentWorktrees", () => {
 	it("reclaims an unlocked detached agent workspace (report/ask residue)", async () => {
 		const list = porcelain([
 			{ path: "/repo", branch: "main" },
-			{ path: "/Users/u/.worktrees/o/r/agent-abc123/ask", branch: null },
+			{ path: DETACHED("abc123", "ask"), branch: null },
 		]);
 		const calls: string[][] = [];
 		const pi = execPi((args) => (args.includes("list") ? { code: 0, stdout: list, stderr: "" } : null), calls);
 
 		const result = await sweepAgentWorktrees(pi, "/repo");
 
-		assert.deepEqual(result.removed, ["/Users/u/.worktrees/o/r/agent-abc123/ask"]);
+		assert.deepEqual(result.removed, [DETACHED("abc123", "ask")]);
 		assert.equal(
 			calls.some((a) => a.includes("-D")),
 			false,
@@ -80,11 +84,40 @@ describe("sweepAgentWorktrees", () => {
 		);
 	});
 
+	it("never claims bare human agent-* branches or lookalike paths", async () => {
+		const calls: string[][] = [];
+		const worktrees = porcelain([
+			{ path: "/repo", branch: "main" },
+			// Human branch that merely shares the legacy prefix — integrated, but not agent residue.
+			{ path: "/wt/dash", branch: "agent-dashboard" },
+			// Detached worktree of a repo literally named agent-tools — label depth doesn't match.
+			{ path: path.join(WORKTREES_ROOT, "o", "agent-tools", "bisect"), branch: null },
+			// Detached worktree outside Basecamp's root entirely.
+			{ path: "/build/agent-abc123/checkout", branch: null },
+		]);
+		const pi = execPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: worktrees, stderr: "" };
+			if (args.includes("--format=%(refname:short)"))
+				return { code: 0, stdout: "main\nagent-dashboard\nagent-experiments\n", stderr: "" };
+			if (args.includes("--is-ancestor")) return { code: 0, stdout: "", stderr: "" };
+			return null;
+		}, calls);
+
+		const result = await sweepAgentWorktrees(pi, "/repo");
+
+		assert.deepEqual(result.removed, []);
+		assert.equal(
+			calls.some((a) => a.includes("remove") || a.includes("-D")),
+			false,
+			"nothing is removed and no branch is deleted",
+		);
+	});
+
 	it("never touches a freshly locked live workspace", async () => {
 		const list = porcelain([
 			{ path: "/repo", branch: "main" },
 			{ path: "/wt/agent-live", branch: "agent/busy-elk-9f8e7d", lockReason: FRESH_LOCK },
-			{ path: "/Users/u/.worktrees/o/r/agent-def456/ask", branch: null, lockReason: FRESH_LOCK },
+			{ path: DETACHED("def456", "ask"), branch: null, lockReason: FRESH_LOCK },
 		]);
 		const pi = execPi((args) => {
 			if (args.includes("list")) return { code: 0, stdout: list, stderr: "" };
@@ -101,7 +134,7 @@ describe("sweepAgentWorktrees", () => {
 		const list = porcelain([
 			{ path: "/repo", branch: "main" },
 			{ path: "/wt/agent-stale", branch: "agent/gone-owl-112233", lockReason: STALE_LOCK },
-			{ path: "/Users/u/.worktrees/o/r/agent-ghi789/ask", branch: null, lockReason: STALE_LOCK },
+			{ path: DETACHED("ghi789", "ask"), branch: null, lockReason: STALE_LOCK },
 		]);
 		const calls: string[][] = [];
 		const pi = execPi((args) => {
@@ -112,7 +145,7 @@ describe("sweepAgentWorktrees", () => {
 
 		const result = await sweepAgentWorktrees(pi, "/repo");
 
-		assert.deepEqual(result.removed.sort(), ["/Users/u/.worktrees/o/r/agent-ghi789/ask", "/wt/agent-stale"]);
+		assert.deepEqual(result.removed.sort(), [DETACHED("ghi789", "ask"), "/wt/agent-stale"]);
 		const unlockIdx = calls.findIndex((a) => a.includes("unlock"));
 		const removeIdx = calls.findIndex((a) => a.includes("remove"));
 		assert.ok(unlockIdx !== -1 && unlockIdx < removeIdx, "unlocks before removing");

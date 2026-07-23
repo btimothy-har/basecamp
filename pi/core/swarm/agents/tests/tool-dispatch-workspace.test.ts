@@ -232,6 +232,49 @@ describe("dispatch_agent workspace provisioning", () => {
 		}
 	});
 
+	it("dispatch_agent keeps the workspace when the connection drops after the frame is sent", async (t) => {
+		trackSkillInvocation("agents");
+		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}-drop`;
+		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, "bc-tool-test"), { recursive: true, force: true }));
+		setCurrentWorkspaceState(repoWorkspaceState(repoName));
+
+		try {
+			const connection = new MockConnection();
+			const { pi, tools } = createMockPi();
+			pi.execScript = gitProvisionScript();
+			registerDaemonTools(pi, async () => connection, daemonToolDeps);
+			const dispatchTool = toolByName(tools, "dispatch_agent");
+
+			const executePromise = dispatchTool.execute(
+				"1",
+				{ task: "hello world", agent: "worker" },
+				new AbortController().signal,
+				() => {},
+				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
+			);
+
+			await new Promise((resolve) => setImmediate(resolve));
+			assert.equal(connection.sent.length, 1, "frame was sent");
+			// Transport drops before the ack arrives — ambiguous, the daemon may own the run.
+			connection.emitClose(1006, "transport dropped");
+			const result = await executePromise;
+
+			assert.equal(result.isError, true);
+			assert.equal(
+				pi.execCalls.some((call: { args: string[] }) => call.args.includes("remove")),
+				false,
+				"a post-send failure does not force-remove the possibly-live workspace",
+			);
+			assert.equal(
+				pi.execCalls.some((call: { args: string[] }) => call.args.includes("-D")),
+				false,
+				"a post-send failure does not delete the minted branch",
+			);
+		} finally {
+			setCurrentWorkspaceState(null);
+		}
+	});
+
 	it("dispatch_agent surfaces commit-first guidance when a worker is dispatched from a dirty parent", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}-dirty`;

@@ -127,6 +127,27 @@ describe("provisionAgentWorkspace — deliverable", () => {
 		);
 	});
 
+	it("rejects minting from a detached parent HEAD (snapshot workspaces cannot root branches)", async (t) => {
+		const repoName = uniqueRepo(t, "detached");
+		const branch = agentBranchName("h2d");
+		// A report/ask workspace is a clean detached checkout of a snapshot commit — exactly this state.
+		const pi = scripted([
+			branchTipRule(branch, fail()),
+			[(c) => has(c, "-C", PARENT_WT, "symbolic-ref", "--quiet", "HEAD"), fail("")],
+			statusRule(""),
+		]);
+
+		await assert.rejects(
+			() =>
+				provisionAgentWorkspace(
+					pi,
+					{ kind: "deliverable", agentHandle: "h2d", isRetask: false, runToken: "aaaaab", agentName: "worker" },
+					workspace(repoName),
+				),
+			/detached HEAD/,
+		);
+	});
+
 	it("rejects a fresh dispatch whose branch already exists", async (t) => {
 		const repoName = uniqueRepo(t, "stale");
 		const branch = agentBranchName("h3");

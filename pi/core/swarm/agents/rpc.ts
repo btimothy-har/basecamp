@@ -35,6 +35,10 @@ export interface DaemonDispatchFrameOptions {
 	ownedBranch?: string | null;
 	branchBase?: string | null;
 	branchCreated?: boolean;
+	// Fired once the dispatch frame has been written to the socket. After this point a failure
+	// to receive the ack is ambiguous — the daemon may own the run — so the caller must not
+	// discard the workspace and should leave teardown to the daemon's reap/reconcile chain.
+	onSent?: () => void;
 }
 
 export interface DaemonDispatchResult {
@@ -181,6 +185,8 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 					branch_created: input.branchCreated ?? false,
 				},
 			});
+
+			input.onSent?.();
 
 			const ack = await waitForFrame(connection, "dispatch_ack", (frame) => frame.run_id === runId);
 			return {

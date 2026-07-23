@@ -124,6 +124,10 @@ export function registerAskAgentTool(
 			// is stable across duplicate-handle retries. The daemon owns teardown on acceptance.
 			let provision: AgentWorkspaceProvision | null = null;
 			let accepted = false;
+			// A post-send failure with no ack is ambiguous (the daemon may own the ask), so discard
+			// only on a pre-send failure or an explicit daemon rejection.
+			let frameSent = false;
+			let rejectedByDaemon = false;
 			try {
 				provision = await provisionAgentWorkspace(
 					pi,
@@ -167,22 +171,29 @@ export function registerAskAgentTool(
 				};
 				const { agentHandle, result } = await dispatchWithHandleRetry(
 					daemonClient,
-					(agentHandle) => ({
-						agentId,
-						agentHandle,
-						agentType: "ask",
-						model: plan.model ?? "default",
-						argv: plan.args.slice(0, -1),
-						task: taskSpec,
-						cwd: plan.spawnCwd,
-						env: { ...dispatchEnv, BASECAMP_AGENT_HANDLE: agentHandle },
-						forkFrom: targetHandle,
-						ownedWorktree: provision?.worktreeDir ?? null,
-					}),
+					(agentHandle) => {
+						frameSent = false;
+						return {
+							agentId,
+							agentHandle,
+							agentType: "ask",
+							model: plan.model ?? "default",
+							argv: plan.args.slice(0, -1),
+							task: taskSpec,
+							cwd: plan.spawnCwd,
+							env: { ...dispatchEnv, BASECAMP_AGENT_HANDLE: agentHandle },
+							forkFrom: targetHandle,
+							ownedWorktree: provision?.worktreeDir ?? null,
+							onSent: () => {
+								frameSent = true;
+							},
+						};
+					},
 					{ initialHandle: buildAgentHandle(), attempts: 3 },
 				);
 
 				if (!result || result.status === "rejected") {
+					rejectedByDaemon = result?.status === "rejected";
 					const message =
 						result?.reason === "fork_target_unknown"
 							? "No available agent for that handle."
@@ -201,7 +212,7 @@ export function registerAskAgentTool(
 				if (accepted) throw error;
 				return { content: [{ type: "text", text: errorMessage(error) }], isError: true, details: null };
 			} finally {
-				if (!accepted) await discardAgentWorkspace(pi, provision);
+				if (!accepted && (!frameSent || rejectedByDaemon)) await discardAgentWorkspace(pi, provision);
 			}
 		},
 		renderResult(result, _opts, theme) {

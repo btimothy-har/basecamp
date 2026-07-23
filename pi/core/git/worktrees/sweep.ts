@@ -10,15 +10,19 @@
 
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { AGENT_BRANCH_NAMESPACE } from "../constants.ts";
+import { AGENT_BRANCH_NAMESPACE, WORKTREES_ROOT } from "../constants.ts";
 import { isMergedInto, tryGitOutput } from "../repo.ts";
 import { gitWorktreeRecords } from "./crud.ts";
 import { AGENT_LOCK_REASON_PREFIX, deleteBranch, removeWorktree, unlockWorktree } from "./lifecycle.ts";
 
-// Legacy per-run branches (`agent-<token>/<name>`) and per-agent branches (`agent/<handle>`).
-const AGENT_BRANCH_PREFIXES = ["agent-", AGENT_BRANCH_NAMESPACE];
-const AGENT_LABEL_SEGMENT_RE = /[\\/]agent-[a-z0-9]+[\\/]/;
-// A locked workspace this old with no live daemon claim is treated as dead residue.
+// Legacy per-run branches require the full two-segment `agent-<token>/<name>` shape — a bare
+// human `agent-*` branch is never agent residue.
+const LEGACY_AGENT_BRANCH_RE = /^agent-[a-z0-9]+\//;
+const AGENT_LABEL_DIR_RE = /^agent-[a-z0-9]+$/;
+// Age is the sole staleness signal: a lock older than this (by its creation-time timestamp,
+// never renewed) is treated as dead residue. There is no live-daemon cross-check — the daemon
+// reap/reconcile chain is the primary owner, so this last-resort sweep only breaks locks the
+// daemon left behind. The window is deliberately generous to avoid racing a long live run.
 const STALE_LOCK_MS = 24 * 60 * 60 * 1000;
 
 export interface AgentWorktreeSweepResult {
@@ -27,11 +31,20 @@ export interface AgentWorktreeSweepResult {
 }
 
 function isAgentBranch(branch: string | null): branch is string {
-	return typeof branch === "string" && AGENT_BRANCH_PREFIXES.some((prefix) => branch.startsWith(prefix));
+	return (
+		typeof branch === "string" && (branch.startsWith(AGENT_BRANCH_NAMESPACE) || LEGACY_AGENT_BRANCH_RE.test(branch))
+	);
 }
 
+// Detached agent residue is identified by position, not pattern alone: exactly
+// `WORKTREES_ROOT/<org>/<repo>/agent-<token>/<name>`, where Basecamp provisions agent
+// workspaces. A repo, org, or out-of-tree path that merely contains an `agent-…` segment
+// is out of scope — the sweep must never claim worktrees it did not create.
 function isAgentWorkspacePath(recordPath: string): boolean {
-	return AGENT_LABEL_SEGMENT_RE.test(path.resolve(recordPath));
+	const relative = path.relative(WORKTREES_ROOT, path.resolve(recordPath));
+	if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
+	const segments = relative.split(path.sep);
+	return segments.length === 4 && AGENT_LABEL_DIR_RE.test(segments[2] ?? "");
 }
 
 /** Age of an agent-run lock in ms, or null when the reason is absent/foreign/untimestamped. */

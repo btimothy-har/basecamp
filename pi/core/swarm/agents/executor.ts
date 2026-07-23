@@ -159,6 +159,8 @@ export function buildPiArgs(
 	const tools = [...new Set([...baseTools, ...opts.extensionTools])];
 	args.push("--tools", tools.join(","));
 
+	// Mirror of the routing above: persona-less run with a contract ⇒ contract prepended here;
+	// otherwise it already went in the prompt file (persona) or there is none.
 	const taskText =
 		agent?.systemPrompt || !contract ? buildAgentTaskText(task) : `${contract}\n\n${buildAgentTaskText(task)}`;
 	if (taskText.length > TASK_ARG_LIMIT) {

@@ -4,7 +4,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resolveGitInfo } from "../../git/repo.ts";
 import {
 	attachWorktreeDir,
-	branchName,
 	findWorktreeRecord,
 	getOrCreateWorktree,
 	gitWorktreeRecords,
@@ -134,7 +133,10 @@ export class WorkspaceRuntimeService {
 				kind: "git-worktree",
 				label,
 				path: gitInfo.toplevel,
-				branch: record ? branchName(record) : null,
+				// Preserve the raw branch: a detached record (report/ask agent workspace) keeps a
+				// null branch rather than the "detached" display sentinel, so branchless consumers
+				// (the dirty reminder, hub metadata, the prompt) see it as truly branchless.
+				branch: record?.branch ?? null,
 				created: false,
 			});
 		}

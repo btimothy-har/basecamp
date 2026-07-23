@@ -227,7 +227,7 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 	const spawnCwd = input.agentWorkspace?.worktreeDir ?? fallbackSpawnCwd(input.workspace);
 	const runWorkspace: RunWorkspace = input.agentWorkspace
 		? input.agentWorkspace.kind === "deliverable"
-			? { kind: "deliverable", branch: input.agentWorkspace.branch ?? "" }
+			? { kind: "deliverable", branch: input.agentWorkspace.branch }
 			: { kind: input.agentWorkspace.kind }
 		: null;
 

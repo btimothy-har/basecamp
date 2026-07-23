@@ -9,6 +9,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { errorMessage } from "../../errors.ts";
 import { AGENT_BRANCH_NAMESPACE } from "../../git/constants.ts";
 import {
 	branchTip,
@@ -48,21 +49,25 @@ export type AgentWorkspaceRequest =
 			agentName: string;
 	  };
 
-export interface AgentWorkspaceProvision {
-	kind: AgentWorkspaceKind;
+interface AgentWorkspaceProvisionBase {
 	worktreeDir: string;
 	/** Worktree label (`agent-<runToken>/<name>`) — stamped on the child env pre-adoption. */
 	label: string;
-	/** The run's branch — set for deliverable runs only; report/ask workspaces are detached. */
-	branch: string | null;
 	/** Commit OID the run started from; teardown's zero-commit check compares against this. */
 	baseOid: string;
-	/** True when this provision minted the branch (teardown may delete it only then). */
-	branchCreated: boolean;
 	repoRoot: string;
 	/** Nonfatal setup-hook failure, surfaced in the dispatch result. */
 	setupWarning?: string;
 }
+
+/**
+ * A provisioned workspace, discriminated by kind so the branch invariant is a type guarantee:
+ * a deliverable run always carries its `agent/<handle>` branch; report/ask runs are always
+ * detached and branchless. teardown may delete the branch only when `branchCreated`.
+ */
+export type AgentWorkspaceProvision =
+	| (AgentWorkspaceProvisionBase & { kind: "deliverable"; branch: string; branchCreated: boolean })
+	| (AgentWorkspaceProvisionBase & { kind: "report" | "ask"; branch: null; branchCreated: false });
 
 function workspaceLabelName(name: string): string {
 	const cleaned = name.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^[^A-Za-z0-9]+/, "");
@@ -70,13 +75,13 @@ function workspaceLabelName(name: string): string {
 }
 
 function friendlyGitError(error: unknown): Error {
-	const message = error instanceof Error ? error.message : String(error);
-	if (/already (?:used by|checked out)/i.test(message)) {
+	const message = errorMessage(error);
+	if (/(?:already )?(?:used by|checked out)/i.test(message)) {
 		return new Error(
 			"The agent's branch is still checked out in a previous run's workspace (likely still tearing down). Retry shortly.",
 		);
 	}
-	if (/unknown revision|ambiguous argument 'HEAD'|Needed a single revision/i.test(message)) {
+	if (/unknown revision|ambiguous argument 'HEAD'|Needed a single revision|[Nn]ot a valid object name/.test(message)) {
 		return new Error("This repository has no commits yet; make an initial commit before dispatching agents.");
 	}
 	return error instanceof Error ? error : new Error(message);
@@ -106,10 +111,19 @@ async function integrationBranches(pi: ExtensionAPI, repoRoot: string, parentWor
 	return [...candidates];
 }
 
-// Clean-base rule: a deliverable branch roots on committed history only, so integration is
-// always a plain merge and a WIP snapshot can never enter durable history. Applies whenever
-// a branch root is minted; continuing an outstanding branch mints nothing.
+// Clean-base rule: a deliverable branch roots on branch-anchored committed history only, so
+// integration is always a plain merge and a WIP snapshot can never enter durable history.
+// The branch-attachment check is what keeps snapshots out of topology transitively: a report/ask
+// workspace is a CLEAN detached checkout of a snapshot commit, so a nested worker dispatched
+// from one would otherwise root its durable branch on the snapshot. Applies whenever a branch
+// root is minted; continuing an outstanding branch mints nothing.
 async function requireCleanBase(pi: ExtensionAPI, parentWorktree: string): Promise<string> {
+	if (!(await isOnBranch(pi, parentWorktree))) {
+		throw new Error(
+			"Parent worktree is on a detached HEAD. Deliverable agents branch from branch-backed history only — " +
+				"dispatch workers from a branch-backed workspace.",
+		);
+	}
 	if (!(await isWorktreeClean(pi, parentWorktree))) {
 		throw new Error(
 			"Parent worktree has uncommitted changes. Deliverable agents branch from committed history only — " +
@@ -117,6 +131,15 @@ async function requireCleanBase(pi: ExtensionAPI, parentWorktree: string): Promi
 		);
 	}
 	return await gitOutput(pi, parentWorktree, ["rev-parse", "HEAD"]);
+}
+
+async function isOnBranch(pi: ExtensionAPI, worktreeDir: string): Promise<boolean> {
+	try {
+		await gitOutput(pi, worktreeDir, ["symbolic-ref", "--quiet", "HEAD"]);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 async function resolveDeliverableCheckout(
@@ -182,9 +205,12 @@ export async function provisionAgentWorkspace(
 					: { kind: "existing-branch", branch: checkout.branch },
 			);
 			const provision: AgentWorkspaceProvision = {
-				kind: request.kind,
-				...checkout,
-				...worktreeFields(worktree, label),
+				kind: "deliverable",
+				worktreeDir: worktree.worktreeDir,
+				label,
+				branch: checkout.branch,
+				baseOid: checkout.baseOid,
+				branchCreated: checkout.branchCreated,
 				repoRoot,
 			};
 			await runSetupHook(pi, repo.name, repoRoot, provision);
@@ -199,7 +225,8 @@ export async function provisionAgentWorkspace(
 		const worktree = await createAgentWorktree(pi, repoRoot, repo.name, label, { kind: "detached", baseRef: baseOid });
 		const provision: AgentWorkspaceProvision = {
 			kind: request.kind,
-			...worktreeFields(worktree, label),
+			worktreeDir: worktree.worktreeDir,
+			label,
 			branch: null,
 			baseOid,
 			branchCreated: false,
@@ -210,10 +237,6 @@ export async function provisionAgentWorkspace(
 	} catch (error) {
 		throw friendlyGitError(error);
 	}
-}
-
-function worktreeFields(worktree: { worktreeDir: string; branch: string | null }, label: string) {
-	return { worktreeDir: worktree.worktreeDir, label, branch: worktree.branch };
 }
 
 async function runSetupHook(

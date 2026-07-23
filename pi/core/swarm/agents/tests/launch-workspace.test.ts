@@ -7,16 +7,27 @@ import { createMockPi, installDaemonToolTestHooks } from "./harness.ts";
 
 const REPO_ROOT = "/repo/main-checkout";
 
-function provision(overrides: Partial<AgentWorkspaceProvision> = {}): AgentWorkspaceProvision {
+function provision(): AgentWorkspaceProvision {
 	return {
 		kind: "deliverable",
-		worktreeDir: "/worktrees/repo/agent-abc123/scout",
-		label: "agent-abc123/scout",
+		worktreeDir: "/worktrees/repo/agent-abc123/worker",
+		label: "agent-abc123/worker",
 		branch: "agent/quiet-badger-3dc450",
 		baseOid: "baseoid",
 		branchCreated: true,
 		repoRoot: REPO_ROOT,
-		...overrides,
+	};
+}
+
+function askProvision(): AgentWorkspaceProvision {
+	return {
+		kind: "ask",
+		worktreeDir: "/worktrees/repo/agent-abc123/ask",
+		label: "agent-abc123/ask",
+		branch: null,
+		baseOid: "baseoid",
+		branchCreated: false,
+		repoRoot: REPO_ROOT,
 	};
 }
 
@@ -120,7 +131,7 @@ describe("buildAgentLaunchSpec workspace resolution", () => {
 	});
 
 	it("puts the ask contract in the task text for a detached persona-less workspace", () => {
-		const p = provision({ kind: "ask", branch: null, branchCreated: false, label: "agent-abc123/ask" });
+		const p = askProvision();
 		const result = buildAgentLaunchSpec(
 			launchInput({ protectedRoot: REPO_ROOT, repo: { root: REPO_ROOT }, activeWorktree: null }, "ask", {
 				agentWorkspace: p,

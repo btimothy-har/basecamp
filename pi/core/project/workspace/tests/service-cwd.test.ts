@@ -126,7 +126,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		assert.equal(process.env.BASECAMP_WORKTREE_LABEL, "my-feature");
 	});
 
-	it("recognizes a detached-HEAD linked worktree with a detached branch", async (t) => {
+	it("recognizes a detached-HEAD linked worktree as branchless (null branch)", async (t) => {
 		const envSnapshot = snapshotWorkspaceEnv();
 		clearAgentDepthEnv();
 		t.after(async () => {
@@ -147,7 +147,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 			kind: "git-worktree",
 			label: LABEL,
 			path: WORKTREE_DIR,
-			branch: "detached",
+			branch: null,
 			created: false,
 		});
 		assert.equal(process.env.BASECAMP_WORKTREE_LABEL, LABEL);
