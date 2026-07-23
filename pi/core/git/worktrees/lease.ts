@@ -10,6 +10,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { findWorktreeRecord, gitWorktreeRecords } from "./crud.ts";
 import { lockWorktree, removeWorktree, unlockWorktree } from "./lifecycle.ts";
 
 export const SESSION_LOCK_REASON_PREFIX = "basecamp session ";
@@ -119,4 +120,21 @@ export async function reapSessionWorktree(
 		return "error";
 	}
 	return "reaped";
+}
+
+/**
+ * Reap a worktree only when this session holds its lease. Confirms the worktree's lock reason
+ * is a `basecamp session <sessionId>` lease owned by `sessionId` before applying the matrix —
+ * so a fork or another live session's worktree (or an unowned/foreign lock) is never touched.
+ * `repoRoot` is the main checkout. Returns `not-owned` when the ownership check fails.
+ */
+export async function reapOwnedSessionWorktree(
+	pi: ExtensionAPI,
+	repoRoot: string,
+	worktreeDir: string,
+	sessionId: string,
+): Promise<SessionReapOutcome | "not-owned"> {
+	const record = findWorktreeRecord(await gitWorktreeRecords(pi, repoRoot), worktreeDir);
+	if (!record || !leaseOwnedBy(record.lockReason, sessionId)) return "not-owned";
+	return reapSessionWorktree(pi, repoRoot, worktreeDir);
 }

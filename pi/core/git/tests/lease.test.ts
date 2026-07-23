@@ -7,6 +7,7 @@ import {
 	isWorktreeClean,
 	leaseOwnedBy,
 	parseSessionLease,
+	reapOwnedSessionWorktree,
 	reapSessionWorktree,
 	SESSION_COLD_TTL_MS,
 	sessionLeaseReason,
@@ -143,5 +144,41 @@ describe("reapSessionWorktree", () => {
 			throw new Error("git blew up");
 		});
 		assert.equal(await reapSessionWorktree(pi, "/repo", "/repo/wt"), "error");
+	});
+});
+
+describe("reapOwnedSessionWorktree", () => {
+	function leasePi(lockReason: string | null, dirty = false): { pi: ExtensionAPI; calls: string[][] } {
+		const lockLine = lockReason === null ? "" : `locked ${lockReason}\n`;
+		const listOut = `worktree /repo\nbranch refs/heads/main\n\nworktree /repo/wt\nbranch refs/heads/wt/x\n${lockLine}\n`;
+		return recordingPi((args) => {
+			if (args.includes("list")) return { code: 0, stdout: listOut, stderr: "" };
+			if (args.includes("status")) return { code: 0, stdout: dirty ? " M f\n" : "", stderr: "" };
+			return OK;
+		});
+	}
+
+	it("reaps a clean worktree this session owns", async () => {
+		const { pi, calls } = leasePi(sessionLeaseReason("mine"));
+		assert.equal(await reapOwnedSessionWorktree(pi, "/repo", "/repo/wt", "mine"), "reaped");
+		assert.ok(calls.some((c) => c.includes("remove")));
+	});
+
+	it("does not reap a worktree owned by another session", async () => {
+		const { pi, calls } = leasePi(sessionLeaseReason("someone-else"));
+		assert.equal(await reapOwnedSessionWorktree(pi, "/repo", "/repo/wt", "mine"), "not-owned");
+		assert.ok(!calls.some((c) => c.includes("remove")));
+	});
+
+	it("does not reap an unleased (unlocked) worktree", async () => {
+		const { pi, calls } = leasePi(null);
+		assert.equal(await reapOwnedSessionWorktree(pi, "/repo", "/repo/wt", "mine"), "not-owned");
+		assert.ok(!calls.some((c) => c.includes("remove")));
+	});
+
+	it("keeps a dirty worktree even when owned", async () => {
+		const { pi, calls } = leasePi(sessionLeaseReason("mine"), true);
+		assert.equal(await reapOwnedSessionWorktree(pi, "/repo", "/repo/wt", "mine"), "kept-dirty");
+		assert.ok(!calls.some((c) => c.includes("remove")));
 	});
 });

@@ -6,6 +6,7 @@ import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
+import { reapOwnedSessionWorktree } from "../../git/worktrees/lease.ts";
 import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
 import { sweepAgentWorktrees } from "../../git/worktrees/sweep.ts";
 import { readLogseqGraphDir, readWorktreeSetupCommand } from "../../host/config.ts";
@@ -16,6 +17,7 @@ import { requireWorkspaceRuntime } from "./runtime.ts";
 import { runWorktreeSetup, shouldRunWorktreeSetup } from "./setup.ts";
 import {
 	attachWorkspaceWorktreePath,
+	getWorkspaceState,
 	initializeWorkspace,
 	registerWorkspaceAllowedRootsProvider,
 	requireWorkspaceState,
@@ -244,5 +246,20 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 		const latestWorkspaceState = requireWorkspaceState();
 		loadDotenv(latestWorkspaceState.repo?.root ?? latestWorkspaceState.launchCwd);
 		await fs.mkdir(path.join(latestWorkspaceState.scratchDir, "pull-requests"), { recursive: true });
+	});
+
+	pi.on("session_shutdown", async (event, ctx) => {
+		// Primary session teardown: a top-level session at genuine exit reaps its own worktree.
+		// Subagents are daemon-owned; reload/new/resume/fork are transitions, not exits. The cold
+		// backstop sweep covers a crash that never fires this handler.
+		if (getAgentDepth() > 0 || event.reason !== "quit") return;
+		const state = getWorkspaceState();
+		if (!state?.repo || state.activeWorktree?.kind !== "git-worktree") return;
+		await reapOwnedSessionWorktree(
+			pi,
+			state.repo.root,
+			state.activeWorktree.path,
+			ctx.sessionManager.getSessionId(),
+		).catch(() => {});
 	});
 }
