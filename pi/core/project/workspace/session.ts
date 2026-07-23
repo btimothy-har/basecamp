@@ -8,6 +8,7 @@ import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { reapOwnedSessionWorktree } from "../../git/worktrees/lease.ts";
 import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
+import { sweepSessionWorktrees } from "../../git/worktrees/session-sweep.ts";
 import { sweepAgentWorktrees } from "../../git/worktrees/sweep.ts";
 import { readLogseqGraphDir, readWorktreeSetupCommand } from "../../host/config.ts";
 import { getAgentDepth, getBasecampEnv } from "../../host/env.ts";
@@ -152,6 +153,29 @@ async function sweepAgentWorktreesForSession(
 	}
 }
 
+async function sweepSessionWorktreesForSession(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	isSubagent: boolean,
+): Promise<void> {
+	if (isSubagent) return;
+
+	try {
+		const state = requireWorkspaceState();
+		if (!state.repo) return;
+
+		const result = await sweepSessionWorktrees(pi, state.repo.root, state.repo.name);
+		if (result.reclaimed.length > 0) {
+			ctx.ui.notify(`basecamp: reclaimed ${result.reclaimed.length} cold worktree(s)`, "info");
+		}
+		if (result.surfaced.length > 0) {
+			ctx.ui.notify(`basecamp: ${result.surfaced.length} dirty worktree(s) reclaimable — /worktree prune`, "info");
+		}
+	} catch {
+		/* sweep is best-effort and must not interrupt session start */
+	}
+}
+
 function loadDotenv(root: string): void {
 	const dotenvPath = path.join(root, ".env");
 	try {
@@ -225,6 +249,7 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 
 		await migrateLegacyWorktreesForSession(pi, ctx, launchCwd, isSubagent);
 		await sweepAgentWorktreesForSession(pi, ctx, isSubagent);
+		await sweepSessionWorktreesForSession(pi, ctx, isSubagent);
 
 		if (worktreeDir) {
 			try {

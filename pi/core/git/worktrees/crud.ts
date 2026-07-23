@@ -17,7 +17,7 @@ export interface WorktreeSummary {
 	branch: string;
 }
 
-interface GitWorktreeRecord {
+export interface GitWorktreeRecord {
 	path: string;
 	branch: string | null;
 	locked: boolean;
