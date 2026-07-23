@@ -41,7 +41,7 @@ This step selects reviewers only. Do not create findings, tell reviewers a suspe
 
 ## 4. Dispatch the seven fixed reviewers
 
-Call `dispatch_agent` for all seven in parallel, read-only:
+Call `dispatch_agent` for all seven in parallel. Reviewers are report-only by contract: they must not commit, and anything they leave uncommitted is discarded with their workspace:
 
 | agent | dimension |
 |---|---|
@@ -67,7 +67,7 @@ Collect all seven handles.
 
 ## 5. Dispatch adaptive general reviewers
 
-The fixed specialists provide baseline coverage. Use `general-reviewer` as the elastic deep-review layer: call `dispatch_agent` for one additional read-only general reviewer for each material, non-overlapping aspect discovered in step 3.
+The fixed specialists provide baseline coverage. Use `general-reviewer` as the elastic deep-review layer: call `dispatch_agent` for one additional report-only general reviewer for each material, non-overlapping aspect discovered in step 3.
 
 | diff signal | focused trace |
 |---|---|

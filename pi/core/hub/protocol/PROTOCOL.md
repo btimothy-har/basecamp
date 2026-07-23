@@ -1,16 +1,16 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `26`
+Protocol version: `27`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":26,...}
+{"type":"<frame_type>","v":27,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 26`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 27`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 - v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
@@ -24,11 +24,12 @@ Version handling:
 - v24 removes the retired `thread_report` frame.
 - v25 adds mutable session facets to `register`, the self-scoped `session_metadata` frame, and the read-only dashboard HTTP capability.
 - v26 removes the selected-agent run-message HTTP read and narrows `/runs/summary` to compact active-agent widget fields.
+- v27 adds `owned_branch`, `branch_base`, and `branch_created` to dispatch specs: every repo-backed run owns a transient workspace that the daemon force-removes on run exit, deleting the branch only when this run minted it and it gained no commits past its recorded base OID.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":26}`
+  - `GET /health` → `{"status":"ok","protocol":27}`
   - `GET /runs/summary?root_id=<id>` returns compact rows for the in-Pi active-agent widget.
   - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
   - `GET /workstreams/{id_or_slug}` returns a single workstream (including its `version`) with its joined agent rows and `versions` content-history array.
@@ -112,7 +113,9 @@ Important fields:
 - `agent_type`: immutable per handle after the first dispatch.
 - `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
 - `spec`: opaque TypeScript-authored spawn spec.
-- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's registered session file or daemon-managed agent session sidecar and forks it (`pi --fork`) into a new read-only answerer session — used by the agent ask capability. Omitted/null for normal dispatch. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated. If no safe fork source exists, the target is reported as unavailable without distinguishing missing, unauthorized, or non-forkable targets.
+- `spec.owned_worktree`: optional; the run's own transient worktree. The daemon force-removes it when the run exits (normal reap and crash-restart reconcile) — uncommitted state is discarded by design; commits are the only durable output of a run.
+- `spec.owned_branch` / `spec.branch_base` / `spec.branch_created`: optional; the run's per-agent branch (`agent/<handle>`), the commit OID it started from, and whether this dispatch minted the branch. Only deliverable runs (the `worker` persona) carry a branch; report runs (every other persona and ad-hoc dispatch) and asks are branchless — they send `owned_branch` null and `branch_created` false. After worktree removal the daemon deletes `owned_branch` only when `branch_created` is true and `rev-list <branch_base>..<branch>` is empty — a continued or commit-bearing branch always survives teardown.
+- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's registered session file or daemon-managed agent session sidecar and forks it (`pi --fork`) into a new answerer session — used by the agent ask capability. The answerer runs the uniform toolset in a branchless detached workspace that is force-removed at run end (isolation via the disposable workspace, not a read-only posture); it never mints a branch, so nothing it writes survives. Omitted/null for normal dispatch. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated. If no safe fork source exists, the target is reported as unavailable without distinguishing missing, unauthorized, or non-forkable targets.
 
 New run rows persist `dispatcher_id` as the registered `node_id` that sent `dispatch`.
 
@@ -139,7 +142,7 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 26,
+  "v": 27,
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -170,7 +173,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 26,
+  "v": 27,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -416,6 +419,6 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 26`.
+2. Send `register` with `v: 27`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.

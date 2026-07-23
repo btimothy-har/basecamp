@@ -7,6 +7,11 @@ from typing import Any
 from .._sqlite import load_json_column
 from .schema import TERMINAL_STATUSES
 
+# Reconcile only needs to catch worktrees left behind by recently-terminal runs;
+# anything older was either already swept or belongs to a long-dead daemon whose
+# worktree is unlikely to still exist. Seven days is a generous backstop window.
+_RECENT_TERMINAL_LOOKBACK_DAYS = 7
+
 
 class RunsReaderMixin:
     """Run and run-event queries."""
@@ -14,8 +19,8 @@ class RunsReaderMixin:
     def get_nonterminal_runs(self) -> list[dict[str, Any]]:
         """Return runs that are not in a terminal status.
 
-        Includes the parsed ``spec_json`` so restart reconciliation can reclaim a mutative
-        agent's ``owned_worktree`` (the reaper's counterpart after a daemon crash).
+        Includes the parsed ``spec_json`` so restart reconciliation can tear down a
+        dispatched run's workspace (the reaper's counterpart after a daemon crash).
         """
 
         with self._reading() as connection:
@@ -33,6 +38,39 @@ class RunsReaderMixin:
             result = dict(row)
             result["spec_json"] = load_json_column(result.get("spec_json"))
             results.append(result)
+        return results
+
+    def get_recent_runs_with_owned_worktree(self) -> list[dict[str, Any]]:
+        """Return recently-terminal runs whose spec carries an ``owned_worktree``.
+
+        Bounded to the last ``_RECENT_TERMINAL_LOOKBACK_DAYS`` days so the query stays
+        cheap on long-lived stores; a run finalized via ``result_report`` whose daemon
+        died before the reaper's teardown fired leaks its workspace otherwise. The parsed
+        ``spec_json`` is included so reconcile can drive workspace/branch teardown.
+        """
+
+        with self._reading() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, agent_id, pgid, status, spec_json, ended_at
+                FROM runs
+                WHERE status IN (?, ?)
+                  AND ended_at IS NOT NULL
+                  AND ended_at >= datetime('now', ?)
+                """,
+                (
+                    *TERMINAL_STATUSES,
+                    f"-{_RECENT_TERMINAL_LOOKBACK_DAYS} days",
+                ),
+            ).fetchall()
+
+        results: list[dict[str, Any]] = []
+        for row in rows:
+            spec = load_json_column(row["spec_json"])
+            if isinstance(spec, dict) and spec.get("owned_worktree"):
+                result = dict(row)
+                result["spec_json"] = spec
+                results.append(result)
         return results
 
     def get_run(self, run_id: str) -> dict[str, Any] | None:

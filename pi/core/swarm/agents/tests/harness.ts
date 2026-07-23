@@ -50,9 +50,19 @@ export class MockConnection implements DaemonConnection {
 	}
 }
 
+export type MockExecResult = { code: number; stdout: string; stderr: string; killed?: boolean };
+
 export class MockPi {
 	tools: RegisteredTool[] = [];
 	handlers = new Map<string, ((event: any, ctx: any) => unknown)[]>();
+	/** Scriptable exec for tests that exercise git-backed provisioning; null result falls through to ok. */
+	execScript: ((cmd: string, args: string[], opts?: { cwd?: string }) => MockExecResult | null) | null = null;
+	execCalls: Array<{ cmd: string; args: string[] }> = [];
+
+	async exec(cmd: string, args: string[], opts?: { cwd?: string }): Promise<MockExecResult> {
+		this.execCalls.push({ cmd, args });
+		return this.execScript?.(cmd, args, opts) ?? { code: 0, stdout: "", stderr: "", killed: false };
+	}
 
 	registerTool(tool: RegisteredTool): void {
 		this.tools.push(tool);

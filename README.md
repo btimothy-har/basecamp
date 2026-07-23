@@ -129,7 +129,7 @@ wait_for_agent({ handles: "<agent-handle>" })
 
 Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`, `integration-specialist`.
 
-Named read-only agents may fan out for parallel investigation and review. Mutative workers may also run in parallel because each receives its own locked, per-run worktree and branch. Basecamp gives mutating sessions one hidden reminder to commit dirty work, reclaims clean worker worktrees automatically, and preserves live or dirty trees rather than force-removing them.
+In a repo-backed session, every dispatched agent runs in its own transient workspace. Report agents (scouts, reviewers) get branchless detached copies of your current state — uncommitted work included — and leave nothing behind; workers mint an `agent/<handle>` branch from your clean HEAD, commit their change, and you `git merge` it. Workspaces are removed automatically when runs end: commits are the only durable output of an agent run. (A non-repo session has no worktree to isolate, so its agents run report-only with no write tools.)
 
 ### Agents dashboard
 
@@ -222,7 +222,7 @@ Built-in prompt files can be overridden by creating matching files under `~/.pi/
 
 ### Session Modes
 
-The session mode sets the agent's posture and is shown in the footer. Cycle between `analysis`, `explore` (planning), and `work` (the default) with shift+tab. Dispatched subagents are read-only; the primary session is the sole mutator.
+The session mode sets the agent's posture and is shown in the footer. Cycle between `analysis`, `explore` (planning), and `work` (the default) with shift+tab. The primary session integrates all work; dispatched agents operate in disposable workspaces and deliver branches (workers) or reports (everyone else).
 
 `copilot` is a locked, launch-only mode: start it with `pi --copilot`. It is immutable — shift+tab can neither enter nor leave it — and the `plan()` handoff is disabled in it (a copilot session stages execution-ready workstreams with `launch_workstream` instead of implementing in-session). `pi --copilot` takes precedence over `pi --workstream` if both are passed.
 

@@ -79,8 +79,8 @@ describe("worktree pure utilities", () => {
 			);
 
 			assert.deepEqual(records, [
-				{ path: "/repo", branch: "main", locked: false },
-				{ path: WORKTREE_DIR, branch: "wt/feature-1", locked: false },
+				{ path: "/repo", branch: "main", locked: false, lockReason: null },
+				{ path: WORKTREE_DIR, branch: "wt/feature-1", locked: false, lockReason: null },
 			]);
 		});
 
@@ -98,7 +98,9 @@ describe("worktree pure utilities", () => {
 			);
 
 			assert.equal(records[0]?.locked, true);
+			assert.equal(records[0]?.lockReason, null);
 			assert.equal(records[1]?.locked, true);
+			assert.equal(records[1]?.lockReason, "basecamp agent run");
 		});
 
 		it("returns no records for empty or blank output", () => {
@@ -123,8 +125,8 @@ describe("worktree pure utilities", () => {
 	describe("findWorktreeRecord", () => {
 		it("matches resolved paths and ignores trailing slash differences", () => {
 			const records = [
-				{ path: "/repo", branch: "main", locked: false },
-				{ path: `${WORKTREE_DIR}${path.sep}`, branch: "wt/feature-1", locked: false },
+				{ path: "/repo", branch: "main", locked: false, lockReason: null },
+				{ path: `${WORKTREE_DIR}${path.sep}`, branch: "wt/feature-1", locked: false, lockReason: null },
 			];
 
 			assert.deepEqual(findWorktreeRecord(records, WORKTREE_DIR), records[1]);

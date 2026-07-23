@@ -30,10 +30,10 @@ export interface AgentConfig {
 	systemPrompt: string;
 	source: "builtin";
 	filePath: string;
-	// Fail-closed: read-only unless the frontmatter explicitly sets `readOnly: false`.
-	// A mutative agent gets its own worktree + write/edit; read-only shares the parent's
-	// worktree with a no-write toolset.
-	readOnly: boolean;
+	// Fail-closed: report-only unless the frontmatter explicitly sets `deliverable: true`.
+	// A deliverable run mints an `agent/<handle>` branch from a clean parent HEAD; report
+	// runs get branchless detached workspaces — their report is the deliverable.
+	deliverable: boolean;
 }
 
 // ============================================================================
@@ -108,7 +108,7 @@ function loadAgentsFromDir(dir: string): AgentConfig[] {
 			systemPrompt: body,
 			source: "builtin",
 			filePath,
-			readOnly: fm.readOnly !== "false",
+			deliverable: fm.deliverable === "true",
 		});
 	}
 

@@ -15,7 +15,7 @@ Understand existing code, patterns, and conventions before suggesting modificati
 - Irreversible remote operations require user confirmation, including force-push, remote ref deletion, and `push --mirror` / `push --all`.
 - Opening or modifying PRs and issues (`gh pr create|comment|edit|merge`, `gh issue create|comment|edit`) is routed to the user for review before it runs.
 - The protected checkout must stay clean. Edits land in the active worktree, and when Basecamp reports an active worktree, git runs from that worktree.
-- Do not manage worktrees directly with `git worktree`; those subcommands are blocked. The system creates execution worktrees automatically — on implementation plan approval, and one per mutative `worker` you dispatch — and reclaims clean worker worktrees for you. Dirty residuals are preserved for recovery. To integrate a finished worker's change, `git merge` its branch (that is a normal git command, not a worktree command).
+- Do not manage worktrees directly with `git worktree`; those subcommands are blocked. The system creates execution worktrees automatically — on implementation plan approval, and one per dispatched agent run — and removes agent workspaces when their runs end: only commits on a worker's branch survive teardown. To integrate a finished worker, `git merge` its `agent/<handle>` branch (that is a normal git command, not a worktree command).
 - Raw `bq query` in bash is blocked. Write SQL to a file and use the `bq_query` tool.
 
 ## Searching
@@ -58,4 +58,4 @@ You have access to a scratch directory (path shown in session details below). Us
 
 Async daemon subagent tools are available in this environment: `dispatch_agent`, `list_agents`, and `wait_for_agent`. Apply the `agents` skill for agent selection, dispatch patterns, and result collection guidance.
 
-Named read-only agents may fan out for parallel investigation and review. Each mutative `worker` gets its own isolated worktree (branched from your current one), so you can run several concurrently; when one finishes, `git merge` its branch into your worktree to integrate its work.
+In a repo-backed session, every dispatched agent gets its own isolated transient workspace and runs concurrently without touching your tree. Report agents (scouts, reviewers, ad-hoc) work in branchless detached copies of your current state (uncommitted WIP included, via snapshot) and leave nothing behind. `worker`s branch from your clean HEAD — commit your WIP before dispatching one — and their committed `agent/<handle>` branch survives for you to `git merge`; retasking a worker handle continues the same branch. A non-repo session has no worktree to isolate, so its agents run report-only without write tools.

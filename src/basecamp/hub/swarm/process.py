@@ -168,17 +168,41 @@ def _process_group_is_runner(pgid: int) -> bool:
     return any(f"-m {module}" in result.stdout for module in _RUNNER_MODULE_MATCHES)
 
 
+def _process_group_verified_dead(pgid: int | None) -> bool:
+    """True only when the ps probe ran and found no live process in the group.
+
+    Returns False when pgid is None, the probe raised OSError, or a live process
+    was found — callers must defer teardown in all those cases rather than risk
+    force-removing a possibly-live runner's workspace.
+    """
+    if pgid is None or pgid <= 1:
+        return False
+    try:
+        result = subprocess.run(
+            ["ps", "-p", str(pgid), "-o", "pid="],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return not result.stdout.strip()
+
+
 def terminate_process_group_if_runner(
     pgid: int | None,
     *,
     escalation_s: float = 5.0,
     poll_s: float = 0.1,
-) -> None:
-    # Guard against PID/PGID reuse before signalling.
+) -> bool:
+    # Guard against PID/PGID reuse before signalling. Returns True when the group
+    # was verified as a runner and signalled; False when liveness was unverified
+    # (pgid missing or the ps probe failed) so callers can defer workspace teardown.
     if pgid is None or not _process_group_is_runner(pgid):
-        return
+        return False
 
     terminate_process_group(pgid, escalation_s=escalation_s, poll_s=poll_s)
+    return True
 
 
 def _sidecar_final_outcome(result_path: str | Path) -> tuple[str, str | None, str | None] | None:
@@ -219,30 +243,92 @@ def _restart_reconcile_outcome(row: dict[str, object]) -> tuple[str, str | None,
     return "failed", None, "daemon_restart_reconciled"
 
 
+def _spec_owned_worktree(spec: object) -> str | None:
+    return spec.get("owned_worktree") if isinstance(spec, dict) else None
+
+
+def _teardown_from_spec(worktree: str, spec: object) -> None:
+    """Tear down a workspace using branch fields from a parsed spec dict.
+
+    The v27 marker is the ``branch_created`` key itself: its presence means the row
+    was dispatched with v27 fields (owned_branch may legitimately be null for
+    report/ask runs) and gets unconditional --force. Its absence means a pre-upgrade
+    row, which gets non-force removal to preserve dirty residuals during the
+    one-time upgrade window.
+    """
+    if not isinstance(spec, dict):
+        teardown_agent_workspace(worktree)
+        return
+    teardown_agent_workspace(
+        worktree,
+        branch=spec.get("owned_branch"),
+        branch_base=spec.get("branch_base"),
+        branch_created=spec.get("branch_created", False),
+        force="branch_created" in spec,
+    )
+
+
 def reconcile_orphaned_runs(store: Store) -> None:
     for row in store.get_nonterminal_runs():
-        pgid = row.get("pgid")
-        if isinstance(pgid, int):
-            try:
-                terminate_process_group_if_runner(pgid, escalation_s=2.0)
-            except OSError:
-                pass
+        try:
+            _reconcile_nonterminal_row(store, row)
+        except Exception:
+            continue
 
-        status, result, error = _restart_reconcile_outcome(row)
-        store.set_run_result_if_unset(
-            run_id=row["id"],
-            status=status,
-            result=result,
-            error=error,
-        )
+    _reconcile_terminal_worktrees(store)
 
-        # A run orphaned by a daemon crash never had its reaper fire, so reclaim its worktree
-        # here — the reaper's counterpart. The merged-worktree sweep can't cover this case: a
-        # crash-interrupted run's branch has not been merged yet.
-        spec = row.get("spec_json")
-        owned_worktree = spec.get("owned_worktree") if isinstance(spec, dict) else None
-        if owned_worktree:
-            reclaim_agent_worktree(owned_worktree)
+
+def _reconcile_nonterminal_row(store: Store, row: dict[str, object]) -> None:
+    pgid = row.get("pgid")
+    pgid_int = pgid if isinstance(pgid, int) else None
+    if pgid_int is not None:
+        try:
+            terminate_process_group_if_runner(pgid_int, escalation_s=2.0)
+        except OSError:
+            pass
+
+    status, result, error = _restart_reconcile_outcome(row)
+    store.set_run_result_if_unset(
+        run_id=row["id"],
+        status=status,
+        result=result,
+        error=error,
+    )
+
+    # A run orphaned by a daemon crash never had its reaper fire, so tear down its workspace
+    # here — the reaper's counterpart. The merged-worktree sweep can't cover this case: a
+    # crash-interrupted run's branch has not been merged yet. Tear down only when the group is
+    # PROVABLY dead (ps ran, no live process): terminate_process_group issues SIGKILL without
+    # confirming it landed, so a runner wedged in uninterruptible I/O could still be touching
+    # its tree. A just-terminated-but-not-yet-reaped group, a missing pgid, or a failed ps probe
+    # all defer to the next reconcile / session sweep rather than force-removing a live tree.
+    if not _process_group_verified_dead(pgid_int):
+        return
+    spec = row.get("spec_json")
+    owned_worktree = _spec_owned_worktree(spec)
+    if owned_worktree:
+        _teardown_from_spec(owned_worktree, spec)
+
+
+def _reconcile_terminal_worktrees(store: Store) -> None:
+    # A run finalized via result_report whose daemon died before the reaper's teardown fired
+    # leaks its workspace forever — the nonterminal pass above never sees it. Sweep recently
+    # terminal rows and tear down any whose worktree path still exists on disk and whose pgid
+    # is provably dead. Do not re-finalize their status.
+    for row in store.get_recent_runs_with_owned_worktree():
+        try:
+            worktree = row["spec_json"].get("owned_worktree")
+            if not (isinstance(worktree, str) and os.path.exists(worktree)):
+                continue
+            # Tear down only when the row's pgid is provably dead; a None or unverifiable
+            # pgid means a possibly-live runner still owns the tree. Deferred/unverifiable
+            # residue falls to the session-start sweep (the documented last resort; a
+            # zero-commit agent branch at its base reads as integrated there, so it self-heals).
+            if not _process_group_verified_dead(row.get("pgid")):
+                continue
+            _teardown_from_spec(worktree, row["spec_json"])
+        except Exception:
+            continue
 
 
 def _reap_outcome(exit_code: int, result_path: str | Path) -> tuple[str, str | None, str | None]:
@@ -268,19 +354,33 @@ def _reap_outcome(exit_code: int, result_path: str | Path) -> tuple[str, str | N
     )
 
 
-def reclaim_agent_worktree(worktree: str) -> None:
-    """Remove a mutative agent's worktree once its run has exited, keeping its branch.
+def teardown_agent_workspace(
+    worktree: str,
+    *,
+    branch: str | None = None,
+    branch_base: str | None = None,
+    branch_created: bool = False,
+    force: bool = True,
+) -> None:
+    """Remove a dispatched agent's worktree at run end.
 
-    Teardown is the symmetric bookend to provision-at-dispatch: the run is over, so the
-    worktree is no longer needed; its committed branch persists
-    as the deliverable for the parent to merge. Best-effort — any failure is left to the
-    session-start sweep backstop. Run from the main checkout (resolved via the common git dir),
-    since a worktree cannot remove itself.
+    A worktree is transient: dirty state is discarded by design — commits are the only
+    durable output of a run. The branch is deleted only when this run minted it
+    (branch_created) and it has zero commits ahead of branch_base (nothing happened);
+    otherwise the branch is durable. Ask/report runs pass branch=None, so only the
+    worktree is removed.
 
-    Removes only a CLEAN worktree: ``git worktree remove`` (no ``--force``) refuses one that
-    still has uncommitted or untracked changes, so an agent that exited without committing
-    never has its diff silently discarded — a dirty tree is left for the parent/sweep. The
-    worktree was locked as a liveness guard, so unlock it first.
+    ``force`` controls ``--force`` on ``git worktree remove``. v27-dispatched runs
+    always pass ``True`` (unconditional discard). Pre-upgrade rows — whose spec_json
+    predates the v27 branch keys — pass ``False`` to preserve the old contract's
+    dirty-residual behavior during the one-time upgrade window.
+
+    If common-dir resolution fails the worktree is already gone; return without touching the
+    branch — the session-start sweep is the backstop for orphan branches. Best-effort:
+    subprocess timeouts (15s/30s), OSError and SubprocessError suppressed, no raised
+    exceptions. Run from the main checkout (resolved via the common git dir) since a
+    worktree cannot remove itself. Branch deletion happens after worktree removal because
+    git refuses to delete a checked-out branch.
     """
     try:
         common = subprocess.run(
@@ -300,14 +400,34 @@ def reclaim_agent_worktree(worktree: str) -> None:
             check=False,
             timeout=15,
         )
+        remove_argv = ["git", "-C", main_root, "worktree", "remove"]
+        if force:
+            remove_argv.append("--force")
+        remove_argv.append(worktree)
         subprocess.run(
-            ["git", "-C", main_root, "worktree", "remove", worktree],
+            remove_argv,
             capture_output=True,
             text=True,
             check=False,
             timeout=30,
         )
-    except OSError:
+        if branch and branch_created and branch_base:
+            rev_list = subprocess.run(
+                ["git", "-C", main_root, "rev-list", "--count", f"{branch_base}..{branch}"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
+            if rev_list.returncode == 0 and rev_list.stdout.strip() == "0":
+                subprocess.run(
+                    ["git", "-C", main_root, "branch", "-D", branch],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=15,
+                )
+    except (OSError, subprocess.SubprocessError):
         return
 
 
@@ -320,6 +440,9 @@ async def reap_agent_process(
     on_finalize: ProcessExitHook,
     result_path: str | Path,
     owned_worktree: str | None = None,
+    owned_branch: str | None = None,
+    branch_base: str | None = None,
+    branch_created: bool = False,
 ) -> None:
     exit_code = await process.wait()
     try:
@@ -338,4 +461,10 @@ async def reap_agent_process(
     finally:
         registry.pop_process(run_id)
         if owned_worktree:
-            await asyncio.to_thread(reclaim_agent_worktree, owned_worktree)
+            await asyncio.to_thread(
+                teardown_agent_workspace,
+                owned_worktree,
+                branch=owned_branch,
+                branch_base=branch_base,
+                branch_created=branch_created,
+            )

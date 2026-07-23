@@ -10,6 +10,7 @@ import {
 	buildAgentTaskText,
 	buildPiArgs,
 	ensureAgentDir,
+	type RunWorkspace,
 	sanitizeAgentSpawnEnv,
 } from "../executor.ts";
 import { getBasecampExtensionToolNames } from "../launch.ts";
@@ -58,7 +59,7 @@ describe("buildPiArgs task text", () => {
 			model: undefined,
 			sessionDir,
 			extensionTools: [],
-			readOnly: true,
+			workspace: null,
 		});
 
 		try {
@@ -77,7 +78,7 @@ describe("buildPiArgs task text", () => {
 			model: undefined,
 			sessionDir,
 			extensionTools: [],
-			readOnly: true,
+			workspace: null,
 		});
 
 		try {
@@ -99,18 +100,23 @@ function toolNamesFromArgs(args: string[]): string[] {
 	return args[toolsIndex + 1]?.split(",") ?? [];
 }
 
-function buildToolArgs(agent: AgentConfig | null, readOnly = true): string[] {
+function buildToolArgs(
+	agent: AgentConfig | null,
+	workspace: RunWorkspace = null,
+): { args: string[]; prompt: string | null } {
 	const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-agent-session-"));
 	const { args, agentDir } = buildPiArgs(agent, "inspect tools", {
 		name: `agent-tools-${randomUUID()}`,
 		model: undefined,
 		sessionDir,
 		extensionTools: ["dispatch_agent", "list_agents", "wait_for_agent"],
-		readOnly,
+		workspace,
 	});
+	const promptIndex = args.indexOf("--agent-prompt");
+	const prompt = promptIndex === -1 ? null : fs.readFileSync(args[promptIndex + 1] as string, "utf8");
 	fs.rmSync(sessionDir, { recursive: true, force: true });
 	fs.rmSync(agentDir, { recursive: true, force: true });
-	return args;
+	return { args, prompt };
 }
 
 const SUPPORT_TOOLS = [
@@ -126,41 +132,99 @@ const SUPPORT_TOOLS = [
 
 const PARENT_ONLY_TOOLS = ["plan", "escalate"];
 
-describe("subagent tool allowlist", () => {
-	it("gives every subagent a read-only toolset (no write/edit) without parent-only tools", () => {
-		const tools = toolNamesFromArgs(buildToolArgs(null));
-
-		for (const tool of ["read", "bash", "grep", "find", "ls", ...SUPPORT_TOOLS]) {
-			assert.equal(tools.includes(tool), true, `${tool} should be available`);
-		}
-		for (const tool of ["write", "edit", ...PARENT_ONLY_TOOLS]) {
-			assert.equal(tools.includes(tool), false, `${tool} should not be available`);
-		}
-	});
-
-	it("launches every subagent with --read-only", () => {
-		assert.equal(buildToolArgs(null).includes("--read-only"), true);
-	});
-});
-
-describe("mutative agent tool allowlist", () => {
-	it("gives a mutative agent write/edit and omits --read-only", () => {
-		const args = buildToolArgs(null, false);
+describe("agent toolset", () => {
+	it("gives every workspaced run the full toolset including write/edit", () => {
+		const { args } = buildToolArgs(null, { kind: "report" });
 		const tools = toolNamesFromArgs(args);
 
-		for (const tool of ["read", "bash", "grep", "find", "ls", "write", "edit", ...SUPPORT_TOOLS]) {
+		for (const tool of ["read", "write", "edit", "bash", "grep", "find", "ls", ...SUPPORT_TOOLS]) {
 			assert.equal(tools.includes(tool), true, `${tool} should be available`);
 		}
 		for (const tool of PARENT_ONLY_TOOLS) {
 			assert.equal(tools.includes(tool), false, `${tool} should not be available`);
 		}
-		assert.equal(args.includes("--read-only"), false);
+	});
+
+	it("withholds write/edit when the run has no workspace (capability follows workspace)", () => {
+		const tools = toolNamesFromArgs(buildToolArgs(null, null).args);
+		assert.equal(tools.includes("write"), false);
+		assert.equal(tools.includes("edit"), false);
+		assert.equal(tools.includes("read"), true);
+		assert.equal(tools.includes("bash"), true);
+	});
+
+	it("never launches an agent with --read-only", () => {
+		const workspaces: RunWorkspace[] = [
+			null,
+			{ kind: "deliverable", branch: "agent/h" },
+			{ kind: "report" },
+			{ kind: "ask" },
+		];
+		for (const workspace of workspaces) {
+			assert.equal(buildToolArgs(null, workspace).args.includes("--read-only"), false);
+		}
+	});
+});
+
+describe("workspace contract prompt layer", () => {
+	it("injects the deliverable contract with the run's branch, composed after the persona prompt", () => {
+		const agent: AgentConfig = {
+			name: "worker",
+			description: "d",
+			model: "default",
+			systemPrompt: "You are a worker.",
+			source: "builtin",
+			filePath: "/w.md",
+			deliverable: true,
+		};
+		const { prompt } = buildToolArgs(agent, { kind: "deliverable", branch: "agent/quiet-badger-3dc450" });
+
+		assert.ok(prompt, "prompt file written");
+		assert.ok(prompt.startsWith("You are a worker."), "persona prompt leads");
+		assert.match(prompt, /## Workspace contract/);
+		assert.match(prompt, /`agent\/quiet-badger-3dc450`/);
+		assert.match(prompt, /only commits on your branch survive/i);
+	});
+
+	it("gives a persona the report-scratch contract for report runs", () => {
+		const agent: AgentConfig = {
+			name: "scout",
+			description: "d",
+			model: "default",
+			systemPrompt: "You are a scout.",
+			source: "builtin",
+			filePath: "/s.md",
+			deliverable: false,
+		};
+		const { prompt } = buildToolArgs(agent, { kind: "report" });
+		assert.match(prompt ?? "", /detached scratch workspace/);
+		assert.match(prompt ?? "", /your report is your only deliverable/i);
+	});
+
+	it("keeps default prompt assembly for persona-less runs: contract rides in the task text", () => {
+		const { args, prompt } = buildToolArgs(null, { kind: "report" });
+		assert.equal(prompt, null, "no --agent-prompt for ad-hoc runs");
+		assert.match(args.at(-1) ?? "", /## Workspace contract/);
+		assert.match(args.at(-1) ?? "", /Task: inspect tools/);
+	});
+
+	it("uses the detached-answer variant for asks (in the task text)", () => {
+		const { args, prompt } = buildToolArgs(null, { kind: "ask" });
+		assert.equal(prompt, null);
+		assert.match(args.at(-1) ?? "", /detached snapshot workspace/);
+		assert.match(args.at(-1) ?? "", /nothing you write here survives/i);
+	});
+
+	it("omits the contract when the run has no isolated workspace", () => {
+		const { args, prompt } = buildToolArgs(null, null);
+		assert.equal(prompt, null);
+		assert.doesNotMatch(args.at(-1) ?? "", /Workspace contract/);
 	});
 });
 
 describe("buildPiArgs skill discovery", () => {
 	it("never disables skill discovery for subagents", () => {
-		assert.equal(buildToolArgs(null).includes("--no-skills"), false);
+		assert.equal(buildToolArgs(null).args.includes("--no-skills"), false);
 	});
 });
 

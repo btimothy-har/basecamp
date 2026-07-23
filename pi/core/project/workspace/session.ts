@@ -106,7 +106,7 @@ async function sweepAgentWorktreesForSession(
 		const state = requireWorkspaceState();
 		if (!state.repo) return;
 
-		const result = await sweepAgentWorktrees(pi, state.repo.root);
+		const result = await sweepAgentWorktrees(pi, state.repo.root, state.repo.name);
 		if (result.removed.length > 0) {
 			ctx.ui.notify(`basecamp: reclaimed ${result.removed.length} merged agent worktree(s)`, "info");
 		}
@@ -194,7 +194,10 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 				const msg = err instanceof Error ? err.message : String(err);
 				ctx.ui.notify(`basecamp: worktree attach failed — ${msg}`, "error");
 			}
-		} else if (WORKTREE_STATE_RESTORE_REASONS.has(event.reason)) {
+		} else if (!isSubagent && WORKTREE_STATE_RESTORE_REASONS.has(event.reason)) {
+			// Worktree-state restore is a human convenience for reopened sessions. Daemon-spawned
+			// runs are born inside their own workspace — a forked ask answerer would otherwise
+			// inherit and re-attach the ask target's live worktree.
 			await restoreActiveWorktreeState(ctx);
 		}
 

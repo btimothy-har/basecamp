@@ -179,7 +179,8 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 			}
 
 			// Implementation plans hand off to work mode: the primary session implements
-			// directly (subagents are read-only). This replaces the old supervisor/IC choice.
+			// directly, delegating file-disjoint tasks to workers when useful. This replaces the
+			// old supervisor/IC choice.
 			setAgentMode("work");
 			startGoalCycle(runtime, {
 				goal: draft.goal.content,

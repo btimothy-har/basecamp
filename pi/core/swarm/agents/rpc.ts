@@ -27,8 +27,18 @@ export interface DaemonDispatchFrameOptions {
 	env: Record<string, string>;
 	resumePath?: string | null;
 	forkFrom?: string | null;
-	// A mutative agent's own worktree; the daemon reaper removes it when the run exits.
+	// The run's own workspace; the daemon force-removes it when the run exits.
 	ownedWorktree?: string | null;
+	// The run's branch (`agent/<handle>`; null for detached ask workspaces) and the commit
+	// OID it started from. Teardown deletes the branch only when this run minted it
+	// (branchCreated) and it gained no commits past branchBase.
+	ownedBranch?: string | null;
+	branchBase?: string | null;
+	branchCreated?: boolean;
+	// Fired once the dispatch frame has been written to the socket. After this point a failure
+	// to receive the ack is ambiguous — the daemon may own the run — so the caller must not
+	// discard the workspace and should leave teardown to the daemon's reap/reconcile chain.
+	onSent?: () => void;
 }
 
 export interface DaemonDispatchResult {
@@ -170,8 +180,13 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 					resume_path: input.resumePath ?? null,
 					fork_from: input.forkFrom ?? null,
 					owned_worktree: input.ownedWorktree ?? null,
+					owned_branch: input.ownedBranch ?? null,
+					branch_base: input.branchBase ?? null,
+					branch_created: input.branchCreated ?? false,
 				},
 			});
+
+			input.onSent?.();
 
 			const ack = await waitForFrame(connection, "dispatch_ack", (frame) => frame.run_id === runId);
 			return {

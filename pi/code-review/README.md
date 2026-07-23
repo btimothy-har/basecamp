@@ -1,6 +1,6 @@
 # code-review
 
-A primary-only, user-invoked independent review of the current branch. `/skill:code-review [base]` dispatches fixed and risk-driven read-only reviewers; the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill is hidden from model invocation and never exposed in subagents.
+A primary-only, user-invoked independent review of the current branch. `/skill:code-review [base]` dispatches fixed and risk-driven report-only reviewers; the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill is hidden from model invocation and never exposed in subagents.
 
 ## Review method
 
@@ -12,7 +12,7 @@ Reviewers may inspect PR descriptions, commits, and linked issues for claimed in
 
 1. Resolve the current branch, base, merge base, tracked working-tree changes, and untracked files.
 2. Inspect the actual diff only far enough to map material risk surfaces without authoring findings.
-3. Dispatch seven fixed read-only lenses: security, testing, docs, clarity, conventions, general correctness, and integration.
+3. Dispatch seven fixed report-only lenses: security, testing, docs, clarity, conventions, general correctness, and integration.
 4. Dispatch focused adaptive `general-reviewer`s for each material data/migration, API/protocol, UI/data, async/retry, concurrency/state, performance, build/deploy, or broad-refactor aspect; add another narrow specialist only when its lens needs an independent second pass.
 5. Wait for all reviewers and record any coverage failures.
 6. Verify and normalize reports, merge only semantic duplicates, preserve unique substantive findings, and dispatch independent verification for any concern first noticed by the primary.

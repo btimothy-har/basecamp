@@ -9,7 +9,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { isWithin } from "../../host/paths.ts";
-import { type AgentConfig, getAgentToolAllowlist, getMutativeAgentToolAllowlist } from "./types.ts";
+import { type AgentConfig, getAgentToolAllowlist, getWorkspacelessAgentToolAllowlist } from "./types.ts";
 
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
@@ -66,15 +66,21 @@ export function buildAgentRunName(prefix: string, suffix?: string): string {
 	return `${normalizedPrefix}-${normalizedSuffix}`;
 }
 
+/**
+ * The run's workspace posture, driving the contract layer of the agent prompt and the
+ * toolset: a deliverable run works on its own branch, report/ask runs use branchless
+ * detached scratch workspaces, and a non-repo run has no workspace — and therefore no
+ * structured mutation tools (capability follows workspace).
+ */
+export type RunWorkspace = { kind: "deliverable"; branch: string } | { kind: "report" } | { kind: "ask" } | null;
+
 export interface PiArgsOpts {
 	name: string;
 	model: string | undefined;
-	worktreeDir?: string | null;
 	sessionDir: string;
 	sessionId?: string;
 	extensionTools: string[];
-	// Fail-closed: read-only ⇒ --read-only + no-write toolset; mutative ⇒ own worktree + write/edit.
-	readOnly: boolean;
+	workspace: RunWorkspace;
 }
 
 export function ensureAgentDir(name: string): string {
@@ -85,6 +91,28 @@ export function ensureAgentDir(name: string): string {
 	}
 	fs.mkdirSync(dir, { recursive: true });
 	return dir;
+}
+
+function workspaceContract(workspace: RunWorkspace): string | null {
+	if (!workspace) return null;
+	if (workspace.kind === "ask") {
+		return `## Workspace contract
+
+You are answering a question from a detached snapshot workspace. It is discarded when this run ends — nothing you write here survives, so do not produce work products. Read whatever you need, then answer.`;
+	}
+	if (workspace.kind === "report") {
+		return `## Workspace contract
+
+You work in your own detached scratch workspace — a disposable copy of the parent's current state. It is discarded entirely when this run ends: **your report is your only deliverable**. Write freely for exploration (notes, experiments, builds); nothing here survives and commits are pointless. Never write outside your workspace.`;
+	}
+	return `## Workspace contract
+
+You work in your own transient git workspace on branch \`${workspace.branch}\`. The workspace is discarded when this run ends — **only commits on your branch survive**.
+
+- Commit deliverable work (\`git add\` + \`git commit\`) at logical checkpoints; the parent integrates your branch by merge.
+- Do not commit scratch or exploration files — uncommitted state is discarded by design, so the tree is free scratch space.
+- If you are re-tasked later you continue on this same branch: your earlier commits are already in your tree, or already merged into your base.
+- Never write outside your workspace.`;
 }
 
 export function buildAgentTaskText(task: string): string {
@@ -107,7 +135,6 @@ export function buildPiArgs(
 	const args = ["pi", "--mode", "json", "-p"];
 
 	if (opts.model) args.push("--model", opts.model);
-	if (opts.worktreeDir) args.push("--worktree-dir", opts.worktreeDir);
 
 	const thinkingLevel = normalizeThinkingLevel(agent?.thinking);
 	if (thinkingLevel) args.push("--thinking", thinkingLevel);
@@ -118,23 +145,24 @@ export function buildPiArgs(
 
 	args.push("--no-prompt-templates");
 
-	// Read-only agents get --read-only; a mutative agent instead works (and commits) in its
-	// own worktree, which the parent integrates by merge.
-	if (opts.readOnly) args.push("--read-only");
-
-	const effectivePrompt = agent?.systemPrompt ?? null;
-
-	if (effectivePrompt) {
+	// A persona replaces the default prompt assembly, so its contract rides in the prompt
+	// file. A persona-less run keeps the full default assembly (posture, working style) —
+	// its contract rides in the task text instead of suppressing that assembly.
+	const contract = workspaceContract(opts.workspace);
+	if (agent?.systemPrompt) {
 		const promptFile = path.join(agentDir, "prompt.md");
-		fs.writeFileSync(promptFile, effectivePrompt, { mode: 0o600 });
+		fs.writeFileSync(promptFile, [agent.systemPrompt, contract].filter(Boolean).join("\n\n"), { mode: 0o600 });
 		args.push("--agent-prompt", promptFile);
 	}
 
-	const baseTools = opts.readOnly ? getAgentToolAllowlist() : getMutativeAgentToolAllowlist();
+	const baseTools = opts.workspace ? getAgentToolAllowlist() : getWorkspacelessAgentToolAllowlist();
 	const tools = [...new Set([...baseTools, ...opts.extensionTools])];
 	args.push("--tools", tools.join(","));
 
-	const taskText = buildAgentTaskText(task);
+	// Mirror of the routing above: persona-less run with a contract ⇒ contract prepended here;
+	// otherwise it already went in the prompt file (persona) or there is none.
+	const taskText =
+		agent?.systemPrompt || !contract ? buildAgentTaskText(task) : `${contract}\n\n${buildAgentTaskText(task)}`;
 	if (taskText.length > TASK_ARG_LIMIT) {
 		const taskFile = path.join(agentDir, "task.md");
 		fs.writeFileSync(taskFile, taskText, { mode: 0o600 });

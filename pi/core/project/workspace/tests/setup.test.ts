@@ -34,7 +34,7 @@ function createPi(result: ExecResult, onExec?: () => void): { pi: ExtensionAPI; 
 }
 
 describe("runWorktreeSetup", () => {
-	it("runs bash with the default timeout and returns success", async () => {
+	it("runs the hook via env(1) with the default timeout and returns success", async () => {
 		const command = "uv sync";
 		const worktreeDir = "/worktree";
 		const repoRoot = "/repo";
@@ -44,8 +44,10 @@ describe("runWorktreeSetup", () => {
 
 		assert.deepEqual(result, { ran: true, exitCode: 0, timedOut: false, stderrTail: "" });
 		assert.equal(calls.length, 1);
-		assert.equal(calls[0]?.command, "bash");
-		assert.deepEqual(calls[0]?.args, ["-lc", command]);
+		assert.equal(calls[0]?.command, "env");
+		// BASECAMP_REPO_ROOT rides on the hook's own environment — never a process.env mutation,
+		// which would race concurrent dispatch provisioning.
+		assert.deepEqual(calls[0]?.args, [`BASECAMP_REPO_ROOT=${repoRoot}`, "bash", "-lc", command]);
 		assert.equal(calls[0]?.options?.cwd, worktreeDir);
 		assert.equal(calls[0]?.options?.timeout, 180_000);
 	});
@@ -76,53 +78,19 @@ describe("runWorktreeSetup", () => {
 		assert.equal(result.stderrTail, "timed out");
 	});
 
-	it("sets repo root env during exec and restores it when previously unset", async () => {
-		const repoRoot = "/repo";
+	it("never mutates the extension process environment", async () => {
 		const prev = process.env.BASECAMP_REPO_ROOT;
 		delete process.env.BASECAMP_REPO_ROOT;
 		try {
 			const { pi } = createPi({ code: 0, stdout: "", stderr: "", killed: false }, () => {
-				assert.equal(process.env.BASECAMP_REPO_ROOT, repoRoot);
+				assert.equal(process.env.BASECAMP_REPO_ROOT, undefined, "no global mutation during exec");
 			});
 
-			await runWorktreeSetup(pi, {
-				command: "true",
-				worktreeDir: "/worktree",
-				repoRoot,
-			});
+			await runWorktreeSetup(pi, { command: "true", worktreeDir: "/worktree", repoRoot: "/repo" });
 
 			assert.equal(process.env.BASECAMP_REPO_ROOT, undefined);
 		} finally {
-			if (prev === undefined) {
-				delete process.env.BASECAMP_REPO_ROOT;
-			} else {
-				process.env.BASECAMP_REPO_ROOT = prev;
-			}
-		}
-	});
-
-	it("sets repo root env during exec and restores a previous value", async () => {
-		const repoRoot = "/repo";
-		const prev = process.env.BASECAMP_REPO_ROOT;
-		process.env.BASECAMP_REPO_ROOT = "previous";
-		try {
-			const { pi } = createPi({ code: 0, stdout: "", stderr: "", killed: false }, () => {
-				assert.equal(process.env.BASECAMP_REPO_ROOT, repoRoot);
-			});
-
-			await runWorktreeSetup(pi, {
-				command: "true",
-				worktreeDir: "/worktree",
-				repoRoot,
-			});
-
-			assert.equal(process.env.BASECAMP_REPO_ROOT, "previous");
-		} finally {
-			if (prev === undefined) {
-				delete process.env.BASECAMP_REPO_ROOT;
-			} else {
-				process.env.BASECAMP_REPO_ROOT = prev;
-			}
+			if (prev !== undefined) process.env.BASECAMP_REPO_ROOT = prev;
 		}
 	});
 

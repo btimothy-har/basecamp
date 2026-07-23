@@ -22,8 +22,14 @@ class DispatchSpec(BaseModel):
     resume_path: str | None
     fork_from: str | None = None
     task: str
-    # A mutative agent's own worktree; the reaper removes it when the run exits (keeping its branch).
+    # Every dispatched run owns a workspace; the reaper removes it at run end. Deliverable
+    # (worker) runs additionally carry branch fields; report/ask runs pass owned_branch=None.
+    # The branch is durable except when this run minted it (branch_created) and has zero
+    # commits ahead of branch_base — then it is deleted too (nothing happened).
     owned_worktree: str | None = None
+    owned_branch: str | None = None
+    branch_base: str | None = None
+    branch_created: bool = False
 
 
 class DispatchFrame(ProtocolFrame):

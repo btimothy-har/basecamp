@@ -99,7 +99,11 @@ export async function selectWorktreeTarget(
 export const HANDOFF_COMPACTION_THRESHOLD_PERCENT = 30;
 
 export function buildHandoffMessage(): string {
-	return "Plan looks good — proceed with direct implementation.";
+	return [
+		"Plan looks good — proceed with implementation.",
+		"Where plan tasks are independent (file-disjoint), consider dispatching worker agents to implement them in parallel and merging their branches as they finish;",
+		"implement coupled or cross-cutting tasks directly.",
+	].join(" ");
 }
 
 export function buildWorktreeActivationFailedResult(label: string, error: unknown): string {

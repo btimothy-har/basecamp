@@ -17,6 +17,7 @@ function createHarness(
 	options: {
 		state?: WorkspaceState;
 		readOnly?: boolean;
+		subagent?: boolean;
 		status?: { code: number; stdout: string; stderr: string; killed?: boolean };
 		execError?: Error;
 		sendError?: Error;
@@ -69,6 +70,7 @@ function createHarness(
 	registerDirtyWorktreeReminder(pi, {
 		getState: () => state,
 		isReadOnly: () => options.readOnly === true,
+		isSubagent: () => options.subagent === true,
 	});
 	assert.equal(registeredMessageStart, true);
 	assert.equal(registeredEnd, true);
@@ -145,6 +147,39 @@ describe("dirty worktree reminder", () => {
 		await harness.end();
 
 		assert.deepEqual(harness.sent, []);
+	});
+
+	it("uses the teardown-aware variant for dispatched deliverable agents", async () => {
+		const harness = createHarness({ subagent: true });
+
+		await harness.end();
+
+		assert.equal(harness.sent.length, 1);
+		assert.match(harness.sent[0]?.message.content ?? "", /discarded at teardown/);
+		assert.match(harness.sent[0]?.message.content ?? "", /only commits on your branch survive/);
+		assert.match(harness.sent[0]?.message.content ?? "", /scratch or exploration files/);
+	});
+
+	// A detached report/ask workspace adopts with branch: null (verified in service-cwd.test.ts
+	// "recognizes a detached-HEAD linked worktree as branchless"); here we assert null → skip.
+	it("stays silent for branchless agent workspaces (report/ask runs)", async () => {
+		const harness = createHarness({
+			subagent: true,
+			state: activeWorktreeState({
+				activeWorktree: {
+					kind: "git-worktree",
+					label: "agent-abc/scout",
+					path: WORKTREE_DIR,
+					branch: null,
+					created: false,
+				},
+			}),
+		});
+
+		await harness.end();
+
+		assert.equal(harness.sent.length, 0, "scratch workspaces are dirty by design");
+		assert.equal(harness.execCalls(), 0, "no status probe for branchless agent workspaces");
 	});
 
 	it("does not inspect worktrees for read-only agents", async () => {

@@ -21,6 +21,7 @@ interface GitWorktreeRecord {
 	path: string;
 	branch: string | null;
 	locked: boolean;
+	lockReason: string | null;
 }
 
 export function parseWorktreeList(output: string): GitWorktreeRecord[] {
@@ -35,12 +36,13 @@ export function parseWorktreeList(output: string): GitWorktreeRecord[] {
 		}
 		if (line.startsWith("worktree ")) {
 			if (current) records.push(current);
-			current = { path: line.slice("worktree ".length), branch: null, locked: false };
+			current = { path: line.slice("worktree ".length), branch: null, locked: false, lockReason: null };
 		} else if (current && line.startsWith("branch ")) {
 			const ref = line.slice("branch ".length);
 			current.branch = ref.startsWith("refs/heads/") ? ref.slice("refs/heads/".length) : ref;
 		} else if (current && (line === "locked" || line.startsWith("locked "))) {
 			current.locked = true;
+			current.lockReason = line === "locked" ? null : line.slice("locked ".length);
 		}
 	}
 
@@ -123,7 +125,7 @@ export function validateNoSymlinkedWorktreePath(worktreeDir: string, root = WORK
 	}
 }
 
-// `agent-<id>` is the reserved namespace for dispatched mutative-agent worktrees.
+// `agent-<id>` is the reserved namespace for dispatched agents' transient workspaces.
 // Distinct `agent-` prefix ⇒ disjoint from the
 // human-facing `wt-xx` / `copilot` namespaces, so no user label can collide.
 const NESTED_WORKTREE_NAMESPACE_RE = /^(?:wt-[a-z0-9]{2}|copilot|agent-[a-z0-9]+)$/;

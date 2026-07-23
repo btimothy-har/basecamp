@@ -1,11 +1,10 @@
 /**
- * Worktree lifecycle primitives for dispatched mutative agents.
+ * Worktree lifecycle primitives for dispatched agents.
  *
- * Pure git verbs (create-from-ref, lock, unlock, remove) with no session state — the
+ * Pure git verbs (create-with-checkout, lock, unlock, remove) with no session state — the
  * confinement guard and the dispatch orchestration that use these live elsewhere.
- * `createAgentWorktree` branches an agent's own worktree
- * from the parent's HEAD and locks it atomically; the parent later integrates the branch by merge and
- * tears the worktree down.
+ * `createAgentWorktree` materializes an agent's own worktree — on a new branch, an existing
+ * branch, or detached — and locks it atomically; teardown at run end reclaims it.
  */
 
 import * as fs from "node:fs";
@@ -17,7 +16,6 @@ import {
 	findWorktreeRecord,
 	gitWorktreeRecords,
 	validateNoSymlinkedWorktreePath,
-	type WorktreeResult,
 } from "./crud.ts";
 
 const GIT_TIMEOUT_MS = 30_000;
@@ -71,21 +69,47 @@ export async function deleteBranch(pi: ExtensionAPI, repoRoot: string, branch: s
 	}
 }
 
+/** How an agent worktree checks out: a fresh branch at a base, an existing branch, or detached. */
+export type AgentCheckout =
+	| { kind: "new-branch"; branch: string; baseRef: string }
+	| { kind: "existing-branch"; branch: string }
+	| { kind: "detached"; baseRef: string };
+
+export interface AgentWorktreeResult {
+	worktreeDir: string;
+	label: string;
+	/** The checked-out branch, or null for a detached workspace. */
+	branch: string | null;
+}
+
+function checkoutArgs(checkout: AgentCheckout, worktreeDir: string): string[] {
+	switch (checkout.kind) {
+		case "new-branch":
+			return ["-b", checkout.branch, worktreeDir, checkout.baseRef];
+		case "existing-branch":
+			return [worktreeDir, checkout.branch];
+		case "detached":
+			return ["--detach", worktreeDir, checkout.baseRef];
+	}
+}
+
+export const AGENT_LOCK_REASON_PREFIX = "basecamp agent run";
+
 /**
- * Create a dispatched agent's own worktree, branched from `baseRef` (the parent's HEAD) on
- * a branch equal to `label` (`agent-<id>/<name>`), then lock it. Unlike `getOrCreateWorktree`,
- * this does NOT run `validateProtectedCheckout`: an agent worktree branches from the parent's
- * tree, not from a clean protected checkout. Creation and locking use one git command so no
- * cleanup process can observe an unlocked live worktree.
+ * Create a dispatched agent's own worktree per `checkout`, then lock it. Unlike
+ * `getOrCreateWorktree`, this does NOT run `validateProtectedCheckout`: an agent worktree
+ * bases on the parent's tree, not on a clean protected checkout. Creation and locking use
+ * one git command so no cleanup process can observe an unlocked live worktree.
  */
 export async function createAgentWorktree(
 	pi: ExtensionAPI,
 	repoRoot: string,
 	repoName: string,
 	label: string,
-	baseRef: string,
-	lockReason = "basecamp agent run",
-): Promise<WorktreeResult> {
+	checkout: AgentCheckout,
+	// The timestamp lets the session-start sweep age-gate provably-stale locked residue.
+	lockReason = `${AGENT_LOCK_REASON_PREFIX} ${new Date().toISOString()}`,
+): Promise<AgentWorktreeResult> {
 	ensureWorktreeLabel(label);
 	const worktreeDir = path.join(WORKTREES_ROOT, repoName, label);
 	validateNoSymlinkedWorktreePath(worktreeDir);
@@ -101,7 +125,7 @@ export async function createAgentWorktree(
 	fs.mkdirSync(path.dirname(worktreeDir), { recursive: true });
 	const result = await pi.exec(
 		"git",
-		["-C", repoRoot, "worktree", "add", "--lock", "--reason", lockReason, "-b", label, worktreeDir, baseRef],
+		["-C", repoRoot, "worktree", "add", "--lock", "--reason", lockReason, ...checkoutArgs(checkout, worktreeDir)],
 		{ timeout: GIT_TIMEOUT_MS },
 	);
 	if (result.code !== 0) {
@@ -109,7 +133,7 @@ export async function createAgentWorktree(
 			const partial = findWorktreeRecord(await gitWorktreeRecords(pi, repoRoot), worktreeDir);
 			if (partial) {
 				await removeWorktree(pi, repoRoot, worktreeDir, { force: true }).catch(() => {});
-				await deleteBranch(pi, repoRoot, label).catch(() => {});
+				if (checkout.kind === "new-branch") await deleteBranch(pi, repoRoot, checkout.branch).catch(() => {});
 			}
 		} catch {
 			// Git normally rolls back a failed atomic add; leave any unprovable residue untouched.
@@ -117,5 +141,5 @@ export async function createAgentWorktree(
 		throw new Error(`Failed to create and lock agent worktree: ${result.stderr}`);
 	}
 
-	return { worktreeDir, label, branch: label, created: true };
+	return { worktreeDir, label, branch: checkout.kind === "detached" ? null : checkout.branch };
 }

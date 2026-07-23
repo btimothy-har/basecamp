@@ -1,3 +1,6 @@
+import { randomUUID } from "node:crypto";
+import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 
@@ -32,6 +35,61 @@ export async function detectDefaultBranch(pi: ExtensionAPI, repoRoot: string): P
 
 export async function branchExists(pi: ExtensionAPI, repoRoot: string, branch: string): Promise<boolean> {
 	return (await tryGitOutput(pi, repoRoot, ["rev-parse", "--verify", `refs/heads/${branch}`])) !== null;
+}
+
+/** Tip commit OID of a local branch, or null when the branch does not exist. */
+export async function branchTip(pi: ExtensionAPI, repoRoot: string, branch: string): Promise<string | null> {
+	return await tryGitOutput(pi, repoRoot, ["rev-parse", "--verify", "--quiet", `refs/heads/${branch}`]);
+}
+
+/** True if `branch` has been merged into `candidate` (is an ancestor of it). */
+export async function isMergedInto(
+	pi: ExtensionAPI,
+	repoRoot: string,
+	branch: string,
+	candidate: string,
+): Promise<boolean> {
+	const result = await pi.exec("git", ["-C", repoRoot, "merge-base", "--is-ancestor", branch, candidate], {
+		timeout: 15_000,
+	});
+	return result.code === 0;
+}
+
+/** True when the worktree has no uncommitted or untracked changes. */
+export async function isWorktreeClean(pi: ExtensionAPI, worktreeDir: string): Promise<boolean> {
+	return (await gitOutput(pi, worktreeDir, ["status", "--porcelain"])) === "";
+}
+
+const SNAPSHOT_TIMEOUT_MS = 60_000;
+
+/**
+ * Commit the worktree's current state (tracked + untracked, minus ignored) as a snapshot
+ * object without touching the worktree's tree, index, or HEAD. Uses a throwaway index via
+ * GIT_INDEX_FILE (through env(1), since pi.exec cannot set environment variables), so the
+ * real index never sees the staging. Returns the snapshot commit OID, parented on HEAD.
+ */
+export async function createSnapshotCommit(pi: ExtensionAPI, worktreeDir: string): Promise<string> {
+	const indexFile = path.join(os.tmpdir(), `basecamp-snapshot-${randomUUID()}.index`);
+	const run = async (args: string[]): Promise<string> => {
+		const result = await pi.exec("env", [`GIT_INDEX_FILE=${indexFile}`, "git", "-C", worktreeDir, ...args], {
+			timeout: SNAPSHOT_TIMEOUT_MS,
+		});
+		if (result.code !== 0) {
+			throw new Error(`Snapshot commit failed (git ${args[0]}): ${result.stderr.trim()}`);
+		}
+		return result.stdout.trim();
+	};
+	try {
+		// Seed from HEAD so ignore rules only affect genuinely untracked files: with an empty
+		// index, `add -A` would silently drop tracked-but-ignored files, recording them as
+		// deletions in the snapshot tree.
+		await run(["read-tree", "HEAD"]);
+		await run(["add", "-A"]);
+		const tree = await run(["write-tree"]);
+		return await run(["commit-tree", tree, "-p", "HEAD", "-m", "basecamp dispatch snapshot"]);
+	} finally {
+		fs.rmSync(indexFile, { force: true });
+	}
 }
 
 export function deriveRepoIdentity(remoteUrl: string | null, fallbackBasename: string): string {

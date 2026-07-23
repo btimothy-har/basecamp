@@ -12,7 +12,7 @@ from dispatch_helpers import _FakePidProcess
 
 from basecamp.hub.registry import Registry, Waiter
 from basecamp.hub.store import Store
-from basecamp.hub.swarm.process import reclaim_agent_worktree, reconcile_orphaned_runs
+from basecamp.hub.swarm.process import reconcile_orphaned_runs, teardown_agent_workspace
 from basecamp.hub.swarm.run_result import (
     FinalRunResult,
     RunResultSidecar,
@@ -249,6 +249,7 @@ def test_reconcile_orphaned_runs_marks_nonterminal_failed(
     store.set_run_pgid(run_id="run-running", pgid=321)
     store.set_run_pgid(run_id="run-pending", pgid=654)
     monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: False)
 
     reconcile_orphaned_runs(store)
 
@@ -301,6 +302,7 @@ def test_reconcile_orphaned_runs_kills_verified_runner_group(
         calls.append((pgid or 0, escalation_s, poll_s))
 
     monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group_if_runner", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: False)
 
     reconcile_orphaned_runs(store)
 
@@ -325,6 +327,7 @@ def test_reconcile_orphaned_runs_skips_unverified_group_but_marks_failed(
 
     monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
     monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", record_terminate)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: False)
 
     reconcile_orphaned_runs(store)
 
@@ -335,7 +338,7 @@ def test_reconcile_orphaned_runs_skips_unverified_group_but_marks_failed(
     assert run["error"] == "daemon_restart_reconciled"
 
 
-def test_reclaim_agent_worktree_removes_from_main_root(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_teardown_force_removes_worktree_from_main_root(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
     def fake_run(args: list[str], **_kwargs: object) -> SimpleNamespace:
@@ -346,17 +349,68 @@ def test_reclaim_agent_worktree_removes_from_main_root(monkeypatch: pytest.Monke
 
     monkeypatch.setattr("basecamp.hub.swarm.process.subprocess.run", fake_run)
 
-    reclaim_agent_worktree("/wt/agent-abc/worker")
+    teardown_agent_workspace("/wt/agent-abc/worker")
 
-    # Resolve the common git dir, then unlock + remove WITHOUT --force so git refuses (preserves)
-    # a dirty tree — an agent that exited without committing never loses its diff silently.
     assert ["git", "-C", "/wt/agent-abc/worker", "rev-parse", "--path-format=absolute", "--git-common-dir"] in calls
     assert ["git", "-C", "/home/u/repo", "worktree", "unlock", "/wt/agent-abc/worker"] in calls
-    assert ["git", "-C", "/home/u/repo", "worktree", "remove", "/wt/agent-abc/worker"] in calls
-    assert not any("--force" in call for call in calls)
+    # --force: dirty state is discarded by design; commits are the only durable output.
+    assert ["git", "-C", "/home/u/repo", "worktree", "remove", "--force", "/wt/agent-abc/worker"] in calls
+    assert not any("branch" in call and "-D" in call for call in calls)
 
 
-def test_reclaim_agent_worktree_skips_when_common_dir_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize(
+    ("branch_created", "rev_list_count", "rev_list_fail", "expect_delete"),
+    [
+        (True, 0, False, True),
+        (True, 3, False, False),
+        (False, 0, False, False),
+        (True, 0, True, False),
+    ],
+)
+def test_teardown_branch_deletion_decision(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    branch_created: bool,
+    rev_list_count: int,
+    rev_list_fail: bool,
+    expect_delete: bool,
+) -> None:
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], **_kwargs: object) -> SimpleNamespace:
+        calls.append(args)
+        if "rev-parse" in args:
+            return SimpleNamespace(returncode=0, stdout="/home/u/repo/.git\n", stderr="")
+        if "rev-list" in args:
+            if rev_list_fail:
+                return SimpleNamespace(returncode=1, stdout="", stderr="bad ref")
+            return SimpleNamespace(returncode=0, stdout=f"{rev_list_count}\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr("basecamp.hub.swarm.process.subprocess.run", fake_run)
+
+    teardown_agent_workspace(
+        "/wt/agent/worker",
+        branch="agent/worker",
+        branch_base="abc123",
+        branch_created=branch_created,
+    )
+
+    remove_calls = [c for c in calls if "remove" in c]
+    assert remove_calls and "--force" in remove_calls[0]
+
+    branch_delete_calls = [c for c in calls if "branch" in c and "-D" in c]
+    assert bool(branch_delete_calls) == expect_delete
+
+    rev_list_calls = [c for c in calls if "rev-list" in c]
+    assert bool(rev_list_calls) == branch_created
+
+    if expect_delete:
+        # git refuses to delete a checked-out branch, so deletion must follow worktree removal.
+        assert calls.index(branch_delete_calls[0]) > calls.index(remove_calls[0])
+
+
+def test_teardown_skips_when_common_dir_unresolved(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
     def fake_run(args: list[str], **_kwargs: object) -> SimpleNamespace:
@@ -365,29 +419,73 @@ def test_reclaim_agent_worktree_skips_when_common_dir_unresolved(monkeypatch: py
 
     monkeypatch.setattr("basecamp.hub.swarm.process.subprocess.run", fake_run)
 
-    reclaim_agent_worktree("/gone")
+    teardown_agent_workspace("/gone", branch="agent/worker", branch_base="abc", branch_created=True)
 
-    # The rev-parse probe fails, so no `worktree remove` is attempted.
     assert all("remove" not in args for args in calls)
+    assert all("branch" not in args for args in calls)
 
 
-def test_reconcile_orphaned_runs_reclaims_owned_worktree(
+def test_reconcile_orphaned_runs_teardown_with_branch_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # A run orphaned by a daemon crash never fired its reaper, so reconciliation must reclaim
-    # its worktree — the sweep can't (the crash-interrupted branch is not merged yet).
+    # A run orphaned by a daemon crash never fired its reaper, so reconciliation must tear down
+    # its workspace — the sweep can't (the crash-interrupted branch is not merged yet).
     store = Store(db_path=tmp_path / "daemon.db")
-    reclaimed: list[str] = []
-    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
-    monkeypatch.setattr("basecamp.hub.swarm.process.reclaim_agent_worktree", reclaimed.append)
+    teardowns: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: True)
+    monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
+    monkeypatch.setattr(
+        "basecamp.hub.swarm.process.teardown_agent_workspace",
+        lambda wt, **kw: teardowns.append((wt, kw)),
+    )
     store.create_run(
         run_id="run-owns-wt",
         agent_id="agent-owns-wt",
         dispatcher_id="root",
-        spec={"owned_worktree": "/wt/agent-xyz/worker"},
+        spec={
+            "owned_worktree": "/wt/agent-xyz/worker",
+            "owned_branch": "agent/xyz",
+            "branch_base": "abc123",
+            "branch_created": True,
+        },
     )
+    store.set_run_pgid(run_id="run-owns-wt", pgid=4321)
 
     reconcile_orphaned_runs(store)
 
-    assert reclaimed == ["/wt/agent-xyz/worker"]
+    assert teardowns == [
+        (
+            "/wt/agent-xyz/worker",
+            {"branch": "agent/xyz", "branch_base": "abc123", "branch_created": True, "force": True},
+        ),
+    ]
+
+
+def test_reconcile_orphaned_runs_pre_upgrade_spec_non_force_removes_worktree(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Pre-upgrade spec_json lacks the branch_created key; reconcile passes force=False to
+    # preserve the old contract's dirty-residual behavior during the one-time upgrade window.
+    store = Store(db_path=tmp_path / "daemon.db")
+    teardowns: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: True)
+    monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
+    monkeypatch.setattr(
+        "basecamp.hub.swarm.process.teardown_agent_workspace",
+        lambda wt, **kw: teardowns.append((wt, kw)),
+    )
+    store.create_run(
+        run_id="run-legacy",
+        agent_id="agent-legacy",
+        dispatcher_id="root",
+        spec={"owned_worktree": "/wt/agent/legacy"},
+    )
+    store.set_run_pgid(run_id="run-legacy", pgid=4322)
+
+    reconcile_orphaned_runs(store)
+
+    assert teardowns == [
+        ("/wt/agent/legacy", {"branch": None, "branch_base": None, "branch_created": False, "force": False}),
+    ]

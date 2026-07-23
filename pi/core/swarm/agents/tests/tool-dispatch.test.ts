@@ -12,7 +12,6 @@ import {
 	daemonToolDeps,
 	installDaemonToolTestHooks,
 	MockConnection,
-	setCurrentWorkspaceState,
 	toolByName,
 	trackSkillInvocation,
 } from "./harness.ts";
@@ -179,110 +178,5 @@ describe("dispatch_agent", () => {
 			reason: null,
 		});
 		await executePromise;
-	});
-
-	it("dispatch_agent prefers protected root cwd and still passes --worktree-dir", async () => {
-		trackSkillInvocation("agents");
-		setCurrentWorkspaceState({
-			launchCwd: "/wt",
-			effectiveCwd: "/wt",
-			scratchDir: "/tmp/pi/repo",
-			unsafeEdit: false,
-			repo: {
-				root: "/repo-root",
-				isRepo: true,
-				name: "repo",
-				remoteUrl: null,
-			},
-			protectedRoot: "/repo-root",
-			activeWorktree: {
-				path: "/wt",
-				kind: "git-worktree",
-				label: "wt",
-				branch: null,
-				created: false,
-			},
-		});
-
-		try {
-			const connection = new MockConnection();
-			const { pi, tools } = createMockPi();
-			registerDaemonTools(pi, async () => connection, daemonToolDeps);
-			const dispatchTool = toolByName(tools, "dispatch_agent");
-
-			const executePromise = dispatchTool.execute(
-				"1",
-				{ task: "hello world" },
-				new AbortController().signal,
-				() => {},
-				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
-			);
-
-			await new Promise((resolve) => setImmediate(resolve));
-			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
-			assert.equal(outbound.spec.cwd, "/repo-root");
-			const worktreeDirIndex = outbound.spec.argv.indexOf("--worktree-dir");
-			assert.notEqual(worktreeDirIndex, -1);
-			assert.equal(outbound.spec.argv[worktreeDirIndex + 1], "/wt");
-
-			connection.emit({
-				type: "dispatch_ack",
-				v: PROTOCOL_VERSION,
-				run_id: outbound.run_id,
-				status: "spawned",
-				reason: null,
-			});
-			await executePromise;
-		} finally {
-			setCurrentWorkspaceState(null);
-		}
-	});
-
-	it("dispatch_agent falls back to repo root cwd when protected root is unavailable", async () => {
-		trackSkillInvocation("agents");
-		setCurrentWorkspaceState({
-			launchCwd: "/launch",
-			effectiveCwd: "/launch",
-			scratchDir: "/tmp/pi/repo",
-			unsafeEdit: false,
-			repo: {
-				root: "/repo-root",
-				isRepo: true,
-				name: "repo",
-				remoteUrl: null,
-			},
-			protectedRoot: null,
-			activeWorktree: null,
-		});
-
-		try {
-			const connection = new MockConnection();
-			const { pi, tools } = createMockPi();
-			registerDaemonTools(pi, async () => connection, daemonToolDeps);
-			const dispatchTool = toolByName(tools, "dispatch_agent");
-
-			const executePromise = dispatchTool.execute(
-				"1",
-				{ task: "hello world" },
-				new AbortController().signal,
-				() => {},
-				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
-			);
-
-			await new Promise((resolve) => setImmediate(resolve));
-			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
-			assert.equal(outbound.spec.cwd, "/repo-root");
-
-			connection.emit({
-				type: "dispatch_ack",
-				v: PROTOCOL_VERSION,
-				run_id: outbound.run_id,
-				status: "spawned",
-				reason: null,
-			});
-			await executePromise;
-		} finally {
-			setCurrentWorkspaceState(null);
-		}
 	});
 });
