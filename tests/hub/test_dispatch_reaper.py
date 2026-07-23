@@ -430,7 +430,8 @@ def test_reconcile_orphaned_runs_teardown_with_branch_fields(
     # its workspace — the sweep can't (the crash-interrupted branch is not merged yet).
     store = Store(db_path=tmp_path / "daemon.db")
     teardowns: list[tuple[str, dict[str, object]]] = []
-    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: True)
+    monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
     monkeypatch.setattr(
         "basecamp.hub.swarm.process.teardown_agent_workspace",
         lambda wt, **kw: teardowns.append((wt, kw)),
@@ -446,23 +447,28 @@ def test_reconcile_orphaned_runs_teardown_with_branch_fields(
             "branch_created": True,
         },
     )
+    store.set_run_pgid(run_id="run-owns-wt", pgid=4321)
 
     reconcile_orphaned_runs(store)
 
     assert teardowns == [
-        ("/wt/agent-xyz/worker", {"branch": "agent/xyz", "branch_base": "abc123", "branch_created": True}),
+        (
+            "/wt/agent-xyz/worker",
+            {"branch": "agent/xyz", "branch_base": "abc123", "branch_created": True, "force": True},
+        ),
     ]
 
 
-def test_reconcile_orphaned_runs_pre_upgrade_spec_force_removes_worktree(
+def test_reconcile_orphaned_runs_pre_upgrade_spec_non_force_removes_worktree(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Pre-upgrade spec_json lacks the branch fields; .get(...) defaults drive worktree-only
-    # force teardown (no branch touch), matching the old clean-only behavior's scope.
+    # Pre-upgrade spec_json lacks the branch_created key; reconcile passes force=False to
+    # preserve the old contract's dirty-residual behavior during the one-time upgrade window.
     store = Store(db_path=tmp_path / "daemon.db")
     teardowns: list[tuple[str, dict[str, object]]] = []
-    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: False)
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: True)
+    monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
     monkeypatch.setattr(
         "basecamp.hub.swarm.process.teardown_agent_workspace",
         lambda wt, **kw: teardowns.append((wt, kw)),
@@ -473,7 +479,10 @@ def test_reconcile_orphaned_runs_pre_upgrade_spec_force_removes_worktree(
         dispatcher_id="root",
         spec={"owned_worktree": "/wt/agent/legacy"},
     )
+    store.set_run_pgid(run_id="run-legacy", pgid=4322)
 
     reconcile_orphaned_runs(store)
 
-    assert teardowns == [("/wt/agent/legacy", {"branch": None, "branch_base": None, "branch_created": False})]
+    assert teardowns == [
+        ("/wt/agent/legacy", {"branch": None, "branch_base": None, "branch_created": False, "force": False}),
+    ]
