@@ -236,13 +236,18 @@ def reconcile_orphaned_runs(store: Store) -> None:
             error=error,
         )
 
-        # A run orphaned by a daemon crash never had its reaper fire, so reclaim its worktree
+        # A run orphaned by a daemon crash never had its reaper fire, so tear down its workspace
         # here — the reaper's counterpart. The merged-worktree sweep can't cover this case: a
         # crash-interrupted run's branch has not been merged yet.
         spec = row.get("spec_json")
         owned_worktree = spec.get("owned_worktree") if isinstance(spec, dict) else None
         if owned_worktree:
-            reclaim_agent_worktree(owned_worktree)
+            teardown_agent_workspace(
+                owned_worktree,
+                branch=spec.get("owned_branch"),
+                branch_base=spec.get("branch_base"),
+                branch_created=spec.get("branch_created", False),
+            )
 
 
 def _reap_outcome(exit_code: int, result_path: str | Path) -> tuple[str, str | None, str | None]:
@@ -268,19 +273,27 @@ def _reap_outcome(exit_code: int, result_path: str | Path) -> tuple[str, str | N
     )
 
 
-def reclaim_agent_worktree(worktree: str) -> None:
-    """Remove a mutative agent's worktree once its run has exited, keeping its branch.
+def teardown_agent_workspace(
+    worktree: str,
+    *,
+    branch: str | None = None,
+    branch_base: str | None = None,
+    branch_created: bool = False,
+) -> None:
+    """Force-remove a dispatched agent's worktree at run end.
 
-    Teardown is the symmetric bookend to provision-at-dispatch: the run is over, so the
-    worktree is no longer needed; its committed branch persists
-    as the deliverable for the parent to merge. Best-effort — any failure is left to the
-    session-start sweep backstop. Run from the main checkout (resolved via the common git dir),
-    since a worktree cannot remove itself.
+    The branch is deleted only when this run minted it (branch_created) and it has zero
+    commits ahead of branch_base — then nothing happened, so the branch is removed too.
+    A worktree is transient: dirty state is discarded by design — commits are the only
+    durable output of a run. The branch is durable except when this run created it and
+    nothing was committed (rev-list count base..branch is 0), in which case the branch is
+    deleted too. Ask runs pass branch=None, so only the worktree is removed.
 
-    Removes only a CLEAN worktree: ``git worktree remove`` (no ``--force``) refuses one that
-    still has uncommitted or untracked changes, so an agent that exited without committing
-    never has its diff silently discarded — a dirty tree is left for the parent/sweep. The
-    worktree was locked as a liveness guard, so unlock it first.
+    If common-dir resolution fails the worktree is already gone; return without touching the
+    branch — the session-start sweep is the backstop for orphan branches. Best-effort:
+    subprocess timeouts (15s/30s), OSError suppressed, no raised exceptions. Run from the main
+    checkout (resolved via the common git dir) since a worktree cannot remove itself. Branch
+    deletion happens after worktree removal because git refuses to delete a checked-out branch.
     """
     try:
         common = subprocess.run(
@@ -301,12 +314,28 @@ def reclaim_agent_worktree(worktree: str) -> None:
             timeout=15,
         )
         subprocess.run(
-            ["git", "-C", main_root, "worktree", "remove", worktree],
+            ["git", "-C", main_root, "worktree", "remove", "--force", worktree],
             capture_output=True,
             text=True,
             check=False,
             timeout=30,
         )
+        if branch and branch_created and branch_base:
+            rev_list = subprocess.run(
+                ["git", "-C", main_root, "rev-list", "--count", f"{branch_base}..{branch}"],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=15,
+            )
+            if rev_list.returncode == 0 and rev_list.stdout.strip() == "0":
+                subprocess.run(
+                    ["git", "-C", main_root, "branch", "-D", branch],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=15,
+                )
     except OSError:
         return
 
@@ -320,6 +349,9 @@ async def reap_agent_process(
     on_finalize: ProcessExitHook,
     result_path: str | Path,
     owned_worktree: str | None = None,
+    owned_branch: str | None = None,
+    branch_base: str | None = None,
+    branch_created: bool = False,
 ) -> None:
     exit_code = await process.wait()
     try:
@@ -338,4 +370,10 @@ async def reap_agent_process(
     finally:
         registry.pop_process(run_id)
         if owned_worktree:
-            await asyncio.to_thread(reclaim_agent_worktree, owned_worktree)
+            await asyncio.to_thread(
+                teardown_agent_workspace,
+                owned_worktree,
+                branch=owned_branch,
+                branch_base=branch_base,
+                branch_created=branch_created,
+            )
