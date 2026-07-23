@@ -132,6 +132,7 @@ describe("provisionAgentWorkspace — setup hook", () => {
 describe("discardAgentWorkspace", () => {
 	const provision = (branchCreated: boolean): AgentWorkspaceProvision => ({
 		worktreeDir: "/worktrees/repo/agent-abc123/scout",
+		label: "agent-abc123/scout",
 		branch: "agent/h1",
 		baseOid: "baseoid",
 		branchCreated,

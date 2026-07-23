@@ -90,7 +90,14 @@ describe("provisionAgentWorkspace — dispatch", () => {
 		assert.ok(provision);
 		assert.deepEqual(
 			{ ...provision, worktreeDir: undefined },
-			{ branch, baseOid: "headoid", branchCreated: true, repoRoot: REPO_ROOT, worktreeDir: undefined },
+			{
+				branch,
+				label: "agent-3f9a2c/scout",
+				baseOid: "headoid",
+				branchCreated: true,
+				repoRoot: REPO_ROOT,
+				worktreeDir: undefined,
+			},
 		);
 		assert.equal(provision.worktreeDir, path.join(WORKTREES_ROOT, repoName, "agent-3f9a2c", "scout"));
 		const add = calls.find((c) => has(c, "worktree", "add"));

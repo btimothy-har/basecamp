@@ -15,6 +15,9 @@ export interface DispatchFrame extends ProtocolEnvelope {
 		fork_from?: string | null;
 		task: string;
 		owned_worktree?: string | null;
+		owned_branch?: string | null;
+		branch_base?: string | null;
+		branch_created?: boolean;
 	};
 }
 

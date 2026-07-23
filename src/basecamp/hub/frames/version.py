@@ -20,7 +20,9 @@ from pydantic import BaseModel
 # v24: removes the retired thread_report frame.
 # v25: register metadata facets + self-scoped session_metadata frame; read-only dashboard HTTP surface.
 # v26: removes /runs/messages and narrows /runs/summary to compact-widget fields.
-PROTOCOL_VERSION = 26
+# v27: adds owned_branch/branch_base/branch_created to dispatch specs for unconditional
+#      workspace teardown (force-remove worktree; delete run-minted empty branches).
+PROTOCOL_VERSION = 27
 
 
 class ProtocolFrame(BaseModel):

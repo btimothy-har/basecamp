@@ -30,10 +30,6 @@ export interface AgentConfig {
 	systemPrompt: string;
 	source: "builtin";
 	filePath: string;
-	// Fail-closed: read-only unless the frontmatter explicitly sets `readOnly: false`.
-	// A mutative agent gets its own worktree + write/edit; read-only shares the parent's
-	// worktree with a no-write toolset.
-	readOnly: boolean;
 }
 
 // ============================================================================
@@ -108,7 +104,6 @@ function loadAgentsFromDir(dir: string): AgentConfig[] {
 			systemPrompt: body,
 			source: "builtin",
 			filePath,
-			readOnly: fm.readOnly !== "false",
 		});
 	}
 

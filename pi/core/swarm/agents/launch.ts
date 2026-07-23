@@ -4,8 +4,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getAgentDepth } from "../../host/env.ts";
 import { isWithin } from "../../host/paths.ts";
 import { resolveDaemonPaths } from "../../hub/index.ts";
+import type { AgentWorkspaceProvision } from "./agent-workspace.ts";
 import type { AgentConfig } from "./discovery.ts";
-import { buildAgentRunName, buildPiArgs, sanitizeAgentSpawnEnv } from "./executor.ts";
+import { buildAgentRunName, buildPiArgs, type RunWorkspace, sanitizeAgentSpawnEnv } from "./executor.ts";
 import { resolveModel } from "./model-resolution.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
@@ -56,9 +57,10 @@ export interface SharedAgentLaunchInput {
 	agentId: string;
 	parentSession: string;
 	project: string;
-	// Set for a mutative agent: its own provisioned worktree (Wn). The agent spawns with
-	// cwd=Wn (auto-adopted) instead of repo-root + --worktree-dir. Absent ⇒ read-only path.
-	mutativeWorktreeDir?: string | null;
+	// The run's provisioned workspace. Required for a repo-backed session (fail-closed: a
+	// write-capable agent must never share the parent's tree); null only when the session
+	// has no repo. The agent spawns with cwd inside it and auto-adopts it on startup.
+	agentWorkspace: AgentWorkspaceProvision | null;
 }
 
 export interface SharedAgentLaunchPlan {
@@ -69,7 +71,6 @@ export interface SharedAgentLaunchPlan {
 	environment: Record<string, string>;
 	extensionTools: string[];
 	spawnCwd: string;
-	worktreeDir: string | null;
 	sessionDir: string;
 	sessionId?: string;
 	args: string[];
@@ -84,15 +85,8 @@ export interface SharedAgentLaunchFailure {
 
 export type SharedAgentLaunchResult = { ok: true; plan: SharedAgentLaunchPlan } | SharedAgentLaunchFailure;
 
-function resolveWorkspaceSelection(workspace: LaunchWorkspaceState | null): {
-	cwd: string;
-	worktreeDir: string | null;
-} {
-	const fallback = process.cwd();
-	return {
-		cwd: workspace?.protectedRoot ?? workspace?.repo?.root ?? workspace?.launchCwd ?? fallback,
-		worktreeDir: workspace?.activeWorktree?.path ?? null,
-	};
+function fallbackSpawnCwd(workspace: LaunchWorkspaceState | null): string {
+	return workspace?.launchCwd ?? process.cwd();
 }
 
 function resolveSessionDir(agentId: string): string {
@@ -199,14 +193,14 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 		};
 	}
 
-	// Fail-closed: a mutative agent must have a provisioned worktree, or it would fall back to
-	// the shared parent worktree with write tools.
-	const readOnly = agent?.readOnly ?? true;
-	if (!readOnly && !input.mutativeWorktreeDir) {
+	// Fail-closed: every repo-backed dispatch runs in its own provisioned workspace. A
+	// write-capable agent must never fall back to sharing the parent's tree.
+	const repoBacked = Boolean(input.workspace?.repo?.root);
+	if (repoBacked && !input.agentWorkspace) {
 		return {
 			ok: false,
 			agentLabel: agent?.name ?? "ad-hoc",
-			message: `Mutative agent "${agent?.name ?? ""}" requires a provisioned worktree; none was supplied.`,
+			message: `Agent "${agent?.name ?? "ad-hoc"}" requires a provisioned workspace in a repo-backed session; none was supplied.`,
 		};
 	}
 
@@ -220,22 +214,30 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 		parentSession: input.parentSession,
 		project: input.project,
 	});
+	// Stamp the child env with the agent's own workspace so pre-adoption daemon identity
+	// never reflects the parent's worktree.
+	if (input.agentWorkspace) {
+		environment.BASECAMP_WORKTREE_DIR = input.agentWorkspace.worktreeDir;
+		environment.BASECAMP_WORKTREE_LABEL = input.agentWorkspace.label;
+	}
 	const extensionTools = getBasecampExtensionToolNames(input.pi, input.basecampExtensionRoot);
-	const selection = resolveWorkspaceSelection(input.workspace);
-	// A mutative agent spawns directly in its own worktree (cwd=Wn, auto-adopted via
-	// isLinkedWorktree) instead of repo-root + --worktree-dir.
-	const spawnCwd = input.mutativeWorktreeDir ?? selection.cwd;
-	const worktreeDir = input.mutativeWorktreeDir ? null : selection.worktreeDir;
+	// The agent spawns inside its own workspace (auto-adopted via isLinkedWorktree); only a
+	// non-repo session runs at the launch cwd with no workspace at all.
+	const spawnCwd = input.agentWorkspace?.worktreeDir ?? fallbackSpawnCwd(input.workspace);
+	const runWorkspace: RunWorkspace = input.agentWorkspace
+		? input.agentWorkspace.branch
+			? { kind: "dispatch", branch: input.agentWorkspace.branch }
+			: { kind: "ask" }
+		: null;
 
 	const sessionDir = resolveSessionDir(input.agentId);
 	const { args, agentDir } = buildPiArgs(agent, input.task, {
 		name,
 		model,
-		worktreeDir,
 		sessionDir,
 		sessionId: input.agentId,
 		extensionTools,
-		readOnly,
+		workspace: runWorkspace,
 	});
 
 	return {
@@ -248,7 +250,6 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 			environment,
 			extensionTools,
 			spawnCwd,
-			worktreeDir,
 			sessionDir,
 			sessionId: input.agentId,
 			args,

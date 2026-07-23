@@ -49,6 +49,8 @@ export type AgentWorkspaceRequest =
 
 export interface AgentWorkspaceProvision {
 	worktreeDir: string;
+	/** Worktree label (`agent-<runToken>/<name>`) — stamped on the child env pre-adoption. */
+	label: string;
 	/** The run's branch (`agent/<handle>`) — null for a detached ask workspace. */
 	branch: string | null;
 	/** Commit OID the run started from; teardown's zero-commit check compares against this. */
@@ -145,7 +147,7 @@ export async function provisionAgentWorkspace(
 		const targetTip = await branchTip(pi, repoRoot, agentBranchName(request.targetHandle));
 		const baseOid = targetTip ?? (await resolveBaseOid(pi, parentWorktree));
 		const worktree = await createAgentWorktree(pi, repoRoot, repo.name, label, { kind: "detached", baseRef: baseOid });
-		return { worktreeDir: worktree.worktreeDir, branch: null, baseOid, branchCreated: false, repoRoot };
+		return { worktreeDir: worktree.worktreeDir, label, branch: null, baseOid, branchCreated: false, repoRoot };
 	}
 
 	const checkout = await resolveDispatchCheckout(pi, request, repoRoot, parentWorktree);
@@ -161,6 +163,7 @@ export async function provisionAgentWorkspace(
 
 	const provision: AgentWorkspaceProvision = {
 		worktreeDir: worktree.worktreeDir,
+		label,
 		branch: checkout.branch,
 		baseOid: checkout.baseOid,
 		branchCreated: checkout.branchCreated,

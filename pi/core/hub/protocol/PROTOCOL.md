@@ -5,7 +5,7 @@ Protocol version: `26`
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":26,...}
+{"type":"<frame_type>","v":27,...}
 ```
 
 Version handling:
@@ -24,11 +24,12 @@ Version handling:
 - v24 removes the retired `thread_report` frame.
 - v25 adds mutable session facets to `register`, the self-scoped `session_metadata` frame, and the read-only dashboard HTTP capability.
 - v26 removes the selected-agent run-message HTTP read and narrows `/runs/summary` to compact active-agent widget fields.
+- v27 adds `owned_branch`, `branch_base`, and `branch_created` to dispatch specs: every repo-backed run owns a transient workspace that the daemon force-removes on run exit, deleting the branch only when this run minted it and it gained no commits past its recorded base OID.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":26}`
+  - `GET /health` → `{"status":"ok","protocol":27}`
   - `GET /runs/summary?root_id=<id>` returns compact rows for the in-Pi active-agent widget.
   - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
   - `GET /workstreams/{id_or_slug}` returns a single workstream (including its `version`) with its joined agent rows and `versions` content-history array.
@@ -112,6 +113,8 @@ Important fields:
 - `agent_type`: immutable per handle after the first dispatch.
 - `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
 - `spec`: opaque TypeScript-authored spawn spec.
+- `spec.owned_worktree`: optional; the run's own transient worktree. The daemon force-removes it when the run exits (normal reap and crash-restart reconcile) — uncommitted state is discarded by design; commits are the only durable output of a run.
+- `spec.owned_branch` / `spec.branch_base` / `spec.branch_created`: optional; the run's per-agent branch (`agent/<handle>`; null for detached ask workspaces), the commit OID it started from, and whether this dispatch minted the branch. After worktree removal the daemon deletes `owned_branch` only when `branch_created` is true and `rev-list <branch_base>..<branch>` is empty — a continued or commit-bearing branch always survives teardown.
 - `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's registered session file or daemon-managed agent session sidecar and forks it (`pi --fork`) into a new read-only answerer session — used by the agent ask capability. Omitted/null for normal dispatch. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated. If no safe fork source exists, the target is reported as unavailable without distinguishing missing, unauthorized, or non-forkable targets.
 
 New run rows persist `dispatcher_id` as the registered `node_id` that sent `dispatch`.

@@ -1,21 +1,23 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import { describe, it } from "node:test";
+import type { AgentWorkspaceProvision } from "../agent-workspace.ts";
 import { buildAgentLaunchSpec, type SharedAgentLaunchInput } from "../launch.ts";
-import type { AgentConfig } from "../types.ts";
 import { createMockPi, installDaemonToolTestHooks } from "./harness.ts";
 
 const REPO_ROOT = "/repo/main-checkout";
 
-const MUTATIVE_WORKER: AgentConfig = {
-	name: "worker",
-	description: "implement in your own worktree",
-	model: "default",
-	systemPrompt: "do the work",
-	source: "builtin",
-	filePath: "/builtin/worker.md",
-	readOnly: false,
-};
+function provision(overrides: Partial<AgentWorkspaceProvision> = {}): AgentWorkspaceProvision {
+	return {
+		worktreeDir: "/worktrees/repo/agent-abc123/scout",
+		label: "agent-abc123/scout",
+		branch: "agent/quiet-badger-3dc450",
+		baseOid: "baseoid",
+		branchCreated: true,
+		repoRoot: REPO_ROOT,
+		...overrides,
+	};
+}
 
 function launchInput(
 	workspace: SharedAgentLaunchInput["workspace"],
@@ -36,6 +38,7 @@ function launchInput(
 		agentId: `00000000-0000-4000-8000-25400000000${nameSuffix.length}`,
 		parentSession: "parent-session",
 		project: "proj",
+		agentWorkspace: null,
 		...overrides,
 	};
 }
@@ -45,73 +48,23 @@ function toolsFromArgs(args: string[]): string[] {
 	return idx === -1 ? [] : (args[idx + 1]?.split(",") ?? []);
 }
 
-/**
- * Regression guard for #254: a worker dispatched with no active worktree must
- * land in the protected main checkout (its own workspace guard then blocks
- * structured writes there — see project/workspace/tests/guards.test.ts), and no
- * `--worktree-dir` is passed.
- */
 describe("buildAgentLaunchSpec workspace resolution", () => {
 	installDaemonToolTestHooks();
 
-	it("spawns a no-worktree agent in the protected main checkout without --worktree-dir", () => {
-		const result = buildAgentLaunchSpec(
-			launchInput({ protectedRoot: REPO_ROOT, repo: { root: REPO_ROOT }, activeWorktree: null }, "noworktree"),
-		);
-
-		assert.equal(result.ok, true);
-		if (!result.ok) return;
-		try {
-			assert.equal(result.plan.spawnCwd, REPO_ROOT);
-			assert.equal(result.plan.worktreeDir, null);
-			assert.equal(result.plan.args.includes("--worktree-dir"), false);
-		} finally {
-			fs.rmSync(result.plan.agentDir, { recursive: true, force: true });
-		}
-	});
-
-	it("keeps the protected main checkout as cwd and redirects file work via --worktree-dir when a worktree is active", () => {
-		const worktreePath = "/worktrees/repo/feature";
-		const result = buildAgentLaunchSpec(
-			launchInput(
-				{ protectedRoot: REPO_ROOT, repo: { root: REPO_ROOT }, activeWorktree: { path: worktreePath } },
-				"worktree",
-			),
-		);
-
-		assert.equal(result.ok, true);
-		if (!result.ok) return;
-		try {
-			assert.equal(result.plan.spawnCwd, REPO_ROOT);
-			assert.equal(result.plan.worktreeDir, worktreePath);
-			const flagIndex = result.plan.args.indexOf("--worktree-dir");
-			assert.notEqual(flagIndex, -1);
-			assert.equal(result.plan.args[flagIndex + 1], worktreePath);
-		} finally {
-			fs.rmSync(result.plan.agentDir, { recursive: true, force: true });
-		}
-	});
-});
-
-describe("buildAgentLaunchSpec mutative worktree", () => {
-	installDaemonToolTestHooks();
-
-	it("spawns a mutative agent directly in its own worktree with write/edit and no --read-only", () => {
-		const wn = "/worktrees/repo/agent-00000000/worker";
+	it("spawns every repo-backed agent inside its own workspace with write/edit and no flags", () => {
+		const p = provision();
 		const result = buildAgentLaunchSpec(
 			launchInput(
 				{ protectedRoot: REPO_ROOT, repo: { root: REPO_ROOT }, activeWorktree: { path: "/worktrees/repo/abc" } },
-				"mut",
-				{ requestedAgent: "worker", getAgents: () => [MUTATIVE_WORKER], mutativeWorktreeDir: wn },
+				"own",
+				{ agentWorkspace: p },
 			),
 		);
 
 		assert.equal(result.ok, true);
 		if (!result.ok) return;
 		try {
-			// cwd IS the worktree (auto-adopted); no --worktree-dir, no --read-only.
-			assert.equal(result.plan.spawnCwd, wn);
-			assert.equal(result.plan.worktreeDir, null);
+			assert.equal(result.plan.spawnCwd, p.worktreeDir, "cwd is the agent's own workspace (auto-adopted)");
 			assert.equal(result.plan.args.includes("--worktree-dir"), false);
 			assert.equal(result.plan.args.includes("--read-only"), false);
 			const tools = toolsFromArgs(result.plan.args);
@@ -122,17 +75,66 @@ describe("buildAgentLaunchSpec mutative worktree", () => {
 		}
 	});
 
-	it("fails closed when a mutative agent has no provisioned worktree", () => {
+	it("stamps the child env with the agent's own workspace, not the parent's", () => {
+		const p = provision();
 		const result = buildAgentLaunchSpec(
 			launchInput(
 				{ protectedRoot: REPO_ROOT, repo: { root: REPO_ROOT }, activeWorktree: { path: "/worktrees/repo/abc" } },
-				"mutfail",
-				{ requestedAgent: "worker", getAgents: () => [MUTATIVE_WORKER] },
+				"env",
+				{ agentWorkspace: p },
 			),
+		);
+
+		assert.equal(result.ok, true);
+		if (!result.ok) return;
+		try {
+			assert.equal(result.plan.environment.BASECAMP_WORKTREE_DIR, p.worktreeDir);
+			assert.equal(result.plan.environment.BASECAMP_WORKTREE_LABEL, p.label);
+		} finally {
+			fs.rmSync(result.plan.agentDir, { recursive: true, force: true });
+		}
+	});
+
+	it("fails closed when a repo-backed dispatch has no provisioned workspace", () => {
+		const result = buildAgentLaunchSpec(
+			launchInput({ protectedRoot: REPO_ROOT, repo: { root: REPO_ROOT }, activeWorktree: null }, "failclosed"),
 		);
 
 		assert.equal(result.ok, false);
 		if (result.ok) return;
-		assert.match(result.message, /requires a provisioned worktree/);
+		assert.match(result.message, /requires a provisioned workspace/);
+	});
+
+	it("launches a non-repo session's agent at the launch cwd with no workspace", () => {
+		const result = buildAgentLaunchSpec(launchInput({ launchCwd: "/scratch/dir", repo: null }, "norepo"));
+
+		assert.equal(result.ok, true);
+		if (!result.ok) return;
+		try {
+			assert.equal(result.plan.spawnCwd, "/scratch/dir");
+			assert.equal(result.plan.args.includes("--worktree-dir"), false);
+		} finally {
+			fs.rmSync(result.plan.agentDir, { recursive: true, force: true });
+		}
+	});
+
+	it("uses the ask contract for a detached workspace (null branch)", () => {
+		const p = provision({ branch: null, branchCreated: false, label: "agent-abc123/ask" });
+		const result = buildAgentLaunchSpec(
+			launchInput({ protectedRoot: REPO_ROOT, repo: { root: REPO_ROOT }, activeWorktree: null }, "ask", {
+				agentWorkspace: p,
+			}),
+		);
+
+		assert.equal(result.ok, true);
+		if (!result.ok) return;
+		try {
+			const promptIndex = result.plan.args.indexOf("--agent-prompt");
+			assert.notEqual(promptIndex, -1, "ask runs get a contract prompt");
+			const prompt = fs.readFileSync(result.plan.args[promptIndex + 1] as string, "utf8");
+			assert.match(prompt, /detached snapshot workspace/);
+		} finally {
+			fs.rmSync(result.plan.agentDir, { recursive: true, force: true });
+		}
 	});
 });

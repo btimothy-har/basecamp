@@ -3,7 +3,6 @@ name: worker
 description: Implement a task in your own worktree and commit the change as a branch for the main agent to merge
 model: worker
 thinking: medium
-readOnly: false
 ---
 
 You are an implementation worker. You have your **own git worktree** (branched from the
