@@ -158,13 +158,13 @@ def test_reconcile_skips_unverified_liveness_row_but_processes_remaining(
     wt_verified = tmp_path / "wt-verified"
     wt_verified.mkdir()
 
-    # pgid 999 is a live runner that gets terminated; pgid 777 is not a runner and
-    # its liveness is unverifiable (ps probe shows a live, non-runner process).
+    # pgid 999 is a live runner that gets terminated and is then provably dead; pgid 777 is
+    # not a runner and its liveness is unverifiable (ps probe shows a live, non-runner process).
     monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda pgid: pgid == 999)
     monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
-    # pgid 777 is unverifiable (alive or probe failed); pgid 999 is verified dead
-    # after termination, but the nonterminal pass tears it down via terminated_runner
-    # so verified_dead is only consulted for the unverified row.
+    # Teardown is gated on provable death for BOTH rows: pgid 999 is verified dead (torn down),
+    # pgid 777 is not (deferred). Terminating a runner is never on its own sufficient — the tree
+    # is only reclaimed once the group is confirmed gone.
     monkeypatch.setattr(
         "basecamp.hub.swarm.process._process_group_verified_dead",
         lambda pgid: pgid != 777,
@@ -333,6 +333,39 @@ def test_reconcile_nonterminal_no_pgid_skips_teardown(
     run = store.get_run("run-no-pgid")
     assert run is not None
     assert run["status"] == "failed"
+
+
+def test_reconcile_terminated_runner_not_yet_dead_is_deferred(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A live runner is terminated, but SIGKILL may not have landed yet (e.g. uninterruptible
+    # I/O). Terminating is NOT sufficient to reclaim the tree: teardown must be deferred until
+    # the group is provably dead, so a still-dying runner never has its workspace force-removed.
+    store = Store(db_path=tmp_path / "daemon.db")
+    teardowns: list[str] = []
+    wt = tmp_path / "wt-dying"
+    wt.mkdir()
+
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: True)
+    monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
+    # Still alive after termination (SIGKILL queued behind D-state I/O).
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: False)
+    monkeypatch.setattr(
+        "basecamp.hub.swarm.process.teardown_agent_workspace",
+        lambda worktree, **_kw: teardowns.append(worktree),
+    )
+    store.create_run(
+        run_id="run-dying",
+        agent_id="agent-dying",
+        dispatcher_id="root",
+        spec={"owned_worktree": str(wt), "owned_branch": "agent/d", "branch_created": True},
+    )
+    store.set_run_pgid(run_id="run-dying", pgid=888)
+
+    reconcile_orphaned_runs(store)
+
+    assert teardowns == [], "a terminated-but-not-yet-dead runner's tree is never force-removed"
 
 
 def test_reconcile_terminal_sweep_tears_down_verified_dead_pgid(

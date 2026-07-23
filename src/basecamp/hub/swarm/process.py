@@ -281,12 +281,11 @@ def reconcile_orphaned_runs(store: Store) -> None:
 def _reconcile_nonterminal_row(store: Store, row: dict[str, object]) -> None:
     pgid = row.get("pgid")
     pgid_int = pgid if isinstance(pgid, int) else None
-    terminated_runner = False
     if pgid_int is not None:
         try:
-            terminated_runner = terminate_process_group_if_runner(pgid_int, escalation_s=2.0)
+            terminate_process_group_if_runner(pgid_int, escalation_s=2.0)
         except OSError:
-            terminated_runner = False
+            pass
 
     status, result, error = _restart_reconcile_outcome(row)
     store.set_run_result_if_unset(
@@ -298,12 +297,12 @@ def _reconcile_nonterminal_row(store: Store, row: dict[str, object]) -> None:
 
     # A run orphaned by a daemon crash never had its reaper fire, so tear down its workspace
     # here — the reaper's counterpart. The merged-worktree sweep can't cover this case: a
-    # crash-interrupted run's branch has not been merged yet. Teardown proceeds when the group
-    # was a live runner we terminated, or when it is provably dead (ps ran, no live process).
-    # Skip only when liveness is genuinely unverifiable (pgid missing or ps probe failed):
-    # force-removing a possibly-live runner's tree would corrupt its workspace. Leave it for
-    # the next reconcile.
-    if not (terminated_runner or _process_group_verified_dead(pgid_int)):
+    # crash-interrupted run's branch has not been merged yet. Tear down only when the group is
+    # PROVABLY dead (ps ran, no live process): terminate_process_group issues SIGKILL without
+    # confirming it landed, so a runner wedged in uninterruptible I/O could still be touching
+    # its tree. A just-terminated-but-not-yet-reaped group, a missing pgid, or a failed ps probe
+    # all defer to the next reconcile / session sweep rather than force-removing a live tree.
+    if not _process_group_verified_dead(pgid_int):
         return
     spec = row.get("spec_json")
     owned_worktree = _spec_owned_worktree(spec)

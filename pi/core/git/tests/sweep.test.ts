@@ -55,7 +55,7 @@ describe("sweepAgentWorktrees", () => {
 			return null;
 		}, calls);
 
-		const result = await sweepAgentWorktrees(pi, "/repo");
+		const result = await sweepAgentWorktrees(pi, "/repo", "o/r");
 
 		assert.deepEqual(result.removed, ["/wt/agent-merged"]);
 		assert.equal(result.kept, 1);
@@ -74,7 +74,7 @@ describe("sweepAgentWorktrees", () => {
 		const calls: string[][] = [];
 		const pi = execPi((args) => (args.includes("list") ? { code: 0, stdout: list, stderr: "" } : null), calls);
 
-		const result = await sweepAgentWorktrees(pi, "/repo");
+		const result = await sweepAgentWorktrees(pi, "/repo", "o/r");
 
 		assert.deepEqual(result.removed, [DETACHED("abc123", "ask")]);
 		assert.equal(
@@ -82,6 +82,22 @@ describe("sweepAgentWorktrees", () => {
 			false,
 			"detached residue has no branch to delete",
 		);
+	});
+
+	it("reclaims detached residue for a single-segment repo identity (no origin remote)", async () => {
+		// deriveRepoIdentity falls back to a bare basename when there is no parseable remote, so
+		// the workspace path is <root>/<repo>/agent-<token>/<name> — 3 segments, not 4.
+		const detached = path.join(WORKTREES_ROOT, "localrepo", "agent-xyz789", "ask");
+		const list = porcelain([
+			{ path: "/repo", branch: "main" },
+			{ path: detached, branch: null },
+		]);
+		const calls: string[][] = [];
+		const pi = execPi((args) => (args.includes("list") ? { code: 0, stdout: list, stderr: "" } : null), calls);
+
+		const result = await sweepAgentWorktrees(pi, "/repo", "localrepo");
+
+		assert.deepEqual(result.removed, [detached], "single-segment-identity residue is reclaimed");
 	});
 
 	it("never claims bare human agent-* branches or lookalike paths", async () => {
@@ -103,7 +119,7 @@ describe("sweepAgentWorktrees", () => {
 			return null;
 		}, calls);
 
-		const result = await sweepAgentWorktrees(pi, "/repo");
+		const result = await sweepAgentWorktrees(pi, "/repo", "o/r");
 
 		assert.deepEqual(result.removed, []);
 		assert.equal(
@@ -126,7 +142,7 @@ describe("sweepAgentWorktrees", () => {
 			return null;
 		});
 
-		const result = await sweepAgentWorktrees(pi, "/repo");
+		const result = await sweepAgentWorktrees(pi, "/repo", "o/r");
 		assert.deepEqual(result.removed, []);
 	});
 
@@ -143,7 +159,7 @@ describe("sweepAgentWorktrees", () => {
 			return null;
 		}, calls);
 
-		const result = await sweepAgentWorktrees(pi, "/repo");
+		const result = await sweepAgentWorktrees(pi, "/repo", "o/r");
 
 		assert.deepEqual(result.removed.sort(), [DETACHED("ghi789", "ask"), "/wt/agent-stale"]);
 		const unlockIdx = calls.findIndex((a) => a.includes("unlock"));
@@ -163,7 +179,7 @@ describe("sweepAgentWorktrees", () => {
 			return null;
 		});
 
-		const result = await sweepAgentWorktrees(pi, "/repo");
+		const result = await sweepAgentWorktrees(pi, "/repo", "o/r");
 		assert.deepEqual(result.removed, []);
 		assert.equal(result.kept, 1);
 	});
@@ -180,7 +196,7 @@ describe("sweepAgentWorktrees", () => {
 			return null;
 		});
 
-		const result = await sweepAgentWorktrees(pi, "/repo");
+		const result = await sweepAgentWorktrees(pi, "/repo", "o/r");
 		assert.deepEqual(result.removed, []);
 	});
 
@@ -202,7 +218,7 @@ describe("sweepAgentWorktrees", () => {
 			return null;
 		}, calls);
 
-		await sweepAgentWorktrees(pi, "/repo");
+		await sweepAgentWorktrees(pi, "/repo", "o/r");
 
 		assert.ok(calls.some((a) => a.includes("-D") && a.includes("agent/orphan-merged-1")));
 		assert.equal(
@@ -224,7 +240,7 @@ describe("sweepAgentWorktrees", () => {
 			return null;
 		});
 
-		const result = await sweepAgentWorktrees(pi, "/repo");
+		const result = await sweepAgentWorktrees(pi, "/repo", "o/r");
 		assert.deepEqual(result.removed, ["/wt/agent-merged"]);
 	});
 });

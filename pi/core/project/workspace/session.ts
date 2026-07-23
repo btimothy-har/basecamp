@@ -106,7 +106,7 @@ async function sweepAgentWorktreesForSession(
 		const state = requireWorkspaceState();
 		if (!state.repo) return;
 
-		const result = await sweepAgentWorktrees(pi, state.repo.root);
+		const result = await sweepAgentWorktrees(pi, state.repo.root, state.repo.name);
 		if (result.removed.length > 0) {
 			ctx.ui.notify(`basecamp: reclaimed ${result.removed.length} merged agent worktree(s)`, "info");
 		}

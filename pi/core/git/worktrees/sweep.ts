@@ -37,14 +37,17 @@ function isAgentBranch(branch: string | null): branch is string {
 }
 
 // Detached agent residue is identified by position, not pattern alone: exactly
-// `WORKTREES_ROOT/<org>/<repo>/agent-<token>/<name>`, where Basecamp provisions agent
-// workspaces. A repo, org, or out-of-tree path that merely contains an `agent-…` segment
-// is out of scope — the sweep must never claim worktrees it did not create.
-function isAgentWorkspacePath(recordPath: string): boolean {
-	const relative = path.relative(WORKTREES_ROOT, path.resolve(recordPath));
+// `<WORKTREES_ROOT>/<identity>/agent-<token>/<name>`, where Basecamp provisions agent
+// workspaces. The identity is anchored explicitly (it may be one segment for a repo without a
+// parseable origin remote, or `<org>/<repo>` otherwise), so the label must be exactly the
+// two-segment `agent-<token>/<name>` shape relative to the identity root — a repo, org, or
+// out-of-tree path that merely contains an `agent-…` segment is out of scope, and the reserved
+// `agent-` label namespace keeps human worktrees from colliding.
+function isAgentWorkspacePath(recordPath: string, identityRoot: string): boolean {
+	const relative = path.relative(identityRoot, path.resolve(recordPath));
 	if (relative.startsWith("..") || path.isAbsolute(relative)) return false;
 	const segments = relative.split(path.sep);
-	return segments.length === 4 && AGENT_LABEL_DIR_RE.test(segments[2] ?? "");
+	return segments.length === 2 && AGENT_LABEL_DIR_RE.test(segments[0] ?? "");
 }
 
 /** Age of an agent-run lock in ms, or null when the reason is absent/foreign/untimestamped. */
@@ -89,11 +92,17 @@ async function sweepOrphanBranches(
  * Remove reclaimable agent workspaces and integrated agent branches. Best-effort per record —
  * a failure on one never blocks the others.
  */
-export async function sweepAgentWorktrees(pi: ExtensionAPI, repoRoot: string): Promise<AgentWorktreeSweepResult> {
+export async function sweepAgentWorktrees(
+	pi: ExtensionAPI,
+	repoRoot: string,
+	identity: string,
+): Promise<AgentWorktreeSweepResult> {
 	const now = Date.now();
+	const identityRoot = path.join(WORKTREES_ROOT, identity);
 	const records = await gitWorktreeRecords(pi, repoRoot);
 	const agentWorktrees = records.filter(
-		(record) => isAgentBranch(record.branch) || (record.branch === null && isAgentWorkspacePath(record.path)),
+		(record) =>
+			isAgentBranch(record.branch) || (record.branch === null && isAgentWorkspacePath(record.path, identityRoot)),
 	);
 	// Candidate integration targets: every non-agent branch (main, the parent's worktree, …).
 	const integrationBranches = records
