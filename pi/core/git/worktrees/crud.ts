@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKTREE_BRANCH_PREFIX, WORKTREE_LABEL_RE, WORKTREES_ROOT } from "../constants.ts";
+import { WORKTREE_BRANCH_PREFIX, WORKTREE_LABEL_RE, worktreesRoot } from "../constants.ts";
 import { branchExists, detectDefaultBranch, gitOutput } from "../repo.ts";
 
 export interface WorktreeResult {
@@ -72,7 +72,7 @@ function labelFromRelativeWorktreePath(relative: string): string | null {
 
 export function labelFromWorktreePath(repoName: string, worktreeDir: string): string {
 	const resolvedDir = path.resolve(worktreeDir);
-	const root = path.join(WORKTREES_ROOT, repoName);
+	const root = path.join(worktreesRoot(), repoName);
 	const relative = path.relative(root, resolvedDir);
 	if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
 		throw new Error(`Worktree must be a valid workspace worktree path under ${root}`);
@@ -88,7 +88,7 @@ export function labelFromWorktreePath(repoName: string, worktreeDir: string): st
 }
 
 export function validateWorktreePath(repoName: string, label: string, worktreeDir: string): void {
-	const expected = path.join(WORKTREES_ROOT, repoName, label);
+	const expected = path.join(worktreesRoot(), repoName, label);
 	if (path.resolve(worktreeDir) !== path.resolve(expected)) {
 		throw new Error(`Worktree path must be ${expected}`);
 	}
@@ -98,7 +98,7 @@ function isMissingPathError(error: unknown): boolean {
 	return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
 }
 
-export function validateNoSymlinkedWorktreePath(worktreeDir: string, root = WORKTREES_ROOT): void {
+export function validateNoSymlinkedWorktreePath(worktreeDir: string, root = worktreesRoot()): void {
 	const resolvedRoot = path.resolve(root);
 	const resolvedDir = path.resolve(worktreeDir);
 	const relative = path.relative(resolvedRoot, resolvedDir);
@@ -206,7 +206,7 @@ export async function getOrCreateWorktree(
 ): Promise<WorktreeResult> {
 	ensureWorktreeLabel(label);
 	const defaultBranch = await validateProtectedCheckout(pi, repoRoot);
-	const worktreeDir = path.join(WORKTREES_ROOT, repoName, label);
+	const worktreeDir = path.join(worktreesRoot(), repoName, label);
 	validateNoSymlinkedWorktreePath(worktreeDir);
 	const branch = branchOverride?.trim() || `${WORKTREE_BRANCH_PREFIX}${label}`;
 	const records = await gitWorktreeRecords(pi, repoRoot);

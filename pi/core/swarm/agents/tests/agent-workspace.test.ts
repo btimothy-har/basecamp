@@ -3,9 +3,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKTREES_ROOT } from "../../../git/constants.ts";
+import { worktreesRoot } from "../../../git/constants.ts";
+import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
 import type { WorkspaceState } from "../../../project/workspace/state.ts";
 import { agentBranchName, provisionAgentWorkspace } from "../agent-workspace.ts";
+
+useTempWorktreesRoot();
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 type Call = { cmd: string; args: string[] };
@@ -47,7 +50,7 @@ function workspace(repoName: string, overrides: Partial<WorkspaceState> = {}): W
 
 function uniqueRepo(t: { after(fn: () => void): void }, tag: string): string {
 	const name = `basecamp-ws-test/${tag}-${process.pid}-${Date.now()}`;
-	t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, "basecamp-ws-test"), { recursive: true, force: true }));
+	t.after(() => fs.rmSync(path.join(worktreesRoot(), "basecamp-ws-test"), { recursive: true, force: true }));
 	return name;
 }
 

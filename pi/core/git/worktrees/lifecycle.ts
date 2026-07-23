@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKTREES_ROOT } from "../constants.ts";
+import { worktreesRoot } from "../constants.ts";
 import {
 	ensureWorktreeLabel,
 	findWorktreeRecord,
@@ -111,7 +111,7 @@ export async function createAgentWorktree(
 	lockReason = `${AGENT_LOCK_REASON_PREFIX} ${new Date().toISOString()}`,
 ): Promise<AgentWorktreeResult> {
 	ensureWorktreeLabel(label);
-	const worktreeDir = path.join(WORKTREES_ROOT, repoName, label);
+	const worktreeDir = path.join(worktreesRoot(), repoName, label);
 	validateNoSymlinkedWorktreePath(worktreeDir);
 
 	const records = await gitWorktreeRecords(pi, repoRoot);

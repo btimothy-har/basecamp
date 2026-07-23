@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKTREES_ROOT } from "../constants.ts";
+import { worktreesRoot } from "../constants.ts";
 import {
 	branchName,
 	ensureWorktreeLabel,
@@ -15,15 +15,18 @@ import {
 	validateNoSymlinkedWorktreePath,
 	validateWorktreePath,
 } from "../worktrees/crud.ts";
+import { useTempWorktreesRoot } from "./worktree-root.ts";
+
+useTempWorktreesRoot();
 
 const REPO_NAME = "repo";
 const SLASHED_REPO_NAME = "org/repo";
 const LABEL = "feature-1";
 const NESTED_LABEL = "wt-bt/feature-1";
-const WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_NAME, LABEL);
-const NESTED_WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_NAME, "wt-bt", "feature-1");
-const SLASHED_WORKTREE_DIR = path.join(WORKTREES_ROOT, "org", "repo", LABEL);
-const SLASHED_NESTED_WORKTREE_DIR = path.join(WORKTREES_ROOT, "org", "repo", "wt-bt", "feature-1");
+const WORKTREE_DIR = path.join(worktreesRoot(), REPO_NAME, LABEL);
+const NESTED_WORKTREE_DIR = path.join(worktreesRoot(), REPO_NAME, "wt-bt", "feature-1");
+const SLASHED_WORKTREE_DIR = path.join(worktreesRoot(), "org", "repo", LABEL);
+const SLASHED_NESTED_WORKTREE_DIR = path.join(worktreesRoot(), "org", "repo", "wt-bt", "feature-1");
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 
@@ -131,7 +134,7 @@ describe("worktree pure utilities", () => {
 
 			assert.deepEqual(findWorktreeRecord(records, WORKTREE_DIR), records[1]);
 			assert.deepEqual(findWorktreeRecord(records, `${WORKTREE_DIR}${path.sep}`), records[1]);
-			assert.equal(findWorktreeRecord(records, path.join(WORKTREES_ROOT, REPO_NAME, "missing")), null);
+			assert.equal(findWorktreeRecord(records, path.join(worktreesRoot(), REPO_NAME, "missing")), null);
 		});
 	});
 
@@ -188,13 +191,13 @@ describe("worktree pure utilities", () => {
 		});
 
 		it("round-trips direct and nested labels for slashed repo identities", () => {
-			assert.equal(path.join(WORKTREES_ROOT, SLASHED_REPO_NAME, LABEL), SLASHED_WORKTREE_DIR);
+			assert.equal(path.join(worktreesRoot(), SLASHED_REPO_NAME, LABEL), SLASHED_WORKTREE_DIR);
 			assert.equal(labelFromWorktreePath(SLASHED_REPO_NAME, SLASHED_WORKTREE_DIR), LABEL);
 			assert.equal(labelFromWorktreePath(SLASHED_REPO_NAME, SLASHED_NESTED_WORKTREE_DIR), NESTED_LABEL);
 		});
 
 		it("requires worktrees to use valid workspace paths", () => {
-			const repoRoot = path.join(WORKTREES_ROOT, REPO_NAME);
+			const repoRoot = path.join(worktreesRoot(), REPO_NAME);
 
 			assert.throws(() => labelFromWorktreePath(REPO_NAME, repoRoot), /valid workspace worktree path/);
 			assert.throws(
@@ -206,7 +209,7 @@ describe("worktree pure utilities", () => {
 				/valid workspace worktree path/,
 			);
 			assert.throws(
-				() => labelFromWorktreePath(REPO_NAME, path.join(WORKTREES_ROOT, "other", LABEL)),
+				() => labelFromWorktreePath(REPO_NAME, path.join(worktreesRoot(), "other", LABEL)),
 				/valid workspace worktree path/,
 			);
 		});
@@ -220,7 +223,7 @@ describe("worktree pure utilities", () => {
 
 		it("rejects mismatched paths with the expected path", () => {
 			assert.throws(
-				() => validateWorktreePath(REPO_NAME, LABEL, path.join(WORKTREES_ROOT, REPO_NAME, "different")),
+				() => validateWorktreePath(REPO_NAME, LABEL, path.join(worktreesRoot(), REPO_NAME, "different")),
 				new RegExp(`Worktree path must be ${WORKTREE_DIR.replaceAll("\\", "\\\\")}`),
 			);
 		});
@@ -287,8 +290,8 @@ describe("getOrCreateWorktree", () => {
 		const repoName = `repo-explicit-${process.pid}-${Date.now()}`;
 		const label = "wt-bt/new-work";
 		const branch = "bt/new-work";
-		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "wt-bt", "new-work");
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+		const worktreeDir = path.join(worktreesRoot(), repoName, "wt-bt", "new-work");
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
 
 		const expectedAddArgs = ["-C", repoRoot, "worktree", "add", "-b", branch, worktreeDir, "main"];
 		const { pi, calls } = createWorktreePi(repoRoot, expectedAddArgs);
@@ -304,8 +307,8 @@ describe("getOrCreateWorktree", () => {
 		const repoName = `repo-default-${process.pid}-${Date.now()}`;
 		const label = "feature-1";
 		const branch = "wt/feature-1";
-		const worktreeDir = path.join(WORKTREES_ROOT, repoName, label);
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+		const worktreeDir = path.join(worktreesRoot(), repoName, label);
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
 
 		const expectedAddArgs = ["-C", repoRoot, "worktree", "add", "-b", branch, worktreeDir, "main"];
 		const { pi, calls } = createWorktreePi(repoRoot, expectedAddArgs);

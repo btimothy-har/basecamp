@@ -2,7 +2,8 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { WORKTREES_ROOT } from "../../../git/constants.ts";
+import { worktreesRoot } from "../../../git/constants.ts";
+import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
 import type { Frame } from "../../../hub/protocol/index.ts";
 import { PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
 import { registerDaemonTools } from "../tools.ts";
@@ -16,13 +17,15 @@ import {
 	trackSkillInvocation,
 } from "./harness.ts";
 
+useTempWorktreesRoot();
+
 describe("dispatch_agent workspace provisioning", () => {
 	installDaemonToolTestHooks();
 
 	it("dispatch_agent gives a worker a deliverable branch spec from a clean parent", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}`;
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, "bc-tool-test"), { recursive: true, force: true }));
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), "bc-tool-test"), { recursive: true, force: true }));
 		setCurrentWorkspaceState(repoWorkspaceState(repoName));
 
 		try {
@@ -74,7 +77,7 @@ describe("dispatch_agent workspace provisioning", () => {
 	it("dispatch_agent gives report personas a branchless detached workspace", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}-rep`;
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, "bc-tool-test"), { recursive: true, force: true }));
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), "bc-tool-test"), { recursive: true, force: true }));
 		setCurrentWorkspaceState(repoWorkspaceState(repoName));
 
 		try {
@@ -128,7 +131,7 @@ describe("dispatch_agent workspace provisioning", () => {
 	it("dispatch_agent discards the minted workspace and branch when the daemon rejects", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}-rej`;
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, "bc-tool-test"), { recursive: true, force: true }));
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), "bc-tool-test"), { recursive: true, force: true }));
 		setCurrentWorkspaceState(repoWorkspaceState(repoName));
 
 		try {
@@ -172,7 +175,7 @@ describe("dispatch_agent workspace provisioning", () => {
 	it("dispatch_agent discards and re-mints under a new handle on duplicate-handle retry", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}-retry`;
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, "bc-tool-test"), { recursive: true, force: true }));
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), "bc-tool-test"), { recursive: true, force: true }));
 		setCurrentWorkspaceState(repoWorkspaceState(repoName));
 
 		try {
@@ -235,7 +238,7 @@ describe("dispatch_agent workspace provisioning", () => {
 	it("dispatch_agent keeps the workspace when the connection drops after the frame is sent", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}-drop`;
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, "bc-tool-test"), { recursive: true, force: true }));
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), "bc-tool-test"), { recursive: true, force: true }));
 		setCurrentWorkspaceState(repoWorkspaceState(repoName));
 
 		try {
@@ -278,7 +281,7 @@ describe("dispatch_agent workspace provisioning", () => {
 	it("dispatch_agent surfaces commit-first guidance when a worker is dispatched from a dirty parent", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}-dirty`;
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, "bc-tool-test"), { recursive: true, force: true }));
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), "bc-tool-test"), { recursive: true, force: true }));
 		setCurrentWorkspaceState(repoWorkspaceState(repoName));
 
 		try {

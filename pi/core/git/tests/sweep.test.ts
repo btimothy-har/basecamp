@@ -2,10 +2,13 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKTREES_ROOT } from "../constants.ts";
+import { worktreesRoot } from "../constants.ts";
 import { sweepAgentWorktrees } from "../worktrees/sweep.ts";
+import { useTempWorktreesRoot } from "./worktree-root.ts";
 
-const DETACHED = (token: string, name: string) => path.join(WORKTREES_ROOT, "o", "r", `agent-${token}`, name);
+useTempWorktreesRoot();
+
+const DETACHED = (token: string, name: string) => path.join(worktreesRoot(), "o", "r", `agent-${token}`, name);
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 
@@ -87,7 +90,7 @@ describe("sweepAgentWorktrees", () => {
 	it("reclaims detached residue for a single-segment repo identity (no origin remote)", async () => {
 		// deriveRepoIdentity falls back to a bare basename when there is no parseable remote, so
 		// the workspace path is <root>/<repo>/agent-<token>/<name> — 3 segments, not 4.
-		const detached = path.join(WORKTREES_ROOT, "localrepo", "agent-xyz789", "ask");
+		const detached = path.join(worktreesRoot(), "localrepo", "agent-xyz789", "ask");
 		const list = porcelain([
 			{ path: "/repo", branch: "main" },
 			{ path: detached, branch: null },
@@ -107,7 +110,7 @@ describe("sweepAgentWorktrees", () => {
 			// Human branch that merely shares the legacy prefix — integrated, but not agent residue.
 			{ path: "/wt/dash", branch: "agent-dashboard" },
 			// Detached worktree of a repo literally named agent-tools — label depth doesn't match.
-			{ path: path.join(WORKTREES_ROOT, "o", "agent-tools", "bisect"), branch: null },
+			{ path: path.join(worktreesRoot(), "o", "agent-tools", "bisect"), branch: null },
 			// Detached worktree outside Basecamp's root entirely.
 			{ path: "/build/agent-abc123/checkout", branch: null },
 		]);

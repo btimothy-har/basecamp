@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isStrictlyWithin, isWithin } from "../../host/paths.ts";
-import { WORKTREES_ROOT } from "../constants.ts";
+import { worktreesRoot } from "../constants.ts";
 import { gitOutput } from "../repo.ts";
 import {
 	labelFromWorktreePath,
@@ -39,8 +39,8 @@ export function planLegacyWorktreeMigration(opts: {
 
 	const mainPath = path.resolve(mainRecord.path);
 	const bareName = path.basename(mainPath);
-	const legacyRoot = path.join(WORKTREES_ROOT, bareName);
-	const newRoot = path.join(WORKTREES_ROOT, opts.identity);
+	const legacyRoot = path.join(worktreesRoot(), bareName);
+	const newRoot = path.join(worktreesRoot(), opts.identity);
 	if (legacyRoot === newRoot) return { moves: [] };
 
 	const cwd = path.resolve(opts.cwd);
@@ -95,7 +95,7 @@ export async function migrateLegacyWorktrees(
 	if (!mainRecord) return result;
 
 	const bareName = path.basename(path.resolve(mainRecord.path));
-	if (!fs.existsSync(path.join(WORKTREES_ROOT, bareName))) return result;
+	if (!fs.existsSync(path.join(worktreesRoot(), bareName))) return result;
 
 	const plan = planLegacyWorktreeMigration({ records, identity: opts.identity, cwd: opts.cwd });
 	for (const move of plan.moves) {

@@ -1,8 +1,11 @@
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { WORKTREES_ROOT } from "../../../git/constants.ts";
+import { worktreesRoot } from "../../../git/constants.ts";
+import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
 import { SCRATCH_ROOT } from "../constants.ts";
 import { WorkspaceRuntimeService } from "../runtime.ts";
+
+useTempWorktreesRoot();
 
 export const REPO_ROOT = "/repo";
 // Unique per test-file process. Each *.test.ts runs in its own child process, and
@@ -15,7 +18,7 @@ export const REPO_IDENTITY = `test/${REPO_NAME}`;
 export const LABEL = "feature";
 export const BRANCH = "wt/feature";
 export const REMOTE_URL = `git@github.com:test/${REPO_NAME}.git`;
-export const WORKTREE_DIR = path.join(WORKTREES_ROOT, REPO_IDENTITY, LABEL);
+export const WORKTREE_DIR = path.join(worktreesRoot(), REPO_IDENTITY, LABEL);
 export const SCRATCH_DIR = path.join(SCRATCH_ROOT, REPO_IDENTITY);
 
 export interface ExecCall {

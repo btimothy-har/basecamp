@@ -10,7 +10,7 @@
 
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { AGENT_BRANCH_NAMESPACE, WORKTREES_ROOT } from "../constants.ts";
+import { AGENT_BRANCH_NAMESPACE, worktreesRoot } from "../constants.ts";
 import { isMergedInto, tryGitOutput } from "../repo.ts";
 import { gitWorktreeRecords } from "./crud.ts";
 import { AGENT_LOCK_REASON_PREFIX, deleteBranch, removeWorktree, unlockWorktree } from "./lifecycle.ts";
@@ -98,7 +98,7 @@ export async function sweepAgentWorktrees(
 	identity: string,
 ): Promise<AgentWorktreeSweepResult> {
 	const now = Date.now();
-	const identityRoot = path.join(WORKTREES_ROOT, identity);
+	const identityRoot = path.join(worktreesRoot(), identity);
 	const records = await gitWorktreeRecords(pi, repoRoot);
 	const agentWorktrees = records.filter(
 		(record) =>

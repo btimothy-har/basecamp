@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
-import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
+import { worktreesRoot } from "../../../git/constants.ts";
+import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
 import type { Frame } from "../../../hub/protocol/index.ts";
 import { PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
 import { buildAgentTaskText } from "../executor.ts";
@@ -16,6 +17,8 @@ import {
 	toolByName,
 	trackSkillInvocation,
 } from "./harness.ts";
+
+useTempWorktreesRoot();
 
 describe("ask_agent", () => {
 	installDaemonToolTestHooks();
@@ -126,7 +129,7 @@ describe("ask_agent", () => {
 	it("ask_agent provisions a detached workspace for a repo-backed session (no branch fields)", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-ask-test/r-${process.pid}-${Date.now()}`;
-		t.after(() => fs.rmSync(path.join(os.homedir(), ".worktrees", "bc-ask-test"), { recursive: true, force: true }));
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), "bc-ask-test"), { recursive: true, force: true }));
 		setCurrentWorkspaceState({
 			launchCwd: "/wt",
 			effectiveCwd: "/wt",

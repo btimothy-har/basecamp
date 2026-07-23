@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKTREES_ROOT } from "../constants.ts";
+import { worktreesRoot } from "../constants.ts";
 import {
 	createAgentWorktree,
 	deleteBranch,
@@ -11,6 +11,9 @@ import {
 	removeWorktree,
 	unlockWorktree,
 } from "../worktrees/lifecycle.ts";
+import { useTempWorktreesRoot } from "./worktree-root.ts";
+
+useTempWorktreesRoot();
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 
@@ -43,8 +46,8 @@ describe("createAgentWorktree", () => {
 		const repoName = `repo-agent-${process.pid}-${Date.now()}`;
 		const label = "agent-3f9a2c/worker";
 		const branch = "agent/quiet-badger-3dc450";
-		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-3f9a2c", "worker");
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+		const worktreeDir = path.join(worktreesRoot(), repoName, "agent-3f9a2c", "worker");
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
 
 		const addArgs = [
 			"-C",
@@ -89,8 +92,8 @@ describe("createAgentWorktree", () => {
 		const repoRoot = "/repo";
 		const repoName = `repo-existing-${process.pid}-${Date.now()}`;
 		const branch = "agent/quiet-badger-3dc450";
-		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-3f9a2c", "worker");
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+		const worktreeDir = path.join(worktreesRoot(), repoName, "agent-3f9a2c", "worker");
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
 
 		const calls: string[][] = [];
 		const pi = execPi(listOnlyRoot(repoRoot), calls);
@@ -109,8 +112,8 @@ describe("createAgentWorktree", () => {
 	it("creates a detached workspace with --detach and a null branch", async (t) => {
 		const repoRoot = "/repo";
 		const repoName = `repo-detached-${process.pid}-${Date.now()}`;
-		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-3f9a2c", "ask");
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+		const worktreeDir = path.join(worktreesRoot(), repoName, "agent-3f9a2c", "ask");
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
 
 		const calls: string[][] = [];
 		const pi = execPi(listOnlyRoot(repoRoot), calls);
@@ -144,7 +147,7 @@ describe("createAgentWorktree", () => {
 	it("does not clean unrelated state when git rolls back a failed add", async (t) => {
 		const repoRoot = "/repo";
 		const repoName = `repo-clean-failure-${process.pid}-${Date.now()}`;
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
 
 		const calls: string[][] = [];
 		const pi = execPi((args) => {
@@ -172,8 +175,8 @@ describe("createAgentWorktree", () => {
 		const repoRoot = "/repo";
 		const repoName = `repo-lf-${process.pid}-${Date.now()}`;
 		const label = "agent-deadbe/worker";
-		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-deadbe", "worker");
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+		const worktreeDir = path.join(worktreesRoot(), repoName, "agent-deadbe", "worker");
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
 
 		const branch = "agent/quiet-badger-3dc450";
 		let listCalls = 0;
@@ -206,8 +209,8 @@ describe("createAgentWorktree", () => {
 		const repoName = `repo-keep-${process.pid}-${Date.now()}`;
 		const label = "agent-deadbe/worker";
 		const branch = "agent/quiet-badger-3dc450";
-		const worktreeDir = path.join(WORKTREES_ROOT, repoName, "agent-deadbe", "worker");
-		t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, repoName), { recursive: true, force: true }));
+		const worktreeDir = path.join(worktreesRoot(), repoName, "agent-deadbe", "worker");
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
 
 		let listCalls = 0;
 		const calls: string[][] = [];

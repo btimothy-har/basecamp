@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { WORKTREES_ROOT } from "../constants.ts";
+import { worktreesRoot } from "../constants.ts";
 import { planLegacyWorktreeMigration, shouldRetryMoveWithForce } from "../worktrees/migrate.ts";
+import { useTempWorktreesRoot } from "./worktree-root.ts";
+
+useTempWorktreesRoot();
 
 const REPO_NAME = "repo";
 const IDENTITY = "org/repo";
 const MAIN_PATH = path.join("/src", REPO_NAME);
-const LEGACY_ROOT = path.join(WORKTREES_ROOT, REPO_NAME);
-const NEW_ROOT = path.join(WORKTREES_ROOT, IDENTITY);
+const LEGACY_ROOT = path.join(worktreesRoot(), REPO_NAME);
+const NEW_ROOT = path.join(worktreesRoot(), IDENTITY);
 
 type WorktreeRecord = { path: string; branch: string | null };
 
@@ -20,7 +23,7 @@ describe("planLegacyWorktreeMigration", () => {
 	it("never moves the main worktree", () => {
 		assert.deepEqual(
 			planLegacyWorktreeMigration({
-				records: [{ path: path.join(WORKTREES_ROOT, REPO_NAME, "main-ish"), branch: "main" }],
+				records: [{ path: path.join(worktreesRoot(), REPO_NAME, "main-ish"), branch: "main" }],
 				identity: IDENTITY,
 				cwd: MAIN_PATH,
 			}),
@@ -60,19 +63,19 @@ describe("planLegacyWorktreeMigration", () => {
 
 	it("excludes records already under the new root when org matches the bare name", () => {
 		const identity = "repo/sub";
-		const alreadyMigrated = path.join(WORKTREES_ROOT, identity, "feature");
+		const alreadyMigrated = path.join(worktreesRoot(), identity, "feature");
 		const legacy = path.join(LEGACY_ROOT, "other");
 
 		assert.deepEqual(
 			planLegacyWorktreeMigration({ records: records(alreadyMigrated, legacy), identity, cwd: MAIN_PATH }),
 			{
-				moves: [{ src: legacy, dest: path.join(WORKTREES_ROOT, identity, "other"), label: "other" }],
+				moves: [{ src: legacy, dest: path.join(worktreesRoot(), identity, "other"), label: "other" }],
 			},
 		);
 	});
 
 	it("excludes non-legacy paths", () => {
-		const outside = path.join(WORKTREES_ROOT, "other", "feature");
+		const outside = path.join(worktreesRoot(), "other", "feature");
 
 		assert.deepEqual(planLegacyWorktreeMigration({ records: records(outside), identity: IDENTITY, cwd: MAIN_PATH }), {
 			moves: [],

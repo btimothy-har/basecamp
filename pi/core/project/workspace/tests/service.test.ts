@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { WORKTREES_ROOT } from "../../../git/constants.ts";
+import { worktreesRoot } from "../../../git/constants.ts";
 import {
 	createDefaultSessionState,
 	getCurrentSessionState,
@@ -130,7 +130,7 @@ describe("WorkspaceRuntimeService effective cwd", () => {
 		const stateDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-workspace-restore-"));
 		const label = `restore-${process.pid}-${Date.now()}`;
 		const branch = `wt/${label}`;
-		const worktreeDir = path.join(WORKTREES_ROOT, REPO_IDENTITY, label);
+		const worktreeDir = path.join(worktreesRoot(), REPO_IDENTITY, label);
 		const notifications: string[] = [];
 		t.after(async () => {
 			resetCurrentSessionState();
