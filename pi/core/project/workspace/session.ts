@@ -240,8 +240,12 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 		});
 
 		await migrateLegacyWorktreesForSession(pi, ctx, launchCwd, isSubagent);
-		await sweepSessionWorktreesForSession(pi, ctx, isSubagent);
 
+		// Attach/restore must precede the cold backstop sweep: both lease their target, so the
+		// sweep sees it as live. Sweeping first would reap an explicit --worktree-dir target that
+		// is still leaseless (pre-lease-era residue, or after a manual unlock) and then fail the
+		// attach against a deleted directory — and would pointlessly reap-and-rebuild a cold
+		// worktree a resume is about to adopt.
 		if (worktreeDir) {
 			try {
 				const wt = await attachWorktree(worktreeDir);
@@ -256,6 +260,8 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 			// inherit and re-attach the ask target's live worktree.
 			await restoreActiveWorktreeState(pi, ctx);
 		}
+
+		await sweepSessionWorktreesForSession(pi, ctx, isSubagent);
 
 		notifyUnsafeEditResult(ctx, unsafeEditResult);
 

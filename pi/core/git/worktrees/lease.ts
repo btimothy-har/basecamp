@@ -50,7 +50,11 @@ export function leaseOwnedBy(lockReason: string | null | undefined, sessionId: s
 
 /**
  * Acquire or refresh this session's lease on a worktree by (re)locking it with a fresh
- * timestamp. Git has no lock-reason update, so this unlocks then locks. That leaves a brief
+ * timestamp. A foreign (non-session) lock — e.g. the daemon's `basecamp agent run` lock — is
+ * never overwritten: clobbering it would orphan the worktree from its owner's teardown (the
+ * daemon breaks only provably-stale agent locks, and the session sweep skips agent workspaces
+ * entirely), so a session that adopts or attaches such a worktree simply runs unleased.
+ * Git has no lock-reason update, so re-leasing unlocks then locks. That leaves a brief
  * unlocked window in which a *concurrent* session-start sweep could classify this worktree as
  * cold (leaseless) and, if it is also clean, reap it — a narrow race inherent to using the git
  * lock as the lease. It is bounded (two sequential git calls, victim is the live session
@@ -64,6 +68,8 @@ export async function acquireSessionLease(
 	sessionId: string,
 	now: Date = new Date(),
 ): Promise<void> {
+	const record = findWorktreeRecord(await gitWorktreeRecords(pi, repoRoot), worktreeDir);
+	if (record?.locked && parseSessionLease(record.lockReason) === null) return;
 	await unlockWorktree(pi, repoRoot, worktreeDir).catch(() => {});
 	await lockWorktree(pi, repoRoot, worktreeDir, sessionLeaseReason(sessionId, now));
 }

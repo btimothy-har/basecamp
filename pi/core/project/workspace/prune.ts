@@ -3,14 +3,15 @@
  *
  * Branch GC is not automated in Phase 2: this picker is how a user reclaims session worktrees
  * (`wt-*`, `copilot/*`, direct labels) and, on explicit opt-in, their branches. Agent worktrees
- * are daemon-owned and never listed. A dirty worktree is only force-removed after an explicit
- * confirmation, so uncommitted work is never discarded by surprise.
+ * are daemon-owned and never listed. A dirty worktree — or one holding a live lease or foreign
+ * lock — is only force-removed after an explicit confirmation, so neither uncommitted work nor
+ * another live session's workspace is discarded by surprise.
  */
 
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { listWorktrees } from "../../git/worktrees/crud.ts";
-import { isWorktreeClean } from "../../git/worktrees/lease.ts";
+import { findWorktreeRecord, gitWorktreeRecords, listWorktrees } from "../../git/worktrees/crud.ts";
+import { classifySessionWorktree, isWorktreeClean } from "../../git/worktrees/lease.ts";
 import { deleteBranch, removeWorktree } from "../../git/worktrees/lifecycle.ts";
 import { requireWorkspaceRuntime } from "./runtime.ts";
 
@@ -21,6 +22,8 @@ export interface PruneCandidate {
 	path: string;
 	branch: string | null;
 	dirty: boolean;
+	/** Fresh session lease or foreign lock — likely another live session's; confirm before removal. */
+	inUse: boolean;
 }
 
 /** Session worktrees eligible for manual prune: under the repo's root, not agent-owned, not active. */
@@ -31,16 +34,20 @@ export async function collectPruneCandidates(
 	activePath: string | null,
 ): Promise<PruneCandidate[]> {
 	const summaries = await listWorktrees(pi, repoRoot, repoName);
+	const records = await gitWorktreeRecords(pi, repoRoot);
 	const candidates: PruneCandidate[] = [];
 	for (const summary of summaries) {
 		if (AGENT_LABEL_RE.test(summary.label)) continue;
 		if (activePath && path.resolve(summary.path) === path.resolve(activePath)) continue;
+		const record = findWorktreeRecord(records, summary.path);
 		const dirty = !(await isWorktreeClean(pi, summary.path));
 		candidates.push({
 			label: summary.label,
 			path: summary.path,
 			branch: summary.branch === "detached" ? null : summary.branch,
 			dirty,
+			// The automated sweep only ever reaps "cold"; the picker may override, but never silently.
+			inUse: record !== null && classifySessionWorktree(record) !== "cold",
 		});
 	}
 	return candidates;
@@ -59,13 +66,15 @@ export async function pruneWorktree(
 
 function formatCandidate(candidate: PruneCandidate): string {
 	const branch = candidate.branch ?? "detached";
-	return `${candidate.label} — ${branch}${candidate.dirty ? "  (uncommitted changes)" : ""}`;
+	const marks = `${candidate.inUse ? "  (in use)" : ""}${candidate.dirty ? "  (uncommitted changes)" : ""}`;
+	return `${candidate.label} — ${branch}${marks}`;
 }
 
 /**
- * Confirm and remove a chosen candidate. A dirty worktree is force-removed only after an
- * explicit confirmation (the sole guard against discarding uncommitted work via the picker);
- * its branch is deleted only on a second opt-in. Returns whether the worktree was removed.
+ * Confirm and remove a chosen candidate. An in-use worktree (live lease or foreign lock) and a
+ * dirty worktree are each force-removed only after an explicit confirmation (the guards against
+ * yanking another live session's workspace or discarding uncommitted work via the picker);
+ * the branch is deleted only on a further opt-in. Returns whether the worktree was removed.
  */
 export async function confirmAndPrune(
 	pi: ExtensionAPI,
@@ -73,6 +82,17 @@ export async function confirmAndPrune(
 	repoRoot: string,
 	target: PruneCandidate,
 ): Promise<boolean> {
+	if (target.inUse) {
+		const proceed = await ctx.ui.confirm(
+			"Worktree in use",
+			`${target.label} appears to be in use by a live session. Remove it anyway?`,
+		);
+		if (!proceed) {
+			ctx.ui.notify("Prune cancelled", "info");
+			return false;
+		}
+	}
+
 	if (target.dirty) {
 		const proceed = await ctx.ui.confirm(
 			"Uncommitted changes",

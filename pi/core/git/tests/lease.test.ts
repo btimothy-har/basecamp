@@ -83,14 +83,20 @@ describe("classifySessionWorktree", () => {
 });
 
 describe("acquireSessionLease", () => {
-	it("unlocks then locks with a fresh session reason", async () => {
-		const { pi, calls } = recordingPi(() => OK);
+	function lockStatePi(lockReason: string | null): { pi: ExtensionAPI; calls: string[][] } {
+		const lockLine = lockReason === null ? "" : `locked ${lockReason}\n`;
+		const listOut = `worktree /repo\nbranch refs/heads/main\n\nworktree /repo/wt\nbranch refs/heads/wt/x\n${lockLine}\n`;
+		return recordingPi((args) => (args.includes("list") ? { code: 0, stdout: listOut, stderr: "" } : OK));
+	}
+
+	it("unlocks then locks an unleased worktree with a fresh session reason", async () => {
+		const { pi, calls } = lockStatePi(null);
 		const now = new Date("2026-07-23T10:00:00.000Z");
 
 		await acquireSessionLease(pi, "/repo", "/repo/wt", "sess-1", now);
 
-		assert.deepEqual(calls[0], ["-C", "/repo", "worktree", "unlock", "/repo/wt"]);
-		assert.deepEqual(calls[1], [
+		assert.deepEqual(calls[1], ["-C", "/repo", "worktree", "unlock", "/repo/wt"]);
+		assert.deepEqual(calls[2], [
 			"-C",
 			"/repo",
 			"worktree",
@@ -99,6 +105,29 @@ describe("acquireSessionLease", () => {
 			"basecamp session sess-1 2026-07-23T10:00:00.000Z",
 			"/repo/wt",
 		]);
+	});
+
+	it("re-leases over an existing session lease (ownership takeover)", async () => {
+		const { pi, calls } = lockStatePi(sessionLeaseReason("previous-session"));
+
+		await acquireSessionLease(pi, "/repo", "/repo/wt", "sess-1");
+
+		assert.ok(calls.some((c) => c.includes("unlock")));
+		const lock = calls.find((c) => c.includes("lock") && c.includes("--reason"));
+		assert.ok(lock, "expected a lock call");
+		assert.equal(parseSessionLease(lock[lock.indexOf("--reason") + 1])?.sessionId, "sess-1");
+	});
+
+	it("never clobbers a foreign (agent) lock — the worktree stays the other tier's", async () => {
+		const { pi, calls } = lockStatePi("basecamp agent run 2026-07-23T09:00:00.000Z");
+
+		await acquireSessionLease(pi, "/repo", "/repo/wt", "sess-1");
+
+		assert.ok(!calls.some((c) => c.includes("unlock")), "a foreign lock must never be unlocked");
+		assert.ok(
+			!calls.some((c) => c.includes("lock") && c.includes("--reason")),
+			"a session lease must never overwrite a foreign lock",
+		);
 	});
 });
 
