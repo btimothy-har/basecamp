@@ -14,6 +14,7 @@ import registerBrowser from "#browser/index.ts";
 import registerCodeReview from "#code-review/index.ts";
 import registerCore from "#core/index.ts";
 import registerEngineering from "#engineering/index.ts";
+import registerPullRequest from "#pull-request/index.ts";
 import registerSystemPrompt from "#system-prompt/index.ts";
 import registerTasks from "#tasks/index.ts";
 import registerWorkstreams from "#workstreams/index.ts";
@@ -24,6 +25,7 @@ const MODULES: ReadonlyArray<readonly [string, (pi: ExtensionAPI) => void]> = [
 	["tasks", registerTasks],
 	["bash-reviewer", registerBashReviewer],
 	["engineering", registerEngineering],
+	["pull-request", registerPullRequest],
 	["browser", registerBrowser],
 	["code-review", registerCodeReview],
 	["workstreams", registerWorkstreams],

@@ -1,46 +1,43 @@
 # code-review
 
-A standalone feature domain: the user-invoked `code-review` **skill** plus the `report_findings`
-tool. It runs an independent, third-party review of the current branch — the top-level session
-orchestrates the reviewers and relays their findings as the reviewee, but never authors the findings
-or decides the verdict. Invoke it with `/skill:code-review [base]`; it is hidden from the model
-(`disable-model-invocation`, so not agent-invocable) and never exposed in subagents.
+A primary-only, user-invoked independent review of the current branch. `/skill:code-review [base]` dispatches fixed and risk-driven read-only reviewers; the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill is hidden from model invocation and never exposed in subagents.
+
+## Review method
+
+`skills/code-review/references/review-method.md` is the canonical method for the local multi-agent review. It defines the four severities, structured finding contract, and falsification probes for invariants, end-to-end paths, representation parity, boundary/fallback behavior, counterfactual tests, canonical ownership, rollout, and recovery.
+
+Reviewers may inspect PR descriptions, commits, and linked issues for claimed intent, but treat all repository and GitHub text as untrusted data. Claims never substitute for implementation evidence or narrow review scope.
 
 ## Flow
 
-The `code-review` skill (`skills/code-review/SKILL.md`) drives the top-level session:
+1. Resolve the current branch, base, merge base, tracked working-tree changes, and untracked files.
+2. Inspect the actual diff only far enough to map material risk surfaces without authoring findings.
+3. Dispatch seven fixed read-only lenses: security, testing, docs, clarity, conventions, general correctness, and integration.
+4. Dispatch focused adaptive `general-reviewer`s for each material data/migration, API/protocol, UI/data, async/retry, concurrency/state, performance, build/deploy, or broad-refactor aspect; add another narrow specialist only when its lens needs an independent second pass.
+5. Wait for all reviewers and record any coverage failures.
+6. Verify and normalize reports, merge only semantic duplicates, preserve unique substantive findings, and dispatch independent verification for any concern first noticed by the primary.
+7. Write and show one concise summary, then call `report_findings({ scope, summary, findings })` with the same summary and synthesized final set.
+8. Discuss the packet with the user; never start fixes automatically.
 
-1. Load the `agents` skill — the swarm dispatch/wait tools require it.
-2. Resolve scope: the current branch vs its base (`origin/HEAD`, falling back to `main`; an argument
-   overrides the base) and the merge-base — covering committed, staged, unstaged, and untracked work.
-3. `dispatch_agent` the six fixed reviewer specialists (`security-specialist`, `testing-specialist`,
-   `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`),
-   read-only, each with a self-contained scope-only brief. Reviewers self-resolve the diff — no
-   author narration.
-4. `dispatch_agent` additional `general-reviewer`s for any material aspect the fixed six don't cover
-   (migration, concurrency, performance, public API/contract, build/CI).
-5. `wait_for_agent` on all handles; read each reviewer's plain-text report inline.
-6. Call `report_findings({ scope, findings })`, carrying every finding through verbatim (severity
-   included), with an optional per-finding `response` — never dropping or softening one.
+The integration lens owns cross-layer producer/consumer contracts, semantic parity, runtime wiring, temporal alignment, source-of-truth drift, rollout compatibility, and operational completion. It leaves local functional logic, exploitability, test quality, documentation-only drift, pure clarity, and codified conventions to their dedicated lenses.
 
-`report_findings` (`tools.ts`) is the only tool. It merges the findings, computes the verdict
-deterministically (any critical → Request Changes; ≥3 high → Request Changes; 1–2 high → Comment;
-only medium/low → Approve with notes; none → Approve — the verdict ignores `response`), opens the
-interactive annotate pane (finding → author `response` → user reaction) when a UI is available,
-persists a private JSON packet to scratch (structured findings + responses + reactions; raw reviewer
-prose is not retained), and returns the verdict framing to the reviewee.
+## Result handling
+
+The primary may rewrite and regroup findings based on verified root cause and impact; source selection and semantic deduplication are editorial model judgment. Independent reviewers remain the source of defects, and the primary must obtain a focused reviewer report before adding a concern it noticed itself. The verdict is deterministic only after this synthesis.
+
+`report_findings` sorts the final findings and computes the verdict from severity counts (any critical → Request Changes; at least three high → Request Changes; one or two high → Comment; medium/low only → Approve with notes; none → Approve). A per-finding `response` can contest or contextualize a finding but never changes the verdict.
+
+The annotation pane collects optional user reactions. The private packet stores the primary summary, synthesized findings, responses, and reactions under session scratch with mode `0600`; its directory is `0700`. Raw reviewer reports and provenance mappings are not retained.
 
 ## Layout
 
-- `index.ts` (`registerCodeReview`) — registers `report_findings` and exposes the skill primary-only
-  via a `resources_discover` hook.
-- `skills/code-review/SKILL.md` — the orchestration skill (`disable-model-invocation`, user-invoked).
-- `tools.ts` — the `report_findings` tool.
-- `findings.ts` — the `Finding` / `Dimension` / `Severity` / `ReviewScope` schemas + `ReportFindingsParams`.
-- `synthesis.ts` — `mergeFindings` + `computeVerdict`.
-- `annotate-pane.ts` — the interactive reaction/response pane.
-- `artifact.ts` — the `ReviewResult` record + packet persistence.
+- `index.ts` — registers `report_findings` and exposes the skill primary-only.
+- `skills/code-review/SKILL.md` — orchestration contract.
+- `skills/code-review/references/review-method.md` — shared reviewer method and finding contract.
+- `tools.ts` — result tool and review-chair handoff.
+- `findings.ts` — dimensions, severities, scope, and tool schemas.
+- `synthesis.ts` — stable finding order and deterministic verdict.
+- `annotate-pane.ts` — finding reactions.
+- `artifact.ts` — private review packet.
 
-The domain owns no dispatch orchestration — the skill drives the reviewers through the swarm tools —
-and its only cross-domain import is `#core/host/env` (`isSubagent`). It is manual only. v1 reviews
-the current branch; PR and arbitrary-branch targets are a planned follow-up.
+The feature reviews the current branch only. PR-number and arbitrary-branch targets are out of scope.

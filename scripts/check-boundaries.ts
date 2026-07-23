@@ -22,6 +22,7 @@ const CONTEXTS = [
 	"tasks",
 	"bash-reviewer",
 	"engineering",
+	"pull-request",
 	"browser",
 	"code-review",
 	"workstreams",

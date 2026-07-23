@@ -97,10 +97,12 @@ Use it to list, add, edit, or remove configured projects.
 |---------|-------------|
 | `/show-plan` | Show the current plan and task progress |
 | `/worktree [label]` | Switch to an existing Git-registered worktree |
-| `/create-pr` | Create or update a pull request |
+| `/skill:pull-request` | Prepare or publish a pull request and carry it through CI |
 | `/skill:code-review` | Run an independent multi-agent review of the current branch |
 | `/title [text]` | Generate a session title from the conversation, or set one manually |
 | `/model-aliases` | Manage model aliases (list, add, edit, remove) |
+
+The model-invocable `pull-request` skill is primary-only. New PRs stay draft through CI, and the skill asks before marking one ready; without explicit ready intent it stops at the green draft. It follows repository-required reviews after readiness and never merges the PR.
 
 ### Browser Automation
 
@@ -125,7 +127,7 @@ list_agents({ awaitable: true })
 wait_for_agent({ handles: "<agent-handle>" })
 ```
 
-Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`.
+Built-in agents: `scout`, `worker`, `devils-advocate`, `security-specialist`, `testing-specialist`, `docs-specialist`, `code-clarity-specialist`, `conventions-specialist`, `general-reviewer`, `integration-specialist`.
 
 Named read-only agents may fan out for parallel investigation and review. Mutative workers may also run in parallel because each receives its own locked, per-run worktree and branch. Basecamp gives mutating sessions one hidden reminder to commit dirty work, reclaims clean worker worktrees automatically, and preserves live or dirty trees rather than force-removing them.
 

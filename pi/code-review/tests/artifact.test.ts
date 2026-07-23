@@ -13,6 +13,7 @@ interface AnnotatedFinding extends Finding {
 
 interface PersistedArtifact {
 	scope: ReviewResult["scope"];
+	summary: string;
 	verdict: ReviewResult["verdict"];
 	findings: AnnotatedFinding[];
 	createdAt: string;
@@ -25,6 +26,7 @@ const result: ReviewResult = {
 		cwd: "/repo",
 		label: "branch feature → origin/main",
 	},
+	summary: "One high security finding and one medium testing finding.",
 	verdict: {
 		decision: "approve",
 		blocking: false,
@@ -95,7 +97,7 @@ describe("isSubagent", () => {
 });
 
 describe("persistReviewArtifact", () => {
-	it("writes a private prose-free artifact with aligned reactions under the scratch code-review directory", (t) => {
+	it("writes a private synthesized artifact with aligned reactions under the scratch code-review directory", (t) => {
 		const scratch = withScratch(t);
 
 		const artifactPath = persistReviewArtifact(result, ["typed reaction", null]);
@@ -106,6 +108,7 @@ describe("persistReviewArtifact", () => {
 		assert.equal(fs.existsSync(artifactPath), true);
 		assert.equal(fs.statSync(artifactPath).mode & 0o777, 0o600);
 		assert.equal(fs.statSync(expectedDir).mode & 0o777, 0o700);
+		assert.equal(artifact.summary, result.summary);
 		assert.equal(artifact.findings[0]?.reaction, "typed reaction");
 		assert.equal(artifact.findings[1]?.reaction, null);
 		assert.equal(artifact.findings[0]?.dimension, "security");
@@ -118,7 +121,7 @@ describe("persistReviewArtifact", () => {
 		assert.equal(artifact.findings[1]?.severity, "medium");
 		assert.equal(artifact.findings[1]?.title, "Missing regression coverage");
 		assert.equal("reviewers" in artifact, false);
-		assert.equal(json.includes("prose"), false);
+		assert.equal(json.includes(result.summary), true);
 	});
 
 	it("writes null reactions when reactions are omitted", (t) => {

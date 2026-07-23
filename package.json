@@ -29,6 +29,7 @@
 		"#tasks/*": "./pi/tasks/*",
 		"#bash-reviewer/*": "./pi/bash-reviewer/*",
 		"#engineering/*": "./pi/engineering/*",
+		"#pull-request/*": "./pi/pull-request/*",
 		"#browser/*": "./pi/browser/*",
 		"#code-review/*": "./pi/code-review/*",
 		"#workstreams/*": "./pi/workstreams/*"
@@ -39,7 +40,7 @@
 		"lint": "biome check . && node scripts/check-boundaries.ts && node scripts/check-file-length.ts",
 		"lint:fix": "biome check --fix .",
 		"format": "biome format --fix .",
-		"test": "node --experimental-strip-types --test pi/extension.test.ts \"pi/core/**/*.test.ts\" \"pi/system-prompt/**/*.test.ts\" \"pi/tasks/**/*.test.ts\" \"pi/bash-reviewer/**/*.test.ts\" \"pi/engineering/**/*.test.ts\" \"pi/browser/**/*.test.ts\" \"pi/code-review/**/*.test.ts\" \"pi/workstreams/**/*.test.ts\" \"tests/hub/*.test.js\""
+		"test": "node --experimental-strip-types --test pi/extension.test.ts \"pi/core/**/*.test.ts\" \"pi/system-prompt/**/*.test.ts\" \"pi/tasks/**/*.test.ts\" \"pi/bash-reviewer/**/*.test.ts\" \"pi/engineering/**/*.test.ts\" \"pi/pull-request/**/*.test.ts\" \"pi/browser/**/*.test.ts\" \"pi/code-review/**/*.test.ts\" \"pi/workstreams/**/*.test.ts\" \"tests/hub/*.test.js\""
 	},
 	"dependencies": {
 		"@playwright/cli": "0.1.17",

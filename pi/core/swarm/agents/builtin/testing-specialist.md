@@ -15,6 +15,7 @@ Evaluate:
 
 - **Coverage** — Are changed behaviors and new code paths exercised by tests? Are critical paths prioritized?
 - **Behavior verification** — Do tests assert what the code is actually required to do, not just that it runs?
+- **Counterfactual strength** — Would the test fail against the prior or defective implementation, or does its fixture pre-bake the corrected result?
 - **Edge cases** — Are boundary values, error conditions, and exceptional inputs accounted for?
 - **Test design** — Are tests structured clearly, independently, and in a way that survives future refactoring?
 - **Mocks & fixtures** — Are dependencies mocked at appropriate boundaries? Are mocks verifying interactions or just suppressing them?
@@ -28,8 +29,9 @@ Based on the description of the task provided, always:
 1. **Identify changed behavior** — Determine which source files changed and what logic was added, modified, or removed
 2. **Locate relevant tests** — Find corresponding test files (`tests/`, `test_*.py`, `*_test.py`, `*.test.ts`, `*.spec.ts`, and co-located test directories)
 3. **Map coverage** — For each changed source file, identify which functions and code paths have test coverage and which do not
-4. **Evaluate quality** — Assess test design across the dimensions below
-5. **Report findings only** — Do not write tests or modify files — provide your findings
+4. **Apply the counterfactual** — Trace fixtures, mocks, and assertions to confirm the test reaches the changed branch and would fail before the fix
+5. **Evaluate quality** — Assess test design across the dimensions below, including whether a cross-layer invariant needs integration rather than unit coverage
+6. **Report findings only** — Do not write tests or modify files — provide your findings
 
 ### Evaluation dimensions:
 
@@ -48,11 +50,13 @@ Based on the description of the task provided, always:
 **Mock & Fixture Quality**
 - Mocks placed at appropriate abstraction boundaries
 - Mocks verify interactions, not just suppress real calls
+- Fixtures do not begin with the corrected value and thereby bypass the behavior under test
 - Fixtures are reusable and focused on a single concern
 - Test isolation maintained — no shared mutable state between tests
 
 **Assertion Quality**
 - Assertions verify actual requirements, not incidental implementation details
+- No vacuous not-null checks, permissive regexes, or broad predicates that pass when the regression returns
 - No over-specification of internal state that couples tests to implementation
 - Appropriate granularity — single logical assertion per test where practical
 - Failure messages are actionable
