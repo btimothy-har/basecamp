@@ -19,9 +19,11 @@ Use these tools for agent delegation and collaboration; if agents are unavailabl
 ## Choosing an agent
 
 Default to the narrowest agent that fits:
-- **Named read-only agents** (`scout`, `devils-advocate`, `code-clarity-specialist`, `conventions-specialist`, `docs-specialist`, `general-reviewer`, `integration-specialist`, `security-specialist`, `testing-specialist`) may fan out for investigation, search, review, and second opinions.
-- **worker** is the only mutative agent: it works in its **own** isolated worktree (branched from your current HEAD), commits its change to a branch, and reports back — so you can run several `worker`s in parallel. Dispatching a `worker` requires you to be in an execution worktree (it branches from yours).
-- **Ad-hoc agents** are read-only by tool allowlist. Use them only for narrow tasks when no named agent fits.
+Every dispatched agent runs in its **own transient workspace** (a worktree based on your current state, uncommitted WIP included) with full write tools; only commits on its `agent/<handle>` branch survive its run.
+
+- **Report personas** (`scout`, `devils-advocate`, `code-clarity-specialist`, `conventions-specialist`, `docs-specialist`, `general-reviewer`, `integration-specialist`, `security-specialist`, `testing-specialist`) fan out for investigation, search, review, and second opinions. Their deliverable is the report; anything they leave uncommitted vanishes with their workspace.
+- **worker** is the general-purpose implementer: brief it to make a change and it commits to its branch for you to merge — run several in parallel for file-disjoint tasks. Specialists may also implement when the brief says so; capability is uniform, the persona shapes behavior.
+- **Ad-hoc agents** (no persona) get the same workspace and toolset. Use them only for narrow tasks when no named agent fits.
 
 Do not dispatch agents for trivial one-step work you can do directly.
 
@@ -81,10 +83,12 @@ A subagent receives no conversation history. Include:
 
 Review subagent output critically — you validate evidence, make decisions, and communicate results.
 
-Read-only agents return findings; you apply any changes yourself. A **worker** instead commits its change to its own branch (reported as `agent-<id>/worker`); its worktree is torn down on finish when clean. To integrate a finished worker:
+Agents return findings and/or branches; you validate evidence, make decisions, and integrate.
+
+An agent's only durable output is what it commits to its branch (`agent/<handle>`); its workspace is removed automatically when the run ends, uncommitted state included. Report personas normally commit nothing — the report is the deliverable. To integrate an implementing agent:
 
 1. `wait_for_agent` on its handle and read its final report (a PR-style summary of what changed).
-2. From your own worktree, `git merge agent-<id>/worker` to bring the change in, resolving any conflicts as normal.
-3. Then `git branch -d agent-<id>/worker` to delete the merged branch (allowed — it is not a `git worktree` command). A clean worker **worktree** is removed for you when the agent exits; a dirty residual is preserved for recovery rather than force-deleted. Never run `git worktree remove` (that is blocked, and worktree lifecycle is system-managed).
+2. From your own worktree, `git merge agent/<handle>` to bring the change in, resolving any conflicts as normal.
+3. Then `git branch -d agent/<handle>` to delete the merged branch (allowed — it is not a `git worktree` command). Never run `git worktree remove` (that is blocked; workspace lifecycle is system-managed).
 
-If a worker's change isn't wanted, do not merge it. A clean worktree is still reclaimed, but the unmerged branch remains until you explicitly delete it.
+Retasking the same handle continues the same branch: the agent's earlier commits are in its next workspace, and once you have merged, its next run bases fresh from your HEAD. If an agent's change isn't wanted, do not merge it — the unmerged branch remains until you explicitly delete it, and deleting it is the explicit rejection.

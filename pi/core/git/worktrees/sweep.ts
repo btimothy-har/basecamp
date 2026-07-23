@@ -1,58 +1,65 @@
 /**
- * Session-start sweep of finished mutative-agent worktrees.
+ * Session-start sweep of finished agent workspaces — the backstop for runs whose daemon-side
+ * teardown never fired (daemon died and has not restarted since).
  *
- * A dispatched worker's residual worktree (`agent-<id>/<name>`) is reclaimed once its branch
- * has been integrated into a non-agent branch. Locked worktrees are live and never touched.
- * Dirty unlocked worktrees are preserved because removal is non-force; the branch is deleted
- * only after the worktree removal succeeds.
+ * An agent worktree is reclaimed when its branch is integrated (merged into a non-agent
+ * branch) or provably empty (its tip is still the dispatch snapshot commit — the run
+ * committed nothing, and snapshot content is re-derivable from the parent's tree). Locked
+ * worktrees are live and never touched. Branches carrying unintegrated real work survive.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isMergedInto, tryGitOutput } from "../repo.ts";
 import { gitWorktreeRecords } from "./crud.ts";
 import { deleteBranch, removeWorktree } from "./lifecycle.ts";
 
-const AGENT_BRANCH_PREFIX = "agent-";
-const MERGE_CHECK_TIMEOUT_MS = 15_000;
+// Legacy per-run branches (`agent-<token>/<name>`) and per-agent branches (`agent/<handle>`).
+const AGENT_BRANCH_PREFIXES = ["agent-", "agent/"];
+const SNAPSHOT_COMMIT_SUBJECT = "basecamp dispatch snapshot";
 
 export interface AgentWorktreeSweepResult {
 	removed: string[];
 	kept: number;
 }
 
-/** True if `branch` has been merged into `candidate` (is an ancestor of it). */
-async function isMergedInto(pi: ExtensionAPI, repoRoot: string, branch: string, candidate: string): Promise<boolean> {
-	const result = await pi.exec("git", ["-C", repoRoot, "merge-base", "--is-ancestor", branch, candidate], {
-		timeout: MERGE_CHECK_TIMEOUT_MS,
-	});
-	return result.code === 0;
+function isAgentBranch(branch: string | null): branch is string {
+	return typeof branch === "string" && AGENT_BRANCH_PREFIXES.some((prefix) => branch.startsWith(prefix));
+}
+
+/** True when the branch tip is still the dispatch snapshot commit — the run committed nothing. */
+async function isSnapshotOnly(pi: ExtensionAPI, repoRoot: string, branch: string): Promise<boolean> {
+	const subject = await tryGitOutput(pi, repoRoot, ["log", "-1", "--format=%s", branch]);
+	return subject === SNAPSHOT_COMMIT_SUBJECT;
 }
 
 /**
- * Remove agent worktrees whose branch has been merged into a non-agent branch, deleting the
- * merged branch too. Best-effort per worktree — a failure on one never blocks the others, and
- * an unmerged agent worktree (still running, or awaiting integration) is left untouched.
+ * Remove agent worktrees whose branch is integrated or snapshot-only, deleting the branch
+ * too. Best-effort per worktree — a failure on one never blocks the others, and an agent
+ * worktree with outstanding committed work is left untouched.
  */
 export async function sweepAgentWorktrees(pi: ExtensionAPI, repoRoot: string): Promise<AgentWorktreeSweepResult> {
 	const records = await gitWorktreeRecords(pi, repoRoot);
-	const agentWorktrees = records.filter((r) => r.branch?.startsWith(AGENT_BRANCH_PREFIX));
+	const agentWorktrees = records.filter((record) => isAgentBranch(record.branch));
 	// Candidate integration targets: every non-agent branch (main, the parent's worktree, …).
 	const integrationBranches = records
-		.map((r) => r.branch)
-		.filter((b): b is string => typeof b === "string" && !b.startsWith(AGENT_BRANCH_PREFIX));
+		.map((record) => record.branch)
+		.filter((branch): branch is string => typeof branch === "string" && !isAgentBranch(branch));
 
 	const removed: string[] = [];
 	for (const record of agentWorktrees) {
 		const branch = record.branch;
 		if (!branch || record.locked) continue;
 
-		let merged = false;
-		for (const candidate of integrationBranches) {
-			if (await isMergedInto(pi, repoRoot, branch, candidate)) {
-				merged = true;
-				break;
+		let reclaimable = await isSnapshotOnly(pi, repoRoot, branch);
+		if (!reclaimable) {
+			for (const candidate of integrationBranches) {
+				if (await isMergedInto(pi, repoRoot, branch, candidate)) {
+					reclaimable = true;
+					break;
+				}
 			}
 		}
-		if (!merged) continue;
+		if (!reclaimable) continue;
 
 		try {
 			await removeWorktree(pi, repoRoot, record.path, { unlock: false });

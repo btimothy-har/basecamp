@@ -1,19 +1,26 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { getAgentDepth } from "../../host/env.ts";
 import { getWorkspaceState } from "./state.ts";
 
 const GIT_STATUS_TIMEOUT_MS = 10_000;
 const DIRTY_WORKTREE_REMINDER_TYPE = "basecamp-dirty-worktree-reminder";
 const DIRTY_WORKTREE_REMINDER =
 	"The active worktree still has uncommitted changes. Inspect them and commit only coherent changes related to the current task before settling. Do not stage or commit unrelated or pre-existing work. If the remaining changes are intentionally unfinished, leave them in place and explain why. Restate the substantive task result in your final response so this reminder does not replace the useful handoff.";
+// Dispatched agents work in transient workspaces: uncommitted state is discarded at
+// teardown by design, so the reminder distinguishes deliverables from scratch.
+const AGENT_DIRTY_WORKTREE_REMINDER =
+	"Your workspace has uncommitted changes and is discarded at teardown — only commits on your branch survive. If these changes are part of your deliverable, commit them now (git add + git commit). If they are scratch or exploration files, leave them; they vanish by design. Restate your substantive result in your final response.";
 
 export interface DirtyWorktreeReminderOptions {
 	getState?: typeof getWorkspaceState;
 	isReadOnly?: () => boolean;
+	isSubagent?: () => boolean;
 }
 
 export function registerDirtyWorktreeReminder(pi: ExtensionAPI, options: DirtyWorktreeReminderOptions = {}): void {
 	const getState = options.getState ?? getWorkspaceState;
 	const isReadOnly = options.isReadOnly ?? (() => pi.getFlag("read-only") === true);
+	const isSubagent = options.isSubagent ?? (() => getAgentDepth() > 0);
 	let reminderQueued = false;
 	let reminderTurnActive = false;
 
@@ -41,7 +48,7 @@ export function registerDirtyWorktreeReminder(pi: ExtensionAPI, options: DirtyWo
 			pi.sendMessage(
 				{
 					customType: DIRTY_WORKTREE_REMINDER_TYPE,
-					content: DIRTY_WORKTREE_REMINDER,
+					content: isSubagent() ? AGENT_DIRTY_WORKTREE_REMINDER : DIRTY_WORKTREE_REMINDER,
 					display: false,
 				},
 				{ deliverAs: "followUp" },

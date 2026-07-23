@@ -17,6 +17,7 @@ function createHarness(
 	options: {
 		state?: WorkspaceState;
 		readOnly?: boolean;
+		subagent?: boolean;
 		status?: { code: number; stdout: string; stderr: string; killed?: boolean };
 		execError?: Error;
 		sendError?: Error;
@@ -69,6 +70,7 @@ function createHarness(
 	registerDirtyWorktreeReminder(pi, {
 		getState: () => state,
 		isReadOnly: () => options.readOnly === true,
+		isSubagent: () => options.subagent === true,
 	});
 	assert.equal(registeredMessageStart, true);
 	assert.equal(registeredEnd, true);
@@ -145,6 +147,17 @@ describe("dirty worktree reminder", () => {
 		await harness.end();
 
 		assert.deepEqual(harness.sent, []);
+	});
+
+	it("uses the teardown-aware variant for dispatched agents", async () => {
+		const harness = createHarness({ subagent: true });
+
+		await harness.end();
+
+		assert.equal(harness.sent.length, 1);
+		assert.match(harness.sent[0]?.message.content ?? "", /discarded at teardown/);
+		assert.match(harness.sent[0]?.message.content ?? "", /only commits on your branch survive/);
+		assert.match(harness.sent[0]?.message.content ?? "", /scratch or exploration files/);
 	});
 
 	it("does not inspect worktrees for read-only agents", async () => {
