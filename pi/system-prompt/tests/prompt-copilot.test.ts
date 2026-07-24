@@ -7,7 +7,7 @@ import { assemblePrompt } from "../prompt.ts";
 import { useAgentMode, useTempHome } from "./helpers.ts";
 
 describe("assemblePrompt copilot", () => {
-	it("composes generic work posture with the copilot style", async (t) => {
+	it("loads the copilot mode and no working style", async (t) => {
 		useAgentMode(t, "copilot");
 		const homeDir = await useTempHome(t);
 		const basecampDir = path.join(homeDir, ".pi", "basecamp");
@@ -25,17 +25,17 @@ describe("assemblePrompt copilot", () => {
 			readOnly: false,
 		});
 
-		// copilot is a style over the shared execution posture, not its own mode fragment
-		assert.match(prompt, /# Work/);
-		assert.match(prompt, /You are the repo copilot for the current repository/);
+		// copilot is a mode: it carries its own manner, so no style file loads
+		assert.match(prompt, /# Repo Copilot/);
 		assert.match(prompt, /# Repo Logseq/);
 		assert.match(prompt, /# Code Craft/);
+		assert.doesNotMatch(prompt, /^# Work$/m);
 		assert.doesNotMatch(prompt, /# Repo Copilot Context/);
 		assert.doesNotMatch(prompt, /# Your Role as an Engineer/);
 		assert.doesNotMatch(prompt, /CUSTOM ENGINEERING STYLE/);
 	});
 
-	it("keeps copilot posture in the style and defers tool mechanics to the skill", async (t) => {
+	it("keeps the sequencing invariants inline and does not restate tool contracts", async (t) => {
 		useAgentMode(t, "copilot");
 		await useTempHome(t);
 
@@ -50,22 +50,27 @@ describe("assemblePrompt copilot", () => {
 			readOnly: false,
 		});
 
-		// posture and boundaries stay in the always-on style
+		// posture and boundaries stay in the mode fragment
 		assert.match(prompt, /Copilot stages work; it does not implement in-session/);
 		assert.match(prompt, /do not supervise, drive, or manage it/);
 		assert.match(prompt, /Workstream agents never write Logseq/);
 		assert.match(prompt, /remains the user-facing durable record/);
 		assert.match(prompt, /appends an agent row — additive, never overwriting/);
-		assert.match(prompt, /Apply the `workstreams` skill/);
+		// the five facts no tool description can assert
+		assert.match(prompt, /\*\*List before you create\.\*\*/);
+		assert.match(prompt, /An edit does not reach a running session/);
+		assert.match(prompt, /Launching is not starting/);
+		assert.match(prompt, /`cd <worktree-path> && pi --workstream=<slug>`/);
+		assert.match(prompt, /State is pull-based/);
 		// --copilot dropped the plan() sibling framing
 		assert.doesNotMatch(prompt, /plan\(\)/);
 		assert.doesNotMatch(prompt, /siblings, not replacements/);
 
-		// cross-tool sequencing is deferred, not restated in the always-on prompt
-		assert.doesNotMatch(prompt, /create_workstream/);
-		assert.doesNotMatch(prompt, /launch_workstream/);
+		// per-call contracts belong to the tool descriptions the index already injects
+		assert.doesNotMatch(prompt, /Record-only: it does not provision a worktree/);
+		assert.doesNotMatch(prompt, /bumping its version and keeping the old version/);
+		assert.doesNotMatch(prompt, /provision its `copilot\/<slug>` worktree \(idempotent\)/);
 		assert.doesNotMatch(prompt, /set_workstream_status/);
-		assert.doesNotMatch(prompt, /keeps the old version/);
 	});
 
 	it("hides the plan tool from the copilot capabilities index but keeps it in other modes", async (t) => {

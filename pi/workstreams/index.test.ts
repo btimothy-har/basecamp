@@ -69,7 +69,7 @@ describe("workstreams entrypoint", () => {
 		resetCopilotLaunchForTesting();
 	});
 
-	it("registers the workstream tools and skill for a copilot session", () => {
+	it("registers the workstream tools for a copilot session", () => {
 		setCopilotLaunchReader(() => true);
 		const pi = createMockPi();
 		registerWorkstreams(pi as unknown as ExtensionAPI);
@@ -81,7 +81,6 @@ describe("workstreams entrypoint", () => {
 		assert.equal(toolNames.has("list_workstreams"), true);
 		assert.equal(toolNames.has("set_workstream_status"), true);
 		assert.equal(pi.flags.has("workstream"), true);
-		assert.ok(pi.onEvents.some((entry) => entry.event === "resources_discover"));
 	});
 
 	it("withholds the tools from a non-copilot top-level session but keeps --workstream", () => {
@@ -92,7 +91,6 @@ describe("workstreams entrypoint", () => {
 		// shaping and staging is the copilot's job; a --workstream session only attaches
 		assert.equal(pi.tools.length, 0);
 		assert.equal(pi.flags.has("workstream"), true);
-		assert.ok(!pi.onEvents.some((entry) => entry.event === "resources_discover"));
 	});
 
 	it("registers nothing for a non-top-level (daemon-spawned) session", () => {

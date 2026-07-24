@@ -41,10 +41,10 @@ The system prompt is fully **replaced**, not appended — this buys complete con
 
 It assembles as 6 categories / 8 blocks — Constraints → Posture → Style → Capabilities → Project → Environment — each independently overridable. Two rules govern where guidance goes, and both exist because violating them produced duplication:
 
-- **Ownership rule**: every layer answers exactly one question. `environment.md` = what is true here; `buildEnvBlock` = what is true right now; **tool description = how to call it**; `modes/*` = what this session is for; `styles/*` = what good looks like; skills = how to do it well; project context = repo gotchas.
-- **Consumer-divergence test**: a new block is justified only when two consumers actually disagree about it. Semantic decomposition is not a reason to split.
+- **Ownership rule**: every layer answers exactly one question. `environment.md` = what is true here; `buildEnvBlock` = what is true right now; **tool description = how to call it**; `modes/*` = **what are we doing**; `styles/*` = **how it is achieved**; skills = how to do it well in depth; project context = repo gotchas.
+- **Consumer-divergence test**: a new block is justified only when two consumers actually disagree about it. Semantic decomposition is not a reason to split. Where the two rules conflict, divergence wins — it is about composition value, ownership only about tidiness.
 
-The practical consequence: **tool mechanics never go in a prompt fragment.** The capabilities index injects every registered tool description verbatim, so restating a calling contract in a fragment ships it twice in one prompt. Cross-tool sequencing goes in a skill (see the `workstreams` skill), not a fragment. `copilot` is a working style over the generic `work` posture, not its own mode fragment — though the `copilot` *mode* remains the gate. See `pi/system-prompt/README.md` for the block table and the full rationale.
+The practical consequence: **tool mechanics never go in a prompt fragment.** The capabilities index injects every registered tool description verbatim, so restating a calling contract in a fragment ships it twice in one prompt — a fragment should keep only what no tool description can assert (orderings, propagation rules, policy). `copilot` is a mode, because it is a distinct activity; it is also the one mode that loads no style, carrying its own short manner section because no existing style fits and a single-consumer style file would fail the divergence test. See `pi/system-prompt/README.md` for the block table and the full rationale.
 
 ### File-Length Guidance
 

@@ -11,9 +11,9 @@ The prompt is assembled from blocks grouped into categories, in this order:
 | # | Category | Block | Source | Included when |
 |---|----------|-------|--------|---------------|
 | 1 | Constraints | read-only | `defaults/modes/read-only.md` | `--read-only` |
-| 2 | Posture | mode | `defaults/modes/{analysis,planning,work}.md` | primary session |
+| 2 | Posture | mode | `defaults/modes/{analysis,planning,work,copilot}.md` | primary session |
 | 3 | | persona | `#core/swarm` `builtin/*.md` (via `agentPrompt`) | dispatched agent |
-| 4 | Style | style | `defaults/styles/{engineering,advisor,logseq,copilot}.md` | user-facing session |
+| 4 | Style | style | `defaults/styles/{engineering,advisor,logseq}.md` | user-facing, non-copilot |
 | 5 | | craft | `defaults/styles/craft.md` | **always** |
 | 6 | Capabilities | index | `buildCapabilitiesIndex` | always |
 | 7 | Project | repo context · repo memory | `buildProjectContext` · `buildRepoLogseqContext` | always · copilot |
@@ -30,10 +30,12 @@ Each layer answers exactly one question. When guidance appears in the wrong laye
 | `environment.md` | What is true here? (machine, sandbox, guards, tooling) |
 | `buildEnvBlock` | What is true right now? (cwd, repo, worktree, date) |
 | tool description | How do I call this? |
-| `modes/*` | What am I here to do, and not do? |
-| `styles/*` | What does good look like? |
-| skills | How do I do this well? |
+| `modes/*` | **What are we doing?** |
+| `styles/*` | **How are things achieved?** |
+| skills | How do I do this well, in depth? |
 | project context | What's non-obvious about this repo? |
+
+Mode and style are the *what* and the *how* of a session. Test a fragment by asking which it is: "you implement and integrate" is a what (mode); "you are a partner, not a follower" is a how (style).
 
 Consequences worth stating, because each was a live duplication:
 
@@ -62,13 +64,17 @@ Prompt-block ordering is chosen for coherence rather than positional emphasis: t
 - **`context-builders.ts`** — pure fragment builders: worktree warning, unsafe-edit guidance, project-context block, capabilities index.
 - **`defaults/`** — the shipped fragments: `environment.md`, `modes/<mode>.md`, `styles/<style>.md`.
 
-### Copilot is a style, not a posture
+### Copilot is a mode that carries its own manner
 
-`copilot` has no mode fragment. A copilot session assembles the generic `modes/work.md` execution posture plus `styles/copilot.md`. "You implement and integrate" was never mode-level guidance — it is engineering-level, and now lives in `styles/engineering.md`.
+Copilot is a distinct *activity* — orient the repo, make the choice set clear, shape and stage workstreams, curate repo memory — so it is a mode, not a style. It is also the one mode that loads **no** style file: it carries its short "Work with the user" section inline instead.
 
-The `copilot` **agent mode still exists** and is load-bearing: `isCopilotMode` selects the posture/style pair here, hides `plan` from the capabilities index, hard-blocks the `plan` tool call in `#tasks`, and locks shift+tab. Only the prose relocated. Do not remove the mode.
+That looks like an ownership-rule violation (a *how* inside a *what*), and it is a deliberate one. No existing style fits: `engineering` asserts "you implement directly" and copilot does not implement; `advisor` drags prose-over-bullets and a research section; `logseq` assumes cwd is the graph root. A single-purpose `styles/copilot.md` would hold ~50 words that only copilot ever loads, so the **consumer-divergence test rejects it** — the boundary would add no composition, only taxonomy. When ownership and divergence conflict, divergence wins: it is about composition value, ownership only about tidiness. Not every mode needs a style.
+
+The `copilot` mode is load-bearing beyond prose: `isCopilotMode` suppresses the style, hides `plan` from the capabilities index, hard-blocks the `plan` tool call in `#tasks`, and locks shift+tab. Do not remove it.
 
 Because copilot is launch-only and immutable, capabilities can be scoped by **gating registration** rather than filtering the index — see `pi/workstreams/index.ts`. An unregistered tool can never become callable mid-session, so unlike `plan` it needs no call-time block.
+
+The workstream **tool contracts live in the tool descriptions**, which the index already injects; `modes/copilot.md` keeps only the handful of facts no single tool description can assert (list before create, an edit does not reach a running session, launching is not starting, cross-repo launch, pull-based handles). A `workstreams` skill was tried and removed: ~320 of its 422 words restated those descriptions, and the ~100 that remained were too few to justify a file the copilot would have to load in every session.
 
 ## Skill lifecycle language
 

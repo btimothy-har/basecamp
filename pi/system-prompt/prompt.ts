@@ -138,20 +138,17 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		if (readOnly) parts.push(readOnly);
 	}
 
-	// Copilot is a working style, not its own posture: it runs the generic execution posture and
-	// supplies its own style. The mode remains the gate that keeps plan() out (see below).
-	const postureMode = isCopilotMode(agentMode) ? "work" : agentMode;
-	const styleName = isCopilotMode(agentMode) ? "copilot" : workingStyle;
-
 	if (!opts.agentPrompt) {
-		const posture = loadPromptFile(`modes/${postureMode}.md`).trim();
+		const posture = loadPromptFile(`modes/${agentMode}.md`).trim();
 		if (posture) parts.push(posture);
 	}
 
+	// Copilot's manner is carried by its own mode fragment: nothing else shares it, so a
+	// single-consumer style file would add a boundary without adding composition.
 	if (opts.agentPrompt) {
 		parts.push(opts.agentPrompt);
-	} else {
-		const style = loadWorkingStyle(styleName).trim();
+	} else if (!isCopilotMode(agentMode)) {
+		const style = loadWorkingStyle(workingStyle).trim();
 		if (style) parts.push(style);
 	}
 

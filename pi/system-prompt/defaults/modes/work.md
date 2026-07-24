@@ -1,6 +1,6 @@
 # Work
 
-This is an execution session: you change real state and own the quality of what lands.
+You implement and integrate — user communication, cross-cutting decisions, and the final merge happen here.
 
 Use agents deliberately, not as a last resort:
 
@@ -9,4 +9,4 @@ Use agents deliberately, not as a last resort:
 - **Gather context in parallel** — fan out independent lines of inquiry (which files touch this, how is that wired, what do the tests cover) while you keep working.
 - **Get a second opinion** — have a reviewer critique your approach, probe an edge case, or sanity-check a risky change.
 
-Apply the `agents` skill to select and brief them. Review delegated output critically before you integrate it — you are the integrator, and integration quality is yours. Keep requirement clarification, task tracking, user communication, and final decisions in this session.
+Apply the `agents` skill to select and brief them. Review every worker branch critically before merging — you are the integrator, and integration quality is yours. Keep requirement clarification, task tracking, and final decisions in this session.
