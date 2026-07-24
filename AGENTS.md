@@ -15,40 +15,9 @@ The repo is organized by the artifacts it ships:
 
 ## Repo Map
 
-```
-package.json  tsconfig.json  biome.json   # THE TypeScript toolchain — repo root is the Pi package
-pyproject.toml  install.py  Makefile           # Python toolchain + bootstrap
-scripts/check-boundaries.ts                # Import-boundary lint (cross-domain via #<domain>/index.ts only)
-scripts/check-file-length.ts               # Hard caps: .ts ≤ 350; .py/.html/.css/.js ≤ 500 (no exceptions)
+The repo root is the Pi package (`package.json` / `tsconfig.json` / `biome.json`); Python tooling is `pyproject.toml` + `install.py` + `Makefile`. Two boundary lints live in `scripts/`: `check-boundaries.ts` and `check-file-length.ts` (see File Length Limits).
 
-pi/                            # ① the Pi extension (TypeScript)
-├── extension.ts                # Composition root: registers all domain modules in fixed order (core first)
-├── core/                       # agent-mode/ (+copilot·toggle) · session/ (+state) · project/ (config·context·injection·logseq · workspace/ runtime+guards+/worktree) ·
-│                               #   git/ (worktrees/ crud·target·migrate · repo) · skills/ · catalog/ · model/ · ui/ (framework chrome) · escalate/ (+dialog/) · host/ (env·exec·paths·config) ·
-│                               #   hub/ (hub-daemon connector: protocol/ TS↔Python contract · connection · ensure · identity · status) ·
-│                               #   swarm/ (the agent-dispatch primitive: agents/ = tools·catalog·launch·hub client·reporter·widget·observability·skills) · global-registry.ts
-├── system-prompt/              # before_agent_start prompt assembly: prompt.ts · context-builders.ts · defaults/ (modes·styles·environment)
-├── code-review/                # /skill:code-review feature domain (user-invoked skill + report_findings tool: findings·synthesis·annotate-pane·artifact)
-├── pull-request/               # primary-only model-invocable PR preparation, CI, readiness, and review lifecycle skill
-├── workstreams/                # durable repo-neutral workstream coordination (create·edit·launch·list·status·start·herdr) over #core/swarm
-├── tasks/                      # layered: schemas/ · lifecycle/ (state) · workflows/ (draft·review·handoff) · tools/ (task-tools·plan·guards·commands); skills/
-├── bash-reviewer/              # LLM bash reviewer: index (guard), review, triage/, llm adapter
-├── engineering/                # file-length reminder · bigquery/ (bq_query tool + bq-CLI adapter) · skills/ + prompts/
-└── browser/                    # primary-only browser automation: pinned Playwright CLI shim + on-demand skill
-
-src/basecamp/                  # ② the basecamp Python package (one ordinary src-layout package)
-├── cli.py                      # Click entry point (config, setup, doctor, install, hub, agents dashboard opener)
-├── setup.py  installer.py      # environment setup + install orchestration (uv tool + npm + single pi install)
-├── config_cli/                 # `basecamp config` CLI shell (plumbing + project/env/alias porcelain); composition layer over core + workspace, so it lives beside cli.py (core imports no other domain)
-├── core/                       # settings/ package (store = locked config.json primitive · schema = section registry · document = generic get/set/edit) + models (config record types: project/env/logseq) + paths (the ~/.pi/basecamp config/task/swarm tree) · console (the shared rich pair) · files · exceptions · doctor
-├── workspace/                  # per-repo worktree-setup environments + menus
-└── hub/                        # host-global daemon: private UDS control app + store/frames/swarm, and dashboard/ (auth · TCP app/server · UDS client · no-build assets)
-
-evals/                         # non-shipping evaluation integrations
-└── terminal_bench/             # Harbor adapter: pinned Pi + committed Basecamp package in isolated task containers
-
-tests/  migrations/            # Python tests (tests/<domain>/); one-shot state migration
-```
+`pi/` holds the TypeScript extension — one domain per directory under `pi/<domain>/`, composed by `pi/extension.ts` in a fixed order (core first). `src/basecamp/` holds the Python package. The per-directory layout is visible on the filesystem; each domain has a `README.md` for depth.
 
 `basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.)
 
@@ -56,12 +25,13 @@ Cross-domain TypeScript imports use Node subpath imports (`#core/*` freely; othe
 
 ## Documentation
 
-Documentation lives in exactly two files — there is no `docs/` tree:
+Documentation is layered:
 
 - **`README.md`** — anything user-facing.
-- **`AGENTS.md`** (this file) — anything agent-facing that isn't obvious from the code: architecture decisions, cross-cutting conventions, and rationale a reader can't reconstruct from the source alone.
+- **`AGENTS.md`** (this file) — cross-cutting agent-facing context: what basecamp is, the conventions that apply everywhere, and pointers to domain depth. It is injected verbatim into every system prompt, so it stays lean.
+- **Per-domain `README.md`** — depth for a single domain: architecture decisions, invariants, and rationale a reader can't reconstruct from the source alone.
 
-Do **not** create design or plan documents. Planning happens through the `plan()` tool and the plan is handed to the implementer, not written to a file. Most changes need no prose at all — the code and its tests are the record. When something durable is worth writing down, it goes in one of these two files.
+Do **not** create design or plan documents. Planning happens through the `plan()` tool and the plan is handed to the implementer, not written to a file. Most changes need no prose at all — the code and its tests are the record. When something durable is worth writing down, it goes in the matching file above.
 
 ## Architecture Decisions
 
@@ -77,9 +47,7 @@ The shipped Pi agent carries a cross-project **soft** source-file policy in the 
 
 ### Browser Automation
 
-`pi/browser/` exposes no custom browser tools and is **primary-only**: a top-level session discovers the `playwright-cli` skill on demand and gets one private PATH entry — a gated shim for the exact-pinned `@playwright/cli`. Subagents get neither, and the shim rejects `BASECAMP_AGENT_DEPTH > 0`. The shim blocks install commands and confines automatically named artifacts to a bounded private directory; an explicit filename remains the user-directed project-artifact escape hatch.
-
-Playwright owns a fresh managed profile. The retired `~/.pi/basecamp/browser/profile` and any legacy Chrome/CDP process are never migrated, modified, or terminated in normal operation. The sole exception is `basecamp doctor --clean`, which may reclaim the retired profile only when it is **provably unused** — superseded, unlocked (its Chrome `SingletonLock` names no live pid), and cold (past the staleness threshold) — and only after explicit user confirmation. It never touches a live process or a held/warm profile.
+`pi/browser/` is **primary-only** browser automation: a pinned Playwright CLI shim discovered on demand, with subagents denied. The shim blocks installs and confines automatically named artifacts to a private directory; `basecamp doctor --clean` is the sole path that reclaims the retired Puppeteer profile, and only when provably unused. See `pi/browser/README.md` for the full runtime policy, profile lifecycle, and legacy-state contract.
 
 ### Session Modes
 
@@ -87,27 +55,17 @@ Agent modes are `analysis`, `planning`, `work`, and `copilot`. `work` is the def
 
 ### Agent Execution Posture
 
-Every dispatched agent runs in its **own transient git worktree** with the uniform toolset (including `write`/`edit`); the posture is anchored on the **deliverable**, not the tools (issue #310, Phase 1 as revised after its independent review). Persona frontmatter `deliverable: true` — only `worker` — marks runs that mint a branch; every other persona, ad-hoc run, and ask is **report-only**: a branchless detached workspace whose report is the deliverable. Deliverable runs branch (`agent/<handle>`, worktree per run `agent-<runToken>/<name>`) from a **clean parent HEAD only** — a dirty parent fails the dispatch with commit-first guidance — so integration is always a plain `git merge` and no snapshot ever enters branch topology. A retask continues the agent's outstanding branch (memory and tree never contradict); a branch already merged into the parent/default branch is deleted eagerly at provision; a *fresh* dispatch that finds a pre-existing branch fails rather than adopting foreign work. Report/ask workspaces detach at the parent's HEAD or a **snapshot commit** of its dirty state (throwaway `GIT_INDEX_FILE` seeded from HEAD; the parent untouched), so reviewers see uncommitted WIP; asks detach at the ask target's branch tip when one exists. Setup hooks (`environments.setup`) run blocking-but-nonfatal on deliverable and report workspaces; asks skip them. **Capability follows workspace**: a non-repo session has no wall, so its dispatches get a report-only toolset (no `write`/`edit`). **Worktree-state restore is human-only** — daemon-spawned runs never re-attach a saved worktree (a forked ask answerer would otherwise adopt the ask target's live worktree).
-
-**Commits are the only durable output of a run** (this replaced "never force-remove post-execution work"). The daemon owns the backstop chain: run-exit reap, then restart reconcile (nonterminal rows and terminal rows whose recorded workspace survived), both force-removing the workspace and deleting the branch only when this run minted it and it gained no commits past its recorded base OID — force is gated on the v27 spec fields, so pre-upgrade rows keep non-force removal, and teardown is skipped when a run's process group cannot be verified dead. The agent backstop is **fully daemon-owned**: after run-exit reap and restart reconcile, a periodic daemon sweep (`src/basecamp/hub/swarm/sweep.py`) reclaims integrated or branchless agent residue, breaks agent-run locks only past a staleness age (the lock reason carries a timestamp), and deletes integrated orphan `agent/*` branches (local `merge-base --is-ancestor` only), never touching unintegrated commits — so a never-restarted daemon cannot leak. The TypeScript session-start sweep no longer touches `agent/*`; it owns the session tier (see Worktree Design). The primary integrates by `git merge agent/<handle>`. Dispatched deliverable runs get a teardown-aware dirty reminder; branchless runs are exempt (scratch by design); primary sessions keep the advisory commit reminder. The worktree is the isolation boundary, enforced by the workspace guard's `allowed_dirs` rule; `bash` is deliberately retained and is **not** a mutation sandbox — the workspace, not the toolset, is the wall. Independently, the workspace `tool_call` guard hard-blocks structured `write`/`edit` to the protected main checkout even when a subagent has no active worktree.
+Every dispatched agent runs in its **own transient git worktree**; the posture is anchored on the **deliverable**, not the tools — only `worker` (persona `deliverable: true`) mints a branch, every other run is report-only. Integration is always a plain `git merge agent/<handle>`; the daemon owns the full backstop chain (run-exit reap, restart reconcile, periodic sweep), and the workspace — not the toolset — is the isolation wall. See `pi/core/swarm/README.md` for the branch/teardown matrix, snapshot semantics, the capability-follows-workspace rule, and the daemon-owned backstop chain.
 
 ### Agents Dashboard
 
-`basecamp agents` opens the global read-only browser dashboard. It first runs a Python port of the TypeScript hub ensure contract: the same `daemon.spawn.lock` path, exclusive `0600` `{pid, ts}` file, 30-second stale rule, protocol health gate, PID command validation, detached `basecamp hub` command, and timeout behavior. The daemon independently holds `daemon.server.lock` with nonblocking `flock` for its entire lifetime **before** touching the socket, so the one-hub invariant remains authoritative even if clients race or someone launches `basecamp hub` manually. Both TypeScript and Python spawn-lock owners verify the acquired file's inode before unlinking it.
-
-The hub process owns two completely separate FastAPI apps. The existing post-bind `0600` UDS app remains the only control plane and the only WebSocket listener. A managed secondary Uvicorn thread pre-binds `127.0.0.1:47658` without address/port reuse and serves only the dashboard HTML/assets plus hardcoded snapshot/message reads. It never mounts or generically proxies the daemon app. TCP bind/start failure is nonfatal: the UDS hub continues, while nonce minting reports the dashboard unavailable. The main-thread UDS server remains the signal owner; dashboard shutdown is bounded and cannot mask PID cleanup.
-
-Browser authentication is process-memory-only. The owner-only UDS mints a CSPRNG bootstrap nonce with a 30-second TTL; redemption is atomically single-use and creates a separate bounded 12-hour server-side browser session. The response sets a host-only `HttpOnly; SameSite=Strict; Path=/` cookie and returns a no-store `303` to `/`. Loopback HTTP cannot use `Secure`, and browser cookies are host-scoped rather than port-scoped; this is an accepted single-user-localhost trade-off, not a multi-user security boundary. Defense in depth is exact raw `Host: 127.0.0.1:47658`, exact Origin when present, required `Sec-Fetch-Site` (`none`/`same-origin` only by route), no CORS, disabled TCP access/server/date headers, no-store responses, restrictive CSP/referrer/sniff/frame/opener/resource/permissions headers, and DOM construction through `textContent` rather than HTML sinks.
-
-The dashboard uses a distinct safe global read model rather than exposing existing control/store rows. Structural roots are selected independently of descendant traversal; agent-free roots remain visible; Copilot mode takes classification precedence, then durable workstream attachment, then Root. Descendant traversal is cycle-safe, ask answerers/subtrees stay hidden, truncation is explicit, and all browser identity/routing uses public handles. Every live root is projected, while disconnected history is a newest-first 24-hour prefix loaded five at a time to a 50-root ceiling; the selected eligible root may add one pin. The display window is query-time scope, never retention or cleanup. The daemon admits only one snapshot projection worker at a time, preserves that ownership past requester cancellation, and rejects followers as busy rather than queueing shared-executor work. `pi/core/hub/protocol/PROTOCOL.md` is the canonical source for exact bounds, endpoint fields, and privacy exclusions.
-
-The frontend is a packaged, no-build application under `src/basecamp/hub/dashboard/assets/`: semantic HTML, ordered external CSS, flat ES modules, and a 500-line cap on every asset; no external runtime request, framework, CDN, font, service worker, or client-side persistence. It polls every three seconds only while visible, keeps the last safe in-memory snapshot on transient failure or busy refresh, uses public-handle hash routes, preserves filtered ancestry, and fetches messages only for the selected agent. The compact in-Pi agent widget and workstream tools remain independent.
+`basecamp agents` opens a read-only browser dashboard backed by a separate FastAPI app on `127.0.0.1:47658`, with process-memory-only nonce auth and a no-build packaged frontend. The hub ensure contract and one-hub invariant are shared between TypeScript and Python. See `src/basecamp/hub/README.md` for the dual-app topology, auth/session lifecycle, safe read model, and frontend constraints.
 
 ### Evaluations
 
-Evaluation integrations live in the non-shipping top-level `evals/` package. Dependency flow is one-way: eval adapters may consume Harbor and committed Basecamp artifacts, while neither `pi/` nor `src/basecamp/` may import `evals/`. Harbor runs on the host and owns one disposable Docker container per task attempt; the evaluated Pi/Basecamp process never runs against the host checkout.
+Evaluation integrations live in the non-shipping top-level `evals/` package. Dependency flow is one-way: eval adapters may consume Harbor and committed Basecamp artifacts, while neither `pi/` nor `src/basecamp/` may import `evals/`.
 
-The initial Terminal-Bench adapter exposes the worker-like `basecamp-pi-single` profile. It archives only `package.json`, `package-lock.json`, and `pi/` from an exact Git commit, then installs that artifact in the trial container. An optional `models.json` is transferred separately, digest-verified, installed with mode `0600`, and restricted to environment-backed credentials; neither auth state nor secret values enter the source archive or audit metadata. `BASECAMP_AGENT_DEPTH=1` and `BASECAMP_AGENT_MAX_DEPTH=1` intentionally select Basecamp's existing no-daemon, no-dispatch surface. Structured mutation requires three explicit launch signals: `--unsafe-edit` requests protected-checkout writes, `--unsafe-edit-sandboxed` permits a sandbox exception to the normal subagent/headless denial, and `BASECAMP_EXTERNAL_SANDBOX=1` marks the externally-owned isolation boundary. Read-only still wins, the flags are not inherited by daemon-spawned children, and ordinary headless/subagent launches remain protected. Interactive `plan()` is excluded because Harbor is headless. A repo-local `docker` wrapper maps Harbor's CLI calls to Podman plus the official Docker Compose client; `podman-compose` is insufficient because Harbor uses `--project-directory`. The launcher resolves an explicit/installed Compose binary first, otherwise downloads the pinned v5.3.1 artifact into Basecamp's cache and verifies its SHA-256 before execution. The typed launcher behind `make eval*` pins the run inputs, requires a clean commit for executable runs, and confines default Podman selections to native-arm64 task images (amd64 Node segfaults under the local emulation path). This profile produces local Harbor scores and Pi logs only: no ATIF, leaderboard claim, or complete accounting of auxiliary bash-reviewer model calls.
+The Terminal-Bench adapter exposes the `basecamp-pi-single` profile: it archives `package.json`, `package-lock.json`, and `pi/` from an exact Git commit, pins `BASECAMP_AGENT_DEPTH=1` / `MAX_DEPTH=1` to select the no-daemon, no-dispatch surface, and requires three explicit launch signals for structured mutation (`--unsafe-edit`, `--unsafe-edit-sandboxed`, `BASECAMP_EXTERNAL_SANDBOX=1`; read-only still wins, flags are not inherited by daemon-spawned children). An optional `models.json` is digest-verified and installed `0600` with environment-backed credentials; no auth state or secret enters the archive. `make eval*` pins run inputs and requires a clean commit for executable runs; this profile produces local Harbor scores and Pi logs only — no ATIF, leaderboard claim, or complete accounting of auxiliary bash-reviewer model calls.
 
 ### Extension Modules
 
@@ -117,7 +75,7 @@ Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`,
 
 ### Code Review
 
-`/skill:code-review` runs an **independently sourced** review of the current branch. It is user-invoked (`disable-model-invocation` — hidden from the model, primary-only) and dispatches seven fixed report-only lenses plus risk-driven adaptive general reviewers. The primary acts as review chair: it verifies and normalizes reports, semantically deduplicates shared root causes, reconciles severity, and summarizes the final set, but it must obtain an independent reviewer report before adding a concern it noticed itself. `report_findings` computes the verdict deterministically from that synthesized set; a per-finding `response` never changes it. Source selection and semantic deduplication are deliberately model judgment, raw reviewer reports/provenance are not retained, and the verdict is deterministic only after synthesis. Manual only.
+`/skill:code-review` is a primary-only, user-invoked independent review of the current branch: it dispatches fixed and adaptive report-only reviewers, the primary synthesizes and semantically deduplicates their reports, and `report_findings` computes a deterministic verdict over that final set. Manual only. See `pi/code-review/README.md` for the review method, flow, result handling, and verdict rules.
 
 ### Model Aliases
 
@@ -125,7 +83,7 @@ Model-alias resolution is owned by `pi/core/model`, backed by the `model_aliases
 
 ### State: wiring vs. surviving
 
-Two kinds of module state, two rules. **Wiring** — providers/registries the composition root re-establishes on every load (cwd provider, catalog, model aliases, allowed-roots) — is plain module state. **Surviving state** — live session data that must outlive `/reload`, which re-imports the extension with fresh module instances (session state, agent mode, invoked skills, workspace runtime, daemon WebSocket) — uses `processScoped(key, init)` with keys stable across releases. Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session. See `pi/core/README.md` for the canonical pattern.
+Two kinds of module state, two rules. **Wiring** — providers/registries the composition root re-establishes on every load (cwd provider, catalog, model aliases, allowed-roots) — is plain module state. **Surviving state** — live session data that must outlive `/reload` — uses `processScoped(key, init)` with keys stable across releases. Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session. See `pi/core/README.md` for the canonical pattern.
 
 ### Environment Variable Chain
 
@@ -135,17 +93,11 @@ The worktree setup hook (the per-repo `environments.setup` command, run on creat
 
 ### Worktree Design
 
-Worktrees live **outside** the repo at `~/.worktrees/<org>/<name>/<label>/` to avoid polluting project directories, and **git is the source of truth** (`git worktree list --porcelain`) — Basecamp keeps no parallel metadata registry. Sessions launch with plain `pi`; Basecamp detects the repo root, treats a session launched inside a linked worktree as its active worktree, activates a worktree on implementation-plan approval, and restores the last active worktree on resume/reload/fork (or via `/worktree [label]`). Labels are a direct label or a two-level `namespace/name`: plan-approved worktrees use `wt-<user-prefix>/<slug>`; copilot-dispatched workstreams use `copilot/<slug>` (the slug is the workstream's readable id).
-
-Legacy bare-name roots (`~/.worktrees/<repo>/`) are migrated to the `<org>/<name>` root automatically and best-effort on primary session start (`git worktree move`, skipping the main checkout, the active worktree, and anything locked or already migrated); a per-worktree failure never blocks startup, and the emptied legacy root is best-effort `rmdir`'d afterward.
-
-**Session-worktree lifecycle (issue #310 Phase 2).** A session worktree is a disposable cache of its branch; the branch is the durable artifact. Two owners share one contract (lease-reason shape `basecamp <kind> <id> <ts>`, one teardown matrix): the daemon owns the `agent` tier (above), and **TypeScript owns the session tier** (`wt-*`, `copilot/*`, direct labels). Every top-level session takes an advisory `git worktree lock` lease on its active worktree — reason `basecamp session <sessionId> <ts>`, ownership the stable pi session id (never a pid), the timestamp a coldness clock refreshed on activation and on resume/reload. Subagents never lease — their worktree keeps its daemon-owned `basecamp agent run` lock — and a session lease **never overwrites a foreign (non-session) lock**: a top-level session launched inside an agent worktree simply runs unleased, so the worktree is never orphaned from the daemon's teardown. Launch/resume **adopts** an existing worktree or **rebuilds** a reaped one from its surviving branch (re-running the setup hook); the explicit `--worktree-dir` attach and the worktree-state restore run **before** the cold backstop sweep, so the target they lease is never reaped out from under them in the same startup. Teardown is one matrix: the primary reap is at `session_shutdown` (reason `quit` only, gated to non-subagents) — a clean worktree is removed (branch kept), a dirty one is kept; the session-start cold backstop reclaims cold (stale-lease **or** leaseless legacy) **and** clean session worktrees, surfaces dirty-cold without removing, and never force-removes uncommitted work. Branches are **never auto-deleted**: cleanup is behavioral (the agents skill tells the primary to delete branches it merged) plus the manual `/worktree prune` picker, which labels live-leased or foreign-locked candidates "(in use)" and force-removes an in-use or dirty worktree only after explicit confirmation. `WORKTREES_ROOT` resolves at use-time via `worktreesRoot()` (honoring `BASECAMP_WORKTREES_ROOT`) so tests never write the real `~/.worktrees`. Deferred to Phase 3: bare-`pi` `session/<id>` workspaces, plan-approval promoting the branch in place, branch-first `launch_workstream`/`/worktree`, and the "in use by session X" collision UX.
+Worktrees live **outside** the repo at `~/.worktrees/<org>/<name>/<label>/`; git is the source of truth (`git worktree list --porcelain`) and Basecamp keeps no parallel metadata registry. The session-worktree lifecycle (issue #310 Phase 2) makes the worktree a disposable cache of its branch, with the daemon owning the agent tier and TypeScript owning the session tier under one shared lease/teardown contract; branches are never auto-deleted. See `pi/core/git/README.md` for the full lease protocol, teardown matrix, legacy-root migration, and Phase 3 deferrals.
 
 ### Workstreams
 
-Workstreams are durable, **repo-neutral** coordination state owned by the `workstreams` domain over `#core/swarm`, persisted in the daemon's SQLite store. Identity is an internal `ws_<uuid>` plus a globally-unique three-word `slug`; content (`label`/`brief`/`constraints`) is versioned with append-only history. Worktrees are **not** persisted — git stays the source of truth, and the `copilot/<slug>` worktree name encodes the slug.
-
-The model is multi-agent and repo-neutral: every `pi --workstream` session appends a `workstream_agents` row (additive, never overwriting), so "which repos a workstream touched" derives from its agent rows. Record shaping and execution staging are decoupled — `create_workstream`/`edit_workstream` manage the durable record, while `launch_workstream` provisions the worktree + pane and can launch into a different repo for cross-repo coordination without duplicating the record. The Logseq **dossier** (`work__<org>__<repo>__<slug>`) stays the user-facing record of priority, decisions, and blockers; one dossier may back many workstreams. On a **genuinely fresh** `--workstream` session only — never on resume/reload/fork/compact — the session attaches as an agent and the latest brief is injected.
+Workstreams are durable, **repo-neutral** coordination state owned by the `workstreams` domain over `#core/swarm`, persisted in the daemon's SQLite store; identity is an internal `ws_<uuid>` plus a three-word `slug`, content is versioned, and worktrees are not persisted. The model is multi-agent and cross-repo. See `pi/workstreams/README.md` for the tool split, content versioning, and `pi --workstream` startup behavior.
 
 ## Development
 
