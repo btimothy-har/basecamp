@@ -13,11 +13,15 @@ export const codeReviewSkillPath = path.join(codeReviewDir, "skills", "code-revi
  * `/skill:code-review`), which dispatches the reviewer specialists via the swarm dispatch tools and
  * calls the `report_findings` tool to compute the verdict, open the annotation pane, and persist the
  * review packet. The domain owns no orchestration: the skill drives it, and `report_findings` is the
- * only tool. The skill is exposed primary-only (never in subagents) via `resources_discover`.
+ * only tool.
+ *
+ * Both the tool and the skill are primary-only. Only the review chair calls `report_findings`; the
+ * dispatched reviewer lenses return reports and never invoke it, so registering it in subagents only
+ * put an uncallable capability in their prompt.
  */
 export default function registerCodeReview(pi: ExtensionAPI): void {
-	registerReviewTool(pi);
 	if (!isSubagent()) {
+		registerReviewTool(pi);
 		pi.on("resources_discover", () => ({ skillPaths: [codeReviewSkillPath] }));
 	}
 }

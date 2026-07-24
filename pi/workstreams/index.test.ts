@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/agent-mode/copilot.ts";
 import registerWorkstreams from "./index.ts";
 
 type ToolSpec = { name: string };
@@ -65,9 +66,11 @@ describe("workstreams entrypoint", () => {
 	afterEach(() => {
 		if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 		else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
+		resetCopilotLaunchForTesting();
 	});
 
-	it("registers the workstream tools and the --workstream flag at top level", () => {
+	it("registers the workstream tools and skill for a copilot session", () => {
+		setCopilotLaunchReader(() => true);
 		const pi = createMockPi();
 		registerWorkstreams(pi as unknown as ExtensionAPI);
 
@@ -78,6 +81,18 @@ describe("workstreams entrypoint", () => {
 		assert.equal(toolNames.has("list_workstreams"), true);
 		assert.equal(toolNames.has("set_workstream_status"), true);
 		assert.equal(pi.flags.has("workstream"), true);
+		assert.ok(pi.onEvents.some((entry) => entry.event === "resources_discover"));
+	});
+
+	it("withholds the tools from a non-copilot top-level session but keeps --workstream", () => {
+		setCopilotLaunchReader(() => false);
+		const pi = createMockPi();
+		registerWorkstreams(pi as unknown as ExtensionAPI);
+
+		// shaping and staging is the copilot's job; a --workstream session only attaches
+		assert.equal(pi.tools.length, 0);
+		assert.equal(pi.flags.has("workstream"), true);
+		assert.ok(!pi.onEvents.some((entry) => entry.event === "resources_discover"));
 	});
 
 	it("registers nothing for a non-top-level (daemon-spawned) session", () => {
