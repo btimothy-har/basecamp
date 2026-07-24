@@ -100,7 +100,7 @@ The worktree setup hook (the per-repo `environments.setup` command, run on creat
 
 ### Worktree Design
 
-Worktrees live **outside** the repo at `~/.worktrees/<org>/<name>/<label>/`; git is the source of truth (`git worktree list --porcelain`) and Basecamp keeps no parallel metadata registry. The session-worktree lifecycle (issue #310 Phase 2) makes the worktree a disposable cache of its branch, with the daemon owning the agent tier and TypeScript owning the session tier under one shared lease/teardown contract; branches are never auto-deleted. See `pi/core/git/README.md` for the full lease protocol, teardown matrix, legacy-root migration, and Phase 3 deferrals.
+Worktrees live **outside** the repo at `~/.worktrees/<org>/<name>/<label>/`; git is the source of truth (`git worktree list --porcelain`) and Basecamp keeps no parallel metadata registry. The session-worktree lifecycle (issue #310 Phase 2) makes the worktree a disposable cache of its branch, with the daemon owning the agent tier and TypeScript owning the session tier under one shared lease/teardown contract; branches are never auto-deleted. Phase 3 decoupled directory names from branch identity — a generic `wt/<slug>` worktree over a uniquely-named branch — and left bare `pi` in the protected checkout, so isolation is provisioned when work earns it. See `pi/core/git/README.md` for the full lease protocol, teardown matrix, legacy-root migration, and the Phase 3 decoupling.
 
 ### Workstreams
 
