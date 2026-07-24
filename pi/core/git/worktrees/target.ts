@@ -5,6 +5,15 @@ export interface ExecutionWorktreeTarget {
 	branchName: string | null;
 }
 
+/**
+ * A target for a worktree still to be provisioned. `branchName` is always minted here — a null
+ * branch means "adopt whatever an existing worktree already has", which only applies to targets
+ * built from an existing worktree, never to the builders below.
+ */
+export interface NewWorktreeTarget extends ExecutionWorktreeTarget {
+	branchName: string;
+}
+
 const SUGGESTED_WORKTREE_LABEL_MAX_LENGTH = 32;
 const FALLBACK_USER_WORKTREE_PREFIX = "un";
 const FALLBACK_WORKTREE_SLUG = "worktree";
@@ -52,7 +61,7 @@ export function executionWorktreeTarget(
 	slug: string,
 	sessionTag: string,
 	userId: string = currentUserId(),
-): ExecutionWorktreeTarget {
+): NewWorktreeTarget {
 	const branchPrefix = `${userWorktreePrefix(userId)}/`;
 	const normalizedSlug = normalizeWorktreeSlug(slug);
 	const tag = normalizeSessionTag(sessionTag);

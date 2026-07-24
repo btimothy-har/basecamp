@@ -110,10 +110,6 @@ export async function createWorktreeFlow(
 	}
 
 	const target = executionWorktreeTarget(slug, shortSessionId(ctx.sessionManager.getSessionId()));
-	if (!target.branchName) {
-		ctx.ui.notify("Worktree creation failed: could not derive a branch name.", "error");
-		return;
-	}
 
 	try {
 		const label = await resolveAvailableWorktreeLabel(

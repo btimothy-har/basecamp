@@ -248,8 +248,11 @@ export async function runHandoff(
 	} else {
 		const target = await selectWorktreeTarget(pi, ctx, plan.goal, plan.worktreeSlug);
 		if (!target) return { status: "cancelled" };
-		const label = await resolveHandoffWorktreeLabel(pi, target);
+		// Label resolution runs inside the try: it shells out to git, and the plan tool does not wrap
+		// this call — an escaping throw would surface as a raw tool error after the plan was approved.
+		let label = target.worktreeLabel;
 		try {
+			label = await resolveHandoffWorktreeLabel(pi, target);
 			worktree = workspaceWorktreeToHandoffWorktree(await activateWorkspaceWorktree(label, target.branchName));
 		} catch (error) {
 			return { status: "activation_failed", label, error };
