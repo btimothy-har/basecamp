@@ -2,13 +2,73 @@
 
 The context/prompt layer — assembles the replacement system prompt on every agent start.
 
-Basecamp fully *replaces* pi's default system prompt rather than appending to it, so this domain must provide everything: environment, working style, project context, and the tool/skill/agent index. It binds `before_agent_start`, builds the layered prompt, and returns it.
+Basecamp fully *replaces* pi's default system prompt rather than appending to it, so this domain must provide everything: environment, working style, project context, and the tool/skill/agent index. It binds `before_agent_start`, builds the prompt, and returns it.
+
+## Architecture: 6 categories, 8 blocks
+
+The prompt is assembled from blocks grouped into categories, in this order:
+
+| # | Category | Block | Source | Included when |
+|---|----------|-------|--------|---------------|
+| 1 | Constraints | read-only | `defaults/modes/read-only.md` | `--read-only` |
+| 2 | Posture | mode | `defaults/modes/{analysis,planning,work}.md` | primary session |
+| 3 | | persona | `#core/swarm` `builtin/*.md` (via `agentPrompt`) | dispatched agent |
+| 4 | Style | style | `defaults/styles/{engineering,advisor,logseq,copilot}.md` | user-facing session |
+| 5 | | craft | `defaults/styles/craft.md` | **always** |
+| 6 | Capabilities | index | `buildCapabilitiesIndex` | always |
+| 7 | Project | repo context · repo memory | `buildProjectContext` · `buildRepoLogseqContext` | always · copilot |
+| 8 | Environment | session facts · runtime | `defaults/environment.md` · `buildEnvBlock` | always |
+
+Two structural rules keep it from re-accreting.
+
+### Ownership rule — one question per layer
+
+Each layer answers exactly one question. When guidance appears in the wrong layer it gets duplicated, because the layer that should own it still needs it.
+
+| Layer | Answers |
+|-------|---------|
+| `environment.md` | What is true here? (machine, sandbox, guards, tooling) |
+| `buildEnvBlock` | What is true right now? (cwd, repo, worktree, date) |
+| tool description | How do I call this? |
+| `modes/*` | What am I here to do, and not do? |
+| `styles/*` | What does good look like? |
+| skills | How do I do this well? |
+| project context | What's non-obvious about this repo? |
+
+Consequences worth stating, because each was a live duplication:
+
+- **Tool mechanics never go in a prompt fragment.** `buildCapabilitiesIndex` injects every registered tool description verbatim, so restating a calling contract in a fragment presents it twice in one prompt. Put the contract in the tool description; keep only policy a tool cannot assert (for example "always maintain tasks") in the style.
+- **Cross-tool sequencing goes in a skill**, not a fragment — no single tool description owns a multi-tool workflow. The `workstreams` skill is the worked example.
+- **Machine facts stay in `environment.md`, even when a skill covers the topic.** Python/uv lives here; `python-development` owns how to write good Python.
+- **Taste never goes in `environment.md`.** Facts are not preferences.
+
+### Consumer-divergence test — when a block is justified
+
+A block boundary is only worth having if two consumers actually disagree about it. If every consumer takes two blocks together, they are one block. The real consumer list is: primary × mode, `worker`, report personas, and read-only variants.
+
+This test is what keeps the block count at 8 rather than ~69. An earlier semantic decomposition (every topic shift becoming a block with an id, condition, and predicate) was rejected: it converts authored prose into config, which is harder to read and makes the assembled prompt harder to reason about.
+
+Applying the test today yields exactly one non-obvious seam: **craft**. It is the only content where a persona and a primary agree while other consumers diverge — `worker` needs the code rubric, report personas and analysis sessions arguably do not. Craft is nonetheless included **unconditionally**, because a gap in coverage is worse than the tokens and it removes every remaining conditional from the matrix.
+
+### Generator vs. authored
+
+The category boundary encodes this split. Constraints, Posture, and Style are **authored prose** in `defaults/` (user-overridable). Capabilities, Project, and the runtime half of Environment are **generated** from runtime state. Do not interpolate authored prose into a generator, and do not hand-maintain in prose what a generator can derive.
+
+Prompt-block ordering is chosen for coherence rather than positional emphasis: this model generation does not weight end-of-context instructions more heavily, which is what previously justified scattering related content.
 
 ## What it does
 
-- **`prompt.ts`** — the `before_agent_start` hook + `assemblePrompt`. Layer order: read-only posture → mode posture → working style (or an `--agent-prompt` override) → environment → capabilities index (tools · skills · agents) → project context → repo-Logseq (copilot only) → environment block. Also the file loader with its user-override fallback.
+- **`prompt.ts`** — the `before_agent_start` hook + `assemblePrompt`, plus the file loaders and their user-override fallback.
 - **`context-builders.ts`** — pure fragment builders: worktree warning, unsafe-edit guidance, project-context block, capabilities index.
-- **`defaults/`** — the shipped fragments: `environment.md`, `modes/<mode>.md`, `styles/<style>.md`. Each is overridable per-user (see below).
+- **`defaults/`** — the shipped fragments: `environment.md`, `modes/<mode>.md`, `styles/<style>.md`.
+
+### Copilot is a style, not a posture
+
+`copilot` has no mode fragment. A copilot session assembles the generic `modes/work.md` execution posture plus `styles/copilot.md`. "You implement and integrate" was never mode-level guidance — it is engineering-level, and now lives in `styles/engineering.md`.
+
+The `copilot` **agent mode still exists** and is load-bearing: `isCopilotMode` selects the posture/style pair here, hides `plan` from the capabilities index, hard-blocks the `plan` tool call in `#tasks`, and locks shift+tab. Only the prose relocated. Do not remove the mode.
+
+Because copilot is launch-only and immutable, capabilities can be scoped by **gating registration** rather than filtering the index — see `pi/workstreams/index.ts`. An unregistered tool can never become callable mid-session, so unlike `plan` it needs no call-time block.
 
 ## Skill lifecycle language
 
@@ -17,11 +77,11 @@ Prompt fragments distinguish loading a skill from applying it:
 - **Load** means call `skill(...)` to add full instructions to the current agent's active context.
 - **Apply** means follow instructions already present in that context.
 
-The capabilities index owns this contract. Shipped prompt fragments should tell agents to apply relevant skills and reserve load language for missing instructions. A new turn or task is not itself a reason to reload; context loss and intentional refresh are.
+The `skill` tool description owns the reuse/reload policy. Shipped fragments should tell agents to apply relevant skills and reserve load language for missing instructions. A new turn or task is not itself a reason to reload; context loss and intentional refresh are.
 
 ## Defaults ↔ user override
 
-`loadPromptFile` / `loadWorkingStyle` read the user dir first (`~/.pi/basecamp/prompts` · `.../styles`), then fall back to `defaults/`.
+`loadPromptFile` / `loadWorkingStyle` read the user dir first (`~/.pi/basecamp/prompts` · `.../styles`), then fall back to `defaults/`. Because craft is a style file, `~/.pi/basecamp/styles/craft.md` overrides the shipped rubric.
 
 ## Registration
 

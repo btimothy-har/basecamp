@@ -37,11 +37,18 @@ Do **not** create design or plan documents. Planning happens through the `plan()
 
 ### Prompt System
 
-The system prompt is fully **replaced**, not appended — this buys complete control but obliges basecamp to supply everything pi's default prompt would (environment context, tool/skill listings, etc.), so pi's tool and command listings are sourced dynamically rather than assumed. The layers (environment → working style → project context → tools/skills) keep each concern independently overridable.
+The system prompt is fully **replaced**, not appended — this buys complete control but obliges basecamp to supply everything pi's default prompt would (environment context, tool/skill listings, etc.), so pi's tool and command listings are sourced dynamically rather than assumed.
+
+It assembles as 6 categories / 8 blocks — Constraints → Posture → Style → Capabilities → Project → Environment — each independently overridable. Two rules govern where guidance goes, and both exist because violating them produced duplication:
+
+- **Ownership rule**: every layer answers exactly one question. `environment.md` = what is true here; `buildEnvBlock` = what is true right now; **tool description = how to call it**; `modes/*` = what this session is for; `styles/*` = what good looks like; skills = how to do it well; project context = repo gotchas.
+- **Consumer-divergence test**: a new block is justified only when two consumers actually disagree about it. Semantic decomposition is not a reason to split.
+
+The practical consequence: **tool mechanics never go in a prompt fragment.** The capabilities index injects every registered tool description verbatim, so restating a calling contract in a fragment ships it twice in one prompt. Cross-tool sequencing goes in a skill (see the `workstreams` skill), not a fragment. `copilot` is a working style over the generic `work` posture, not its own mode fragment — though the `copilot` *mode* remains the gate. See `pi/system-prompt/README.md` for the block table and the full rationale.
 
 ### File-Length Guidance
 
-The shipped Pi agent carries a cross-project **soft** source-file policy in the engineering style and the mutative worker prompt: TypeScript/HTML ≤350, shell ≤400, SQL ≤800, and CSS/Python/other recognized source types ≤500. Tighter project instructions win. This product guidance is separate from repository-specific hard checks such as `scripts/check-file-length.ts`.
+The shipped Pi agent carries a cross-project **soft** source-file policy in the always-on craft block (`defaults/styles/craft.md`), which every code-writing consumer composes — primary sessions and the mutative worker alike, so the worker no longer carries its own copy: TypeScript/HTML ≤350, shell ≤400, SQL ≤800, and CSS/Python/other recognized source types ≤500. Tighter project instructions win. This product guidance is separate from repository-specific hard checks such as `scripts/check-file-length.ts`.
 
 `pi/engineering/file-length.ts` observes only successful structured `edit`/`write` results. It reads the resulting recognized source file and sends one hidden, non-blocking steer while that path remains over its cap; returning under cap or settling re-arms it. The write always stands, failures stay silent, unlisted file types are exempt, and bash/code-generator mutations are intentionally outside the attribution boundary. Suppression is ephemeral wiring state, not `processScoped` surviving state.
 
@@ -51,7 +58,7 @@ The shipped Pi agent carries a cross-project **soft** source-file policy in the 
 
 ### Session Modes
 
-Agent modes are `analysis`, `planning`, `work`, and `copilot`. `work` is the default (the primary implements directly); `analysis` and `planning` are read-only / pre-implementation postures. shift+tab cycles only `analysis`/`planning`/`work` — approving an implementation plan hands off to `work`, while analysis plans stay in `analysis`. `copilot` is a locked, launch-only mode: entered solely via `pi --copilot`, immutable (shift+tab is a no-op, so it can neither enter nor leave it), and it takes precedence over `pi --workstream`. Because Pi cannot unregister or per-session-gate a tool, `plan()` is kept out of copilot by two independent layers sharing one predicate — a hard `tool_call` block plus a capabilities-index filter — rather than a single gate. The `/plan` slash command is deprecated repo-wide; `plan()` and `/show-plan` remain for non-copilot sessions.
+Agent modes are `analysis`, `planning`, `work`, and `copilot`. `work` is the default (the primary implements directly); `analysis` and `planning` are read-only / pre-implementation postures. shift+tab cycles only `analysis`/`planning`/`work` — approving an implementation plan hands off to `work`, while analysis plans stay in `analysis`. `copilot` is a locked, launch-only mode: entered solely via `pi --copilot`, immutable (shift+tab is a no-op, so it can neither enter nor leave it), and it takes precedence over `pi --workstream`. Because Pi cannot unregister or per-session-gate a tool, `plan()` is kept out of copilot by two independent layers sharing one predicate — a hard `tool_call` block plus a capabilities-index filter — rather than a single gate. `plan()` needs both because it must stay callable elsewhere; capabilities that are copilot-only (the workstream tools) or primary-only (`report_findings`) instead skip **registration** entirely, which is sound precisely because copilot-launch and subagent depth are both fixed for a session's lifetime. The `/plan` slash command is deprecated repo-wide; `plan()` and `/show-plan` remain for non-copilot sessions.
 
 ### Agent Execution Posture
 
