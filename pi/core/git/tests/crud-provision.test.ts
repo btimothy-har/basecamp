@@ -78,6 +78,21 @@ describe("getOrCreateWorktree", () => {
 		assert.deepEqual(result, { worktreeDir, label, branch, created: true });
 		assert.ok(calls.some((args) => argsEqual(args, expectedAddArgs)));
 	});
+
+	it("refuses to derive a branch for a namespaced label when the worktree is gone", async (t) => {
+		const repoRoot = "/repo";
+		const repoName = `repo-adopt-${process.pid}-${Date.now()}`;
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
+
+		// Adopting a worktree that was reaped after the caller listed it: deriving `wt/` + `wt/gone`
+		// would silently create a meaningless `wt/wt/gone` branch instead of the intended work.
+		const { pi } = createWorktreePi(repoRoot, []);
+
+		await assert.rejects(
+			() => getOrCreateWorktree(pi, repoRoot, repoName, "wt/gone"),
+			/no longer exists and no branch was given to rebuild it from/,
+		);
+	});
 });
 
 describe("validateProtectedCheckout", () => {

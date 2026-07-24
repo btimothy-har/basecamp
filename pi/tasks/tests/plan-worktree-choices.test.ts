@@ -106,7 +106,7 @@ describe("buildExecutionWorktreeChoices", () => {
 		assert.equal(result.choices[0], "Current: current (wt/current)");
 		assert.deepEqual(result.targetsByChoice.get("Current: current (wt/current)"), {
 			worktreeLabel: "current",
-			branchName: null,
+			branchName: "wt/current",
 		});
 		assert.deepEqual(result.choices, [
 			"Current: current (wt/current)",
@@ -117,7 +117,7 @@ describe("buildExecutionWorktreeChoices", () => {
 		assert.deepEqual(result.targetsByChoice.get("Create: wt/suggested"), suggested);
 		assert.deepEqual(result.targetsByChoice.get("Resume: other (wt/other)"), {
 			worktreeLabel: "other",
-			branchName: null,
+			branchName: "wt/other",
 		});
 	});
 
@@ -149,7 +149,7 @@ describe("buildExecutionWorktreeChoices", () => {
 		]);
 		assert.deepEqual(result.targetsByChoice.get("Current: wt/suggested (bt/suggested)"), {
 			worktreeLabel: "wt/suggested",
-			branchName: null,
+			branchName: "bt/suggested",
 		});
 	});
 
@@ -171,22 +171,24 @@ describe("buildExecutionWorktreeChoices", () => {
 			CUSTOM_WORKTREE_CHOICE,
 		]);
 		assert.deepEqual(Array.from(result.targetsByChoice.entries()), [
-			["Current: current (wt/current)", { worktreeLabel: "current", branchName: null }],
-			["Resume: wt/suggested (bt/suggested)", { worktreeLabel: "wt/suggested", branchName: null }],
-			["Resume: other (wt/other)", { worktreeLabel: "other", branchName: null }],
+			["Current: current (wt/current)", { worktreeLabel: "current", branchName: "wt/current" }],
+			["Resume: wt/suggested (bt/suggested)", { worktreeLabel: "wt/suggested", branchName: "bt/suggested" }],
+			["Resume: other (wt/other)", { worktreeLabel: "other", branchName: "wt/other" }],
 		]);
 	});
 
-	it("formats an existing suggested worktree as resumable by reusing its branch", () => {
+	it("resume targets name the displayed branch so a reaped worktree rebuilds it, not a label-derived one", () => {
 		const suggested = target("suggested");
-		const existing = [worktree(suggested.worktreeLabel, { branch: suggested.branchName })];
+		const existing = [worktree(suggested.worktreeLabel, { branch: "bt/oldtag-suggested" })];
 
 		const result = buildExecutionWorktreeChoices(suggested, existing, null);
 
-		assert.deepEqual(result.choices, ["Resume: wt/suggested (bt/suggested)", CUSTOM_WORKTREE_CHOICE]);
-		assert.deepEqual(result.targetsByChoice.get("Resume: wt/suggested (bt/suggested)"), {
+		assert.deepEqual(result.choices, ["Resume: wt/suggested (bt/oldtag-suggested)", CUSTOM_WORKTREE_CHOICE]);
+		// A null branch here would let provisioning derive `wt/` + `wt/suggested` if the worktree vanished
+		// between building the choices and confirming the pick.
+		assert.deepEqual(result.targetsByChoice.get("Resume: wt/suggested (bt/oldtag-suggested)"), {
 			worktreeLabel: "wt/suggested",
-			branchName: null,
+			branchName: "bt/oldtag-suggested",
 		});
 	});
 

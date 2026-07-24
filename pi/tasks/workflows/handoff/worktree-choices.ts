@@ -25,8 +25,14 @@ function stripKnownPrefix(value: string, prefix: string): string {
 	return lower;
 }
 
+/**
+ * Target that adopts an existing worktree. It names the branch the picker displayed rather than
+ * leaving it null: provisioning ignores the branch when the worktree is still registered, so this
+ * only matters if the worktree is reaped between building the choices and the user confirming — and
+ * then it rebuilds the branch the user asked for instead of deriving a bogus one from the label.
+ */
 function existingWorktreeTarget(wt: WorkspaceWorktree): ExecutionWorktreeTarget {
-	return { worktreeLabel: wt.label, branchName: null };
+	return { worktreeLabel: wt.label, branchName: wt.branch };
 }
 
 export function suggestWorktreeTarget(

@@ -210,7 +210,7 @@ export async function getOrCreateWorktree(
 	const defaultBranch = await validateProtectedCheckout(pi, repoRoot);
 	const worktreeDir = path.join(worktreesRoot(), repoName, label);
 	validateNoSymlinkedWorktreePath(worktreeDir);
-	const branch = branchOverride?.trim() || `${WORKTREE_BRANCH_PREFIX}${label}`;
+	const requestedBranch = branchOverride?.trim();
 	const records = await gitWorktreeRecords(pi, repoRoot);
 	const existing = findWorktreeRecord(records, worktreeDir);
 	if (existing) {
@@ -219,6 +219,16 @@ export async function getOrCreateWorktree(
 	if (fs.existsSync(worktreeDir)) {
 		throw new Error(`Worktree path exists but is not registered with git: ${worktreeDir}`);
 	}
+	// Deriving `wt/<label>` only makes sense for a direct label; prefixing a namespaced one yields a
+	// meaningless branch (`wt/wt/<slug>`, `wt/copilot/<slug>`). Reaching here with a namespaced label
+	// and no branch means the caller meant to adopt a worktree that no longer exists, so fail loudly
+	// rather than silently minting a new branch the caller never asked for.
+	if (!requestedBranch && label.includes("/")) {
+		throw new Error(
+			`Worktree ${label} no longer exists and no branch was given to rebuild it from. Choose another worktree, or create one.`,
+		);
+	}
+	const branch = requestedBranch || `${WORKTREE_BRANCH_PREFIX}${label}`;
 
 	fs.mkdirSync(path.dirname(worktreeDir), { recursive: true });
 
