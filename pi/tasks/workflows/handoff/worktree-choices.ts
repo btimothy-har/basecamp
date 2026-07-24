@@ -3,7 +3,7 @@ import {
 	copilotWorktreeTarget,
 	currentUserId,
 	type ExecutionWorktreeTarget,
-	normalizeWorktreeSlug,
+	executionWorktreeTarget,
 	userWorktreePrefix,
 } from "#core/git/worktrees/target.ts";
 import type { WorkspaceWorktree } from "#core/project/workspace/state.ts";
@@ -12,16 +12,9 @@ export { copilotWorktreeTarget, type ExecutionWorktreeTarget, userWorktreePrefix
 
 export const CUSTOM_WORKTREE_CHOICE = "Enter custom worktree label";
 
-const SUGGESTED_WORKTREE_LABEL_MAX_LENGTH = 32;
-const FALLBACK_WORKTREE_SLUG = "worktree";
-
 export interface ExecutionWorktreeChoices {
 	choices: string[];
 	targetsByChoice: Map<string, ExecutionWorktreeTarget>;
-}
-
-function normalizeSessionTag(value: string | null | undefined): string {
-	return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 }
 
 function stripKnownPrefix(value: string, prefix: string): string {
@@ -30,23 +23,6 @@ function stripKnownPrefix(value: string, prefix: string): string {
 		if (lower.startsWith(knownPrefix)) return lower.slice(knownPrefix.length);
 	}
 	return lower;
-}
-
-// The worktree directory is a generic `wt/<slug>` cache (issue #310 Phase 3); the branch
-// `<prefix>/<tag>-<slug>` carries the unique identity. The slug is capped so the branch (the
-// longer, durable identifier) stays bounded; worktree-name collisions are disambiguated at
-// provision time via resolveAvailableWorktreeLabel, so the builder stays pure.
-function buildExecutionWorktreeTarget(prefix: string, slug: string, sessionTag: string): ExecutionWorktreeTarget {
-	const branchPrefix = `${prefix}/`;
-	const tag = normalizeSessionTag(sessionTag);
-	const tagSegment = tag ? `${tag}-` : "";
-	const baseSlug = tagSegment && slug.startsWith(tagSegment) ? slug.slice(tagSegment.length) : slug;
-	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - branchPrefix.length - tagSegment.length);
-	const cappedSlug = baseSlug.slice(0, maxSlugLength).replace(/-+$/g, "") || FALLBACK_WORKTREE_SLUG;
-	return {
-		worktreeLabel: `wt/${cappedSlug}`,
-		branchName: `${branchPrefix}${tagSegment}${cappedSlug}`,
-	};
 }
 
 function existingWorktreeTarget(wt: WorkspaceWorktree): ExecutionWorktreeTarget {
@@ -59,9 +35,7 @@ export function suggestWorktreeTarget(
 	sessionTag: string,
 	userId = currentUserId(),
 ): ExecutionWorktreeTarget {
-	const prefix = userWorktreePrefix(userId);
-	const slug = normalizeWorktreeSlug(worktreeSlug ?? goal);
-	return buildExecutionWorktreeTarget(prefix, slug, sessionTag);
+	return executionWorktreeTarget(worktreeSlug ?? goal, sessionTag, userId);
 }
 
 export function customWorktreeTarget(
@@ -69,9 +43,7 @@ export function customWorktreeTarget(
 	sessionTag: string,
 	userId = currentUserId(),
 ): ExecutionWorktreeTarget {
-	const prefix = userWorktreePrefix(userId);
-	const slug = normalizeWorktreeSlug(stripKnownPrefix(value, prefix));
-	return buildExecutionWorktreeTarget(prefix, slug, sessionTag);
+	return executionWorktreeTarget(stripKnownPrefix(value, userWorktreePrefix(userId)), sessionTag, userId);
 }
 
 function normalizeWorktreePath(value: string): string {

@@ -37,6 +37,36 @@ export function normalizeWorktreeSlug(value: string): string {
 	return slug || FALLBACK_WORKTREE_SLUG;
 }
 
+function normalizeSessionTag(value: string | null | undefined): string {
+	return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+/**
+ * Session-worktree target (issue #310 Phase 3): a generic `wt/<slug>` directory (a disposable
+ * cache) plus a unique `<prefix>/<tag>-<slug>` branch (the durable identity). The slug is capped so
+ * the branch — the longer identifier — stays bounded; worktree-name collisions are resolved at
+ * provision time by resolveAvailableWorktreeLabel, so this builder stays pure. Shared by the plan
+ * handoff picker and the `/worktree` create-new flow so naming lives in one place.
+ */
+export function executionWorktreeTarget(
+	slug: string,
+	sessionTag: string,
+	userId: string = currentUserId(),
+): ExecutionWorktreeTarget {
+	const branchPrefix = `${userWorktreePrefix(userId)}/`;
+	const normalizedSlug = normalizeWorktreeSlug(slug);
+	const tag = normalizeSessionTag(sessionTag);
+	const tagSegment = tag ? `${tag}-` : "";
+	const baseSlug =
+		tagSegment && normalizedSlug.startsWith(tagSegment) ? normalizedSlug.slice(tagSegment.length) : normalizedSlug;
+	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - branchPrefix.length - tagSegment.length);
+	const cappedSlug = baseSlug.slice(0, maxSlugLength).replace(/-+$/g, "") || FALLBACK_WORKTREE_SLUG;
+	return {
+		worktreeLabel: `wt/${cappedSlug}`,
+		branchName: `${branchPrefix}${tagSegment}${cappedSlug}`,
+	};
+}
+
 export function copilotWorktreeTarget(
 	workName: string,
 	generatedName: string,
