@@ -263,8 +263,11 @@ export async function runHandoff(
 }
 
 /**
- * For a create/custom target (branch set) pick a collision-free `wt/<slug>` label so we never
- * adopt a same-slug worktree on a different branch; resume targets (no branch) keep their label.
+ * Pick a label that is free or already holds the target's branch, so provisioning never adopts a
+ * same-slug worktree on a different branch. Every target naming a branch — create, custom, and
+ * resume alike — goes through this; for a resume whose worktree is still registered on that branch
+ * it resolves to the same label. Only a target with no branch (a detached worktree) keeps its label
+ * as-is, since there is nothing to match or rebuild against.
  */
 async function resolveHandoffWorktreeLabel(pi: ExtensionAPI, target: ExecutionWorktreeTarget): Promise<string> {
 	if (!target.branchName) return target.worktreeLabel;
