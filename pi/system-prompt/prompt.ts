@@ -150,9 +150,6 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		if (style) parts.push(style);
 	}
 
-	const environment = loadPromptFile("environment.md").trim();
-	if (environment) parts.push(environment);
-
 	// Copilot is a locked, launch-only mode that stages work via launch_workstream and never implements in-session,
 	// so plan() is hidden from its capabilities index (it is also hard-blocked at call time by pi-tasks).
 	const capabilityToolItems = isCopilotMode(agentMode)
@@ -174,6 +171,9 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		parts.push(buildRepoLogseqContext({ workspace }));
 	}
 
+	// Environment is one category: authored session facts, then the live runtime block they describe.
+	const environment = loadPromptFile("environment.md").trim();
+	if (environment) parts.push(environment);
 	parts.push(buildEnvBlock(workspace, project, effectiveCwd, modelId));
 	return parts.join("\n\n");
 }
