@@ -31,3 +31,9 @@ A workstream can have several agent sessions over time or concurrently — every
 ## Protocol
 
 Workstream management uses four WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream`/`revise_workstream` + acks, protocol v22) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents + version history). See [`core/hub/protocol/PROTOCOL.md`](../core/hub/protocol/PROTOCOL.md).
+
+## Workstream model
+
+Workstreams are durable, **repo-neutral** coordination state owned by the `workstreams` domain over `#core/swarm`, persisted in the daemon's SQLite store. Identity is an internal `ws_<uuid>` plus a globally-unique three-word `slug`; content (`label`/`brief`/`constraints`) is versioned with append-only history. Worktrees are **not** persisted — git stays the source of truth, and the `copilot/<slug>` worktree name encodes the slug.
+
+The model is multi-agent and repo-neutral: every `pi --workstream` session appends a `workstream_agents` row (additive, never overwriting), so "which repos a workstream touched" derives from its agent rows. Record shaping and execution staging are decoupled — `create_workstream`/`edit_workstream` manage the durable record, while `launch_workstream` provisions the worktree + pane and can launch into a different repo for cross-repo coordination without duplicating the record. The Logseq **dossier** (`work__<org>__<repo>__<slug>`) stays the user-facing record of priority, decisions, and blockers; one dossier may back many workstreams. On a **genuinely fresh** `--workstream` session only — never on resume/reload/fork/compact — the session attaches as an agent and the latest brief is injected.
