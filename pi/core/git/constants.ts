@@ -1,7 +1,12 @@
 import * as os from "node:os";
 import * as path from "node:path";
+import { getBasecampEnv } from "../host/env.ts";
 
-export const WORKTREES_ROOT = path.join(os.homedir(), ".worktrees");
+// Resolved at use-time (never captured at import) so tests can redirect it via
+// BASECAMP_WORKTREES_ROOT; defaults to ~/.worktrees.
+export function worktreesRoot(): string {
+	return getBasecampEnv("BASECAMP_WORKTREES_ROOT") ?? path.join(os.homedir(), ".worktrees");
+}
 export const WORKTREE_BRANCH_PREFIX = "wt/";
 // Deliverable agent runs mint branches in this namespace (`agent/<handle>`); the legacy
 // per-run namespace was `agent-<token>/<name>`. The sweep recognizes both.

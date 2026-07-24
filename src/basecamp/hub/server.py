@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import fcntl
 import os
 import socket as socket_module
@@ -17,9 +18,11 @@ from .dashboard.access import DashboardAccess
 from .dashboard.server import DashboardServer
 from .store import Store
 from .swarm.process import reconcile_orphaned_runs
+from .swarm.sweep import run_periodic_sweep
 
 _SOCKET_MODE = 0o600
 _SERVER_LOCK_MODE = 0o600
+_DEFAULT_SWEEP_INTERVAL_S = 3600.0
 
 
 class HubAlreadyRunningError(LauncherError):
@@ -35,7 +38,17 @@ class UdsServer(uvicorn.Server):
     uvicorn binds the socket and chmods it to 0666 inside ``startup()``; doing
     the restriction afterwards is the only reliable point and preserves the
     local-user-only trust boundary (the lifespan hook runs before the bind).
+
+    When *sweep_interval_s* is set, a periodic agent-worktree sweep task is
+    started after the socket is bound and cancelled/awaited on shutdown — the
+    server holds the server lock for its whole lifetime, so the sweep task's
+    lifecycle is bounded by the daemon's own.
     """
+
+    def __init__(self, config: uvicorn.Config, *, sweep_interval_s: float | None = None) -> None:
+        super().__init__(config)
+        self._sweep_interval_s = sweep_interval_s
+        self._sweep_task: asyncio.Task[None] | None = None
 
     async def startup(self, sockets: list[socket_module.socket] | None = None) -> None:
         await super().startup(sockets=sockets)
@@ -44,10 +57,21 @@ class UdsServer(uvicorn.Server):
             try:
                 os.chmod(uds, _SOCKET_MODE)
             except OSError as exc:
-                # Fail fast: serving on a socket we couldn't restrict to 0600 would
-                # break the local-user-only trust boundary.
                 msg = f"failed to restrict daemon socket {uds} to {oct(_SOCKET_MODE)}"
                 raise RuntimeError(msg) from exc
+        if self._sweep_interval_s is not None and self._sweep_interval_s > 0:
+            self._sweep_task = asyncio.create_task(run_periodic_sweep(self._sweep_interval_s))
+
+    async def shutdown(self, sockets: list[socket_module.socket] | None = None) -> None:
+        task = self._sweep_task
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            self._sweep_task = None
+        await super().shutdown(sockets=sockets)
 
 
 def create_server(
@@ -56,12 +80,28 @@ def create_server(
     *,
     dashboard_access: DashboardAccess | None = None,
     log_level: str = "info",
+    sweep_interval_s: float | None = None,
 ) -> UdsServer:
     """Build a UDS-bound daemon server for the given store."""
 
     app = create_app(store, daemon_uds=uds_path, dashboard_access=dashboard_access)
     config = uvicorn.Config(app, uds=uds_path, log_level=log_level)
-    return UdsServer(config)
+    return UdsServer(config, sweep_interval_s=sweep_interval_s)
+
+
+def _resolve_sweep_interval_s() -> float | None:
+    """Read the sweep interval from the environment, defaulting to 3600s.
+
+    A non-positive or unparseable value disables the periodic sweep (returns None).
+    """
+    raw = os.environ.get("BASECAMP_AGENT_SWEEP_INTERVAL_S")
+    if raw is None:
+        return _DEFAULT_SWEEP_INTERVAL_S
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEFAULT_SWEEP_INTERVAL_S
+    return value if value > 0 else None
 
 
 def _acquire_server_lock(lock_path: Path) -> int:
@@ -129,10 +169,16 @@ def run_hub(
 
         store = Store(db_path=db_path)
         reconcile_orphaned_runs(store)
+        sweep_interval_s = _resolve_sweep_interval_s()
         dashboard_access = DashboardAccess()
         dashboard = DashboardServer(access=dashboard_access, uds_path=str(socket_path))
         dashboard.start()
-        create_server(str(socket_path), store, dashboard_access=dashboard_access).run()
+        create_server(
+            str(socket_path),
+            store,
+            dashboard_access=dashboard_access,
+            sweep_interval_s=sweep_interval_s,
+        ).run()
     finally:
         if dashboard is not None:
             dashboard.stop()

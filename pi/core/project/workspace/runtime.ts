@@ -11,6 +11,7 @@ import {
 	listWorktrees as listGitWorktrees,
 	type WorktreeResult,
 } from "../../git/worktrees/crud.ts";
+import { acquireSessionLease } from "../../git/worktrees/lease.ts";
 import { processScoped } from "../../global-registry.ts";
 import { registerCwdProvider } from "../../host/exec.ts";
 import { isWithin } from "../../host/paths.ts";
@@ -71,6 +72,9 @@ function setWorkspaceEnv(state: WorkspaceState): void {
 export class WorkspaceRuntimeService {
 	private pi: ExtensionAPI;
 	private state: WorkspaceState | null = null;
+	// Pi session id of a top-level session; drives the advisory session-worktree lease. Null
+	// for subagents, whose worktree is agent-locked and owned by the daemon — never re-leased here.
+	private sessionId: string | null = null;
 	private readonly listeners = new Set<(state: WorkspaceState | null) => void>();
 
 	constructor(pi: ExtensionAPI) {
@@ -82,6 +86,7 @@ export class WorkspaceRuntimeService {
 	}
 
 	async initialize(opts: WorkspaceInitializeOptions): Promise<WorkspaceInitializeResult> {
+		this.sessionId = opts.sessionId ?? null;
 		const launchCwd = path.resolve(opts.launchCwd);
 		const gitInfo = await resolveGitInfo(this.pi, launchCwd);
 		const repoRootOrLaunchCwd = gitInfo.mainRoot ?? launchCwd;
@@ -139,6 +144,7 @@ export class WorkspaceRuntimeService {
 				branch: record?.branch ?? null,
 				created: false,
 			});
+			await this.leaseActiveWorktree();
 		}
 
 		return { state: this.require(), unsafeEditResult };
@@ -174,14 +180,32 @@ export class WorkspaceRuntimeService {
 		const state = this.require();
 		if (!state.repo) worktreeRequiresRepo();
 		const wt = await getOrCreateWorktree(this.pi, state.repo.root, state.repo.name, label, branchName);
-		return this.applyWorktree(worktreeResultToWorkspaceWorktree(wt));
+		const applied = this.applyWorktree(worktreeResultToWorkspaceWorktree(wt));
+		await this.leaseActiveWorktree();
+		return applied;
 	}
 
 	async attachWorktreePath(worktreeDir: string): Promise<WorkspaceWorktree> {
 		const state = this.require();
 		if (!state.repo) worktreeRequiresRepo();
 		const wt = await attachWorktreeDir(this.pi, state.repo.root, state.repo.name, worktreeDir);
-		return this.applyWorktree(worktreeResultToWorkspaceWorktree(wt));
+		const applied = this.applyWorktree(worktreeResultToWorkspaceWorktree(wt));
+		await this.leaseActiveWorktree();
+		return applied;
+	}
+
+	// Advisory lease on the active session worktree: (re)lock it with this session's id so the
+	// cold backstop sweep skips it while live. No-op for subagents (no sessionId) so an
+	// agent-locked worktree is never clobbered. Never blocks activation on a lock failure.
+	private async leaseActiveWorktree(): Promise<void> {
+		if (!this.sessionId) return;
+		const state = this.state;
+		if (!state?.repo || state.activeWorktree?.kind !== "git-worktree") return;
+		try {
+			await acquireSessionLease(this.pi, state.repo.root, state.activeWorktree.path, this.sessionId);
+		} catch {
+			/* advisory lease — activation proceeds even if locking fails */
+		}
 	}
 
 	onChange(listener: (state: WorkspaceState | null) => void): () => void {

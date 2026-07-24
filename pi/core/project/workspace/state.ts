@@ -50,6 +50,8 @@ export interface WorkspaceInitializeOptions {
 	launchCwd: string;
 	unsafeEditFlag: boolean;
 	unsafeEditConstraints: UnsafeEditConstraints;
+	/** Pi session id of a top-level session; enables session-worktree leasing. Null for subagents. */
+	sessionId?: string | null;
 }
 
 export interface WorkspaceInitializeResult {

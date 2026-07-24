@@ -4,9 +4,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { WORKTREES_ROOT } from "../../../git/constants.ts";
+import { worktreesRoot } from "../../../git/constants.ts";
+import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
 import type { WorkspaceState } from "../../../project/workspace/state.ts";
 import { type AgentWorkspaceProvision, discardAgentWorkspace, provisionAgentWorkspace } from "../agent-workspace.ts";
+
+useTempWorktreesRoot();
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 type Call = { cmd: string; args: string[]; opts?: { cwd?: string } };
@@ -58,7 +61,7 @@ function withTempHome(t: { after(fn: () => void): void }, repoName: string, setu
 }
 
 function cleanupWorktrees(t: { after(fn: () => void): void }): void {
-	t.after(() => fs.rmSync(path.join(WORKTREES_ROOT, "basecamp-ws-fx"), { recursive: true, force: true }));
+	t.after(() => fs.rmSync(path.join(worktreesRoot(), "basecamp-ws-fx"), { recursive: true, force: true }));
 }
 
 function repoName(tag: string): string {
