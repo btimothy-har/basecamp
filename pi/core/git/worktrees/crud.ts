@@ -143,16 +143,17 @@ export function ensureWorktreeLabel(label: string): void {
 	}
 }
 
+/**
+ * Assert the protected checkout is on its default branch before provisioning a worktree from it.
+ * A dirty checkout is deliberately allowed: worktrees are cut from HEAD, so uncommitted WIP stays
+ * in the checkout and is never carried across (issue #310 Phase 3). The default-branch clause is a
+ * cheap invariant — bare pi never leaves the default branch — kept as a corruption guard.
+ */
 export async function validateProtectedCheckout(pi: ExtensionAPI, repoRoot: string): Promise<string> {
 	const defaultBranch = await detectDefaultBranch(pi, repoRoot);
 	const branch = await gitOutput(pi, repoRoot, ["branch", "--show-current"]);
 	if (branch !== defaultBranch) {
 		throw new Error(`Protected checkout must be on ${defaultBranch}; currently on ${branch || "detached HEAD"}`);
-	}
-
-	const status = await gitOutput(pi, repoRoot, ["status", "--porcelain"]);
-	if (status) {
-		throw new Error(`Protected checkout must be clean before worktree activation:\n${status}`);
 	}
 
 	return defaultBranch;
