@@ -127,16 +127,7 @@ export function buildCapabilitiesIndex(opts: {
 	pushCapabilitySection(lines, "Agents", agentItems);
 
 	ensureBlankLine(lines);
-	lines.push(
-		"Skill lifecycle:",
-		"- `skill` loads a skill's full instructions into this agent's active context.",
-		"- Before applying a relevant skill, load it if its instructions are not already present.",
-		"- Reuse loaded instructions across ordinary turns and tasks; relevance alone is not a reason to reload.",
-		"- Reload only when the instructions are no longer in active context or an intentional refresh is needed.",
-		"",
-		"`skill` example:",
-		'- Load missing instructions: `skill({ name: "python-development" })`',
-	);
+	lines.push("Apply a skill whose instructions are already in context; load it with `skill` when they are not.");
 
 	return lines.join("\n");
 }

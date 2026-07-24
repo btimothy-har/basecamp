@@ -5,8 +5,6 @@ description: "Python guidance for work involving .py files or dependency managem
 
 # Python Development
 
-Use Python 3.12+ with the `uv` package manager for all Python work.
-
 ## Principles
 
 **Workflow**
@@ -29,22 +27,6 @@ Use Python 3.12+ with the `uv` package manager for all Python work.
 - **Minimal dependencies** - Every external package must justify its inclusion
 
 ## Quick Reference
-
-### Running Python
-
-```bash
-uv run script.py           # Run script with inline dependencies
-uv run python script.py    # Alternative form
-```
-
-### Script Dependencies
-
-```python
-# /// script
-# dependencies = ["httpx", "pandas"]
-# requires-python = ">=3.12"
-# ///
-```
 
 ### Project Setup
 

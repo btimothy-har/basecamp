@@ -10,7 +10,7 @@ export function registerEscalate(pi: ExtensionAPI): void {
 		name: "escalate",
 		label: "Escalate",
 		description:
-			"Surface a blocker or decision to the user. Use when you need user input, hit ambiguity, or are stuck. Pauses execution until the user responds. Keep questions short and direct; put background reasoning in context.",
+			"Surface a blocker or decision to the user. Use when you need user input, hit ambiguity, or are stuck — including when you are choosing between approaches the user has expressed no preference on, or the same fix has failed twice. Pauses execution until the user responds. Keep questions short and direct; put background reasoning in context.",
 		promptSnippet: "Pause and ask the user for a decision or help with a blocker",
 		parameters: Type.Object({
 			questions: Type.Array(

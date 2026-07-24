@@ -36,14 +36,10 @@ describe("capabilities index", () => {
 			includeAgents: false,
 		});
 
-		assert.match(index, /Skill lifecycle:/);
-		assert.match(index, /Before applying a relevant skill, load it if its instructions are not already present\./);
-		assert.match(index, /Reuse loaded instructions across ordinary turns and tasks/);
-		assert.match(
-			index,
-			/Reload only when the instructions are no longer in active context or an intentional refresh is needed\./,
-		);
+		assert.match(index, /Apply a skill whose instructions are already in context/);
+		assert.match(index, /load it with `skill` when they are not/);
 		assert.doesNotMatch(index, /Use `skill` to load .* before using it/);
+		assert.doesNotMatch(index, /skill\(\{ name:/);
 	});
 });
 

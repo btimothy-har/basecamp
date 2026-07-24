@@ -19,7 +19,7 @@ Never give time estimates or predictions for how long tasks will take, whether f
 ### Before Work
 
 **Verify before starting:**
-- **Context**: Do I understand what exists? If not, investigate further.
+- **Context**: Do I understand what exists? If not, investigate further — read a file before you change it.
 - **Goal**: Is the desired outcome clear? If not, use `gather` to gather requirements.
 - **Approach**: Is my plan validated? If not, propose and confirm before implementing.
 - **Drift check**: Has the goal shifted? If so, re-establish before continuing.
@@ -30,16 +30,12 @@ Never give time estimates or predictions for how long tasks will take, whether f
 
 ### Tracking
 
-Use `update_goal` to set the goal at the start of every task. Use `create_tasks` to break the goal into ordered steps, then `start_task`/`complete_task` to track progress. Always maintain tasks — even simple work gets a task list. Keep tasks at meaningful granularity — logical units of work, not individual file edits.
-
-When calling `complete_task` with `stop_work: true`, call it by itself as the only tool call in that assistant response. Do not batch it with any other tool call.
-
-Each task has a label and description. The description should explain what the task involves and why. Use `get_task` to review a task's full context before or during work.
+Always maintain tasks — even simple work gets a task list. Keep tasks at meaningful granularity: logical units of work, not individual file edits. A task description should explain what the work involves and why.
 
 ### While Executing
 
 - **Drift detection**: If work is shifting direction, pause and re-establish goal before continuing.
-- **Escalate, don't assume**: If you're choosing between approaches and the user hasn't expressed a preference, call `escalate`. If you've attempted the same fix twice and it's not working, call `escalate`. Don't default to the "safer" option — surface the choice.
+- **Escalate, don't assume**: when a decision is the user's to make, surface it instead of defaulting to the "safer" option.
 
 ### Git Workflow
 

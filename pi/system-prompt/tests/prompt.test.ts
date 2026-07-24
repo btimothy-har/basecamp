@@ -77,10 +77,8 @@ describe("assemblePrompt", () => {
 			readOnly: false,
 		};
 		const assertLifecycle = (prompt: string): void => {
-			assert.equal(prompt.match(/Skill lifecycle:/g)?.length, 1);
-			assert.match(prompt, /load it if its instructions are not already present/);
-			assert.match(prompt, /Reuse loaded instructions across ordinary turns and tasks/);
-			assert.match(prompt, /an intentional refresh is needed/);
+			assert.equal(prompt.match(/Apply a skill whose instructions are already in context/g)?.length, 1);
+			assert.match(prompt, /load it with `skill` when they are not/);
 			assert.doesNotMatch(prompt, /\b(?:Always )?[Ii]nvoke\b[^\n]*\bskills?\b/);
 		};
 		const modeExpectations = [

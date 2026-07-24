@@ -69,8 +69,10 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 		name: "skill",
 		label: "Skill",
 		description:
-			"Load full instructions for a named skill. " +
-			"Available skills are listed in the system prompt capabilities index.",
+			"Load full instructions for a named skill into this agent's active context. " +
+			"Available skills are listed in the system prompt capabilities index. " +
+			"Loaded instructions stay available across turns and tasks, so relevance alone is not a reason to reload; " +
+			"reload only when the instructions have left context or you need an intentional refresh.",
 
 		parameters: SkillParams,
 
