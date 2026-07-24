@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { worktreesRoot } from "../constants.ts";
-import { getOrCreateWorktree, validateProtectedCheckout } from "../worktrees/crud.ts";
+import { getOrCreateWorktree, resolveAvailableWorktreeLabel, validateProtectedCheckout } from "../worktrees/crud.ts";
 import { useTempWorktreesRoot } from "./worktree-root.ts";
 
 useTempWorktreesRoot();
@@ -107,5 +107,70 @@ describe("validateProtectedCheckout", () => {
 			() => validateProtectedCheckout(checkoutPi("/repo", "feature"), "/repo"),
 			/Protected checkout must be on main; currently on feature/,
 		);
+	});
+});
+
+describe("resolveAvailableWorktreeLabel", () => {
+	const repoRoot = "/repo";
+
+	function listPi(records: { label: string; branch: string }[], repoName: string): ExtensionAPI {
+		const porcelain = [
+			`worktree ${repoRoot}`,
+			"branch refs/heads/main",
+			"",
+			...records.flatMap(({ label, branch }) => [
+				`worktree ${path.join(worktreesRoot(), repoName, label)}`,
+				`branch refs/heads/${branch}`,
+				"",
+			]),
+		].join("\n");
+		return {
+			async exec(command: string, args: string[]): Promise<ExecResult> {
+				assert.equal(command, "git");
+				if (argsEqual(args, ["-C", repoRoot, "worktree", "list", "--porcelain"])) {
+					return { code: 0, stdout: porcelain, stderr: "" };
+				}
+				throw new Error(`Unexpected git args: ${JSON.stringify(args)}`);
+			},
+		} as ExtensionAPI;
+	}
+
+	it("returns the base label when its directory is free", async () => {
+		const repoName = `resolve-free-${process.pid}-${Date.now()}`;
+		const label = await resolveAvailableWorktreeLabel(
+			listPi([], repoName),
+			repoRoot,
+			repoName,
+			"wt/foo",
+			"bt/a1b2-foo",
+		);
+		assert.equal(label, "wt/foo");
+	});
+
+	it("returns the base label when it already holds the intended branch (resume)", async () => {
+		const repoName = `resolve-same-${process.pid}-${Date.now()}`;
+		const pi = listPi([{ label: "wt/foo", branch: "bt/a1b2-foo" }], repoName);
+		const label = await resolveAvailableWorktreeLabel(pi, repoRoot, repoName, "wt/foo", "bt/a1b2-foo");
+		assert.equal(label, "wt/foo");
+	});
+
+	it("suffixes when the base label is occupied by a different branch", async () => {
+		const repoName = `resolve-diff-${process.pid}-${Date.now()}`;
+		const pi = listPi([{ label: "wt/foo", branch: "bt/x1y2-foo" }], repoName);
+		const label = await resolveAvailableWorktreeLabel(pi, repoRoot, repoName, "wt/foo", "bt/a1b2-foo");
+		assert.equal(label, "wt/foo-2");
+	});
+
+	it("keeps incrementing past multiple different-branch collisions", async () => {
+		const repoName = `resolve-multi-${process.pid}-${Date.now()}`;
+		const pi = listPi(
+			[
+				{ label: "wt/foo", branch: "bt/x1y2-foo" },
+				{ label: "wt/foo-2", branch: "bt/z9z9-foo" },
+			],
+			repoName,
+		);
+		const label = await resolveAvailableWorktreeLabel(pi, repoRoot, repoName, "wt/foo", "bt/a1b2-foo");
+		assert.equal(label, "wt/foo-3");
 	});
 });

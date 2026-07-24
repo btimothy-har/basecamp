@@ -4,6 +4,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveAvailableWorktreeLabel } from "#core/git/worktrees/crud.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import { runWorktreeSetup } from "#core/project/workspace/setup.ts";
 import {
@@ -247,16 +248,26 @@ export async function runHandoff(
 	} else {
 		const target = await selectWorktreeTarget(pi, ctx, plan.goal, plan.worktreeSlug);
 		if (!target) return { status: "cancelled" };
+		const label = await resolveHandoffWorktreeLabel(pi, target);
 		try {
-			worktree = workspaceWorktreeToHandoffWorktree(
-				await activateWorkspaceWorktree(target.worktreeLabel, target.branchName),
-			);
+			worktree = workspaceWorktreeToHandoffWorktree(await activateWorkspaceWorktree(label, target.branchName));
 		} catch (error) {
-			return { status: "activation_failed", label: target.worktreeLabel, error };
+			return { status: "activation_failed", label, error };
 		}
 	}
 
 	return { status: "ready", worktree, setupSummary: await provisionWorktree(pi, ctx, worktree) };
+}
+
+/**
+ * For a create/custom target (branch set) pick a collision-free `wt/<slug>` label so we never
+ * adopt a same-slug worktree on a different branch; resume targets (no branch) keep their label.
+ */
+async function resolveHandoffWorktreeLabel(pi: ExtensionAPI, target: ExecutionWorktreeTarget): Promise<string> {
+	if (!target.branchName) return target.worktreeLabel;
+	const repo = getWorkspaceState()?.repo;
+	if (!repo) return target.worktreeLabel;
+	return resolveAvailableWorktreeLabel(pi, repo.root, repo.name, target.worktreeLabel, target.branchName);
 }
 
 /** Run the per-repo worktree setup command for a freshly created worktree. */

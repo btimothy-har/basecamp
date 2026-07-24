@@ -126,10 +126,11 @@ export function validateNoSymlinkedWorktreePath(worktreeDir: string, root = work
 }
 
 // `agent-<id>` is the reserved namespace for dispatched agents' transient workspaces.
-// Distinct `agent-` prefix ⇒ disjoint from the
-// human-facing `wt-xx` / `copilot` namespaces, so no user label can collide.
-const NESTED_WORKTREE_NAMESPACE_RE = /^(?:wt-[a-z0-9]{2}|copilot|agent-[a-z0-9]+)$/;
-const NESTED_WORKTREE_LABEL_RE = /^(?:wt-[a-z0-9]{2}|copilot|agent-[a-z0-9]+)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+// Distinct `agent-` prefix ⇒ disjoint from the human-facing `wt`/`wt-xx`/`copilot` namespaces,
+// so no user label can collide. `wt/<slug>` is the generic session-worktree namespace (issue #310
+// Phase 3); `wt-xx/<slug>` stays accepted so pre-Phase-3 worktrees age out naturally.
+const NESTED_WORKTREE_NAMESPACE_RE = /^(?:wt(?:-[a-z0-9]{2})?|copilot|agent-[a-z0-9]+)$/;
+const NESTED_WORKTREE_LABEL_RE = /^(?:wt(?:-[a-z0-9]{2})?|copilot|agent-[a-z0-9]+)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 function isNestedWorktreeNamespace(value: string | undefined): boolean {
 	return typeof value === "string" && NESTED_WORKTREE_NAMESPACE_RE.test(value);
@@ -138,7 +139,7 @@ function isNestedWorktreeNamespace(value: string | undefined): boolean {
 export function ensureWorktreeLabel(label: string): void {
 	if (!WORKTREE_LABEL_RE.test(label) && !NESTED_WORKTREE_LABEL_RE.test(label)) {
 		throw new Error(
-			`Invalid worktree label "${label}". Use a direct label, wt-xx/name, or copilot/name with safe characters.`,
+			`Invalid worktree label "${label}". Use a direct label, wt/name, wt-xx/name, or copilot/name with safe characters.`,
 		);
 	}
 }
@@ -230,4 +231,37 @@ export async function getOrCreateWorktree(
 	}
 
 	return { worktreeDir, label, branch, created: true };
+}
+
+const MAX_WORKTREE_LABEL_ATTEMPTS = 100;
+
+/**
+ * Resolve a worktree label safe to provision on `branch`: the base label when its directory is
+ * free or already holds `branch`, otherwise `<base>-2`, `<base>-3`, … skipping any directory
+ * occupied by a DIFFERENT branch. Generic `wt/<slug>` labels (issue #310 Phase 3) can otherwise
+ * silently adopt an unrelated same-slug worktree — e.g. a dirty survivor — via getOrCreateWorktree's
+ * reuse-if-registered. Copilot/workstream provisioning keeps calling getOrCreateWorktree directly
+ * (its slug is globally unique), so its idempotent reuse is unaffected.
+ */
+export async function resolveAvailableWorktreeLabel(
+	pi: ExtensionAPI,
+	repoRoot: string,
+	repoName: string,
+	baseLabel: string,
+	branch: string,
+): Promise<string> {
+	const records = await gitWorktreeRecords(pi, repoRoot);
+	for (let attempt = 1; attempt <= MAX_WORKTREE_LABEL_ATTEMPTS; attempt++) {
+		const label = attempt === 1 ? baseLabel : `${baseLabel}-${attempt}`;
+		const worktreeDir = path.join(worktreesRoot(), repoName, label);
+		const existing = findWorktreeRecord(records, worktreeDir);
+		if (existing) {
+			if (branchName(existing) === branch) return label;
+		} else if (!fs.existsSync(worktreeDir)) {
+			return label;
+		}
+	}
+	throw new Error(
+		`Could not find an available worktree label for "${baseLabel}" after ${MAX_WORKTREE_LABEL_ATTEMPTS} attempts`,
+	);
 }

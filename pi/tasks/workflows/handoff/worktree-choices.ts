@@ -26,22 +26,26 @@ function normalizeSessionTag(value: string | null | undefined): string {
 
 function stripKnownPrefix(value: string, prefix: string): string {
 	const lower = value.trim().toLowerCase();
-	for (const knownPrefix of [`wt-${prefix}/`, `${prefix}/`, `wt-${prefix}-`, `${prefix}-`]) {
+	for (const knownPrefix of [`wt-${prefix}/`, `wt/`, `${prefix}/`, `wt-${prefix}-`, `${prefix}-`]) {
 		if (lower.startsWith(knownPrefix)) return lower.slice(knownPrefix.length);
 	}
 	return lower;
 }
 
+// The worktree directory is a generic `wt/<slug>` cache (issue #310 Phase 3); the branch
+// `<prefix>/<tag>-<slug>` carries the unique identity. The slug is capped so the branch (the
+// longer, durable identifier) stays bounded; worktree-name collisions are disambiguated at
+// provision time via resolveAvailableWorktreeLabel, so the builder stays pure.
 function buildExecutionWorktreeTarget(prefix: string, slug: string, sessionTag: string): ExecutionWorktreeTarget {
-	const worktreePrefix = `wt-${prefix}/`;
+	const branchPrefix = `${prefix}/`;
 	const tag = normalizeSessionTag(sessionTag);
 	const tagSegment = tag ? `${tag}-` : "";
 	const baseSlug = tagSegment && slug.startsWith(tagSegment) ? slug.slice(tagSegment.length) : slug;
-	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - worktreePrefix.length - tagSegment.length);
+	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - branchPrefix.length - tagSegment.length);
 	const cappedSlug = baseSlug.slice(0, maxSlugLength).replace(/-+$/g, "") || FALLBACK_WORKTREE_SLUG;
 	return {
-		worktreeLabel: `${worktreePrefix}${tagSegment}${cappedSlug}`,
-		branchName: `${prefix}/${tagSegment}${cappedSlug}`,
+		worktreeLabel: `wt/${cappedSlug}`,
+		branchName: `${branchPrefix}${tagSegment}${cappedSlug}`,
 	};
 }
 
@@ -102,13 +106,20 @@ export function buildExecutionWorktreeChoices(
 		handledLabels.add(activeExisting.label);
 	}
 
+	// A generic `wt/<slug>` label no longer uniquely identifies a branch, so when a worktree
+	// already holds it we resume THAT worktree (reuse its branch) rather than forcing the
+	// suggested branch; only a free label offers a fresh Create on the suggested branch.
 	const suggestedExisting = existing.find((wt) => wt.label === suggested.worktreeLabel);
 	if (!handledLabels.has(suggested.worktreeLabel)) {
-		const suggestedChoice = suggestedExisting
-			? `Resume: ${suggested.worktreeLabel} (${suggestedExisting.branch ?? "detached"})`
-			: `Create: ${suggested.worktreeLabel}`;
-		choices.push(suggestedChoice);
-		targetsByChoice.set(suggestedChoice, suggested);
+		if (suggestedExisting) {
+			const choice = `Resume: ${suggestedExisting.label} (${suggestedExisting.branch ?? "detached"})`;
+			choices.push(choice);
+			targetsByChoice.set(choice, existingWorktreeTarget(suggestedExisting));
+		} else {
+			const choice = `Create: ${suggested.worktreeLabel}`;
+			choices.push(choice);
+			targetsByChoice.set(choice, suggested);
+		}
 	}
 	handledLabels.add(suggested.worktreeLabel);
 
