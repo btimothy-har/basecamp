@@ -150,6 +150,11 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		if (style) parts.push(style);
 	}
 
+	// Code craft is unconditional: every consumer that can write code needs the same rubric,
+	// so personas share one source instead of carrying their own copy.
+	const craft = loadWorkingStyle("craft").trim();
+	if (craft) parts.push(craft);
+
 	// Copilot is a locked, launch-only mode that stages work via launch_workstream and never implements in-session,
 	// so plan() is hidden from its capabilities index (it is also hard-blocked at call time by pi-tasks).
 	const capabilityToolItems = isCopilotMode(agentMode)

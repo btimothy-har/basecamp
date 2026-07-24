@@ -26,7 +26,7 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /# Work/);
 		assert.match(prompt, /# Your Role as an Engineer/);
 		assert.match(prompt, /You are a \*\*partner\*\*, not a follower\./);
-		assert.match(prompt, /### File Length/);
+		assert.match(prompt, /^## File Length$/m);
 		assert.match(prompt, /350 lines for TypeScript and HTML/);
 		assert.match(prompt, /800 for SQL/);
 		assert.match(prompt, /tighter limit/);
@@ -134,6 +134,34 @@ describe("assemblePrompt", () => {
 			prompt,
 			/⚠ WORKSPACE ACTIVE: Relative file-tool paths and bash commands run from the working directory\. Do not edit the protected repository checkout\./,
 		);
+	});
+
+	it("includes the code craft block in every mode and for persona prompts", async (t) => {
+		useDefaultAgentMode(t);
+		await useTempHome(t);
+		const options = {
+			workspace: null,
+			project: null,
+			effectiveCwd: "/repo",
+			toolItems: [],
+			skillItems: [],
+			agentItems: [],
+			contextFiles: [],
+		};
+		const assertCraft = (prompt: string): void => {
+			assert.equal(prompt.match(/# Code Craft/g)?.length, 1);
+			assert.match(prompt, /Never comment the "what"/);
+			assert.match(prompt, /Never use comments as section dividers/);
+			assert.match(prompt, /350 lines for TypeScript and HTML/);
+		};
+
+		for (const mode of ["work", "analysis", "planning", "copilot"] as const) {
+			setAgentMode(mode);
+			assertCraft(assemblePrompt(options));
+		}
+
+		setAgentMode("work");
+		assertCraft(assemblePrompt({ ...options, agentPrompt: "custom worker prompt" }));
 	});
 
 	it("emits environment facts and the runtime block as one contiguous category", async (t) => {
