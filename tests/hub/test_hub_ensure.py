@@ -364,6 +364,21 @@ def test_stale_spawn_lock_cleanup_error_uses_hub_ensure_error(tmp_path: Path, mo
     assert spawns == []
 
 
+def test_acquire_spawn_lock_publishes_complete_payload_without_staging_residue(tmp_path: Path) -> None:
+    lock_path = tmp_path / "daemon.spawn.lock"
+    fd, identity = _acquire_spawn_lock(lock_path, 100)
+
+    assert json.loads(lock_path.read_text(encoding="utf-8")) == {"pid": os.getpid(), "ts": 100}
+    assert [entry.name for entry in tmp_path.iterdir()] == ["daemon.spawn.lock"]
+
+    with pytest.raises(FileExistsError):
+        _acquire_spawn_lock(lock_path, 200)
+    assert [entry.name for entry in tmp_path.iterdir()] == ["daemon.spawn.lock"]
+
+    _release_spawn_lock(fd, lock_path, identity)
+    assert list(tmp_path.iterdir()) == []
+
+
 def test_spawn_lock_release_does_not_unlink_replacement(tmp_path: Path) -> None:
     lock_path = tmp_path / "daemon.spawn.lock"
     fd, identity = _acquire_spawn_lock(lock_path, 100)

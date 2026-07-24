@@ -149,6 +149,31 @@ describe("ensureDaemon", () => {
 		assert.equal(fs.existsSync(lockPath), false);
 	});
 
+	it("publishes a complete spawn lock atomically and cleans staging residue", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "daemon-ensure-"));
+		const paths = daemonPaths(root);
+		let healthy = false;
+		let lockedContents: Record<string, unknown> = {};
+		let lockedSiblings: string[] = [];
+
+		await ensureDaemon({
+			resolvePathsFn: () => paths,
+			healthPingFn: async () => (healthy ? { ok: true, protocol: PROTOCOL_VERSION } : { ok: false }),
+			spawnFn: () => {
+				lockedContents = JSON.parse(fs.readFileSync(paths.spawnLockPath, "utf8")) as Record<string, unknown>;
+				lockedSiblings = fs.readdirSync(root);
+				healthy = true;
+				return fakeSpawn();
+			},
+			sleepFn: async () => {},
+		});
+
+		assert.deepEqual(Object.keys(lockedContents).sort(), ["pid", "ts"]);
+		assert.equal(lockedContents.pid, process.pid);
+		assert.deepEqual(lockedSiblings, ["daemon.spawn.lock"]);
+		assert.deepEqual(fs.readdirSync(root), []);
+	});
+
 	it("does not remove a spawn lock that replaced the acquired inode", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "daemon-ensure-"));
 		const paths = daemonPaths(root);
