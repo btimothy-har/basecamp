@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 from pathlib import Path
 
 import pytest
@@ -70,11 +71,21 @@ def test_ws_disconnect_touches_last_seen(tmp_path: Path, monkeypatch: pytest.Mon
     app, store = _build_app_with_store(tmp_path)
     timestamps = iter(["2026-07-21T10:00:00+00:00", "2026-07-21T11:00:00+00:00"])
     monkeypatch.setattr(store, "_now", lambda: next(timestamps))
-    monkeypatch.setattr("basecamp.hub.app.schedule_disconnect_reaper", lambda **_kwargs: None)
+    disconnect_handled = threading.Event()
+    monkeypatch.setattr(
+        "basecamp.hub.app.schedule_disconnect_reaper",
+        lambda **_kwargs: disconnect_handled.set(),
+    )
 
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as websocket:
             _register_ws(websocket, node_id="node-1", role="agent", parent_id=None, sibling_group=None)
+            # Disconnect explicitly and wait for the handler's cleanup, which runs the
+            # recency touch before scheduling the reaper. Leaving the disconnect to the
+            # context exit cancels the app task, and that cancellation can land on the
+            # awaited best-effort touch before its write commits.
+            websocket.close(1000)
+            assert disconnect_handled.wait(timeout=5.0)
 
     agent = store.get_agent("node-1")
     assert agent is not None
@@ -135,6 +146,17 @@ def test_ws_session_metadata_is_scoped_to_registered_node(tmp_path: Path) -> Non
                     "branch": None,
                 }
             )
+            # Frames are handled sequentially, so this round-trip flushes the
+            # metadata write before the context exit can cancel the handler.
+            websocket.send_json(
+                {
+                    "type": "list_agents",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "metadata-flush",
+                    "awaitable": False,
+                }
+            )
+            assert websocket.receive_json()["type"] == "list_agents_result"
 
     updated = store.get_agent("node-1")
     unchanged = store.get_agent("other-node")

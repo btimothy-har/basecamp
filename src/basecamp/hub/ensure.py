@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import secrets
 import signal
 import subprocess
 import time
@@ -200,17 +201,22 @@ def _health_matches(health: HubHealth) -> bool:
 
 
 def _acquire_spawn_lock(lock_path: Path, now_ms: int) -> tuple[int, tuple[int, int]]:
-    fd = os.open(lock_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    # Stage the payload in a private sibling and hardlink it into place so a
+    # contender can never observe a created-but-not-yet-written lock; an empty
+    # lock reads as corrupt, gets reclaimed as stale, and lets two ensures spawn.
+    payload = json.dumps({"pid": os.getpid(), "ts": now_ms}, separators=(",", ":")).encode()
+    staging_path = lock_path.with_name(f"{lock_path.name}.{os.getpid()}.{secrets.token_hex(8)}")
+    fd = os.open(staging_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
-        payload = json.dumps({"pid": os.getpid(), "ts": now_ms}, separators=(",", ":")).encode()
         os.write(fd, payload)
+        os.link(staging_path, lock_path)
         stat = os.fstat(fd)
     except BaseException:
         os.close(fd)
-        _unlink(lock_path)
+        _unlink_quietly(staging_path)
         raise
-    else:
-        return fd, (stat.st_dev, stat.st_ino)
+    _unlink_quietly(staging_path)
+    return fd, (stat.st_dev, stat.st_ino)
 
 
 def _release_spawn_lock(fd: int, lock_path: Path, identity: tuple[int, int]) -> None:
@@ -388,4 +394,11 @@ def _unlink(path: Path) -> None:
     try:
         path.unlink()
     except FileNotFoundError:
+        pass
+
+
+def _unlink_quietly(path: Path) -> None:
+    try:
+        path.unlink()
+    except OSError:
         pass

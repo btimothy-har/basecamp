@@ -1,4 +1,5 @@
 import { type ChildProcess, type SpawnOptions, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import { DEFAULT_HEALTH_TIMEOUT_MS, type HealthPingResult, healthPing } from "./http.ts";
 import { type DaemonPaths, ensureDaemonRuntimeDir, resolveDaemonPaths } from "./paths.ts";
@@ -70,9 +71,33 @@ async function isSpawnLockStale(
 	return !pidExists(lock.pid);
 }
 
+async function unlinkQuietly(path: string): Promise<void> {
+	try {
+		await fs.promises.unlink(path);
+	} catch {
+		// best effort
+	}
+}
+
 async function writeSpawnLock(lockPath: string, nowMs: number): Promise<fs.promises.FileHandle> {
-	const file = await fs.promises.open(lockPath, "wx", 0o600);
-	await file.writeFile(JSON.stringify({ pid: process.pid, ts: nowMs }));
+	// Stage the payload in a private sibling and hardlink it into place so a
+	// contender can never observe a created-but-not-yet-written lock; an empty
+	// lock reads as corrupt, gets reclaimed as stale, and lets two ensures spawn.
+	const stagingPath = `${lockPath}.${process.pid}.${randomBytes(8).toString("hex")}`;
+	const file = await fs.promises.open(stagingPath, "wx", 0o600);
+	try {
+		await file.writeFile(JSON.stringify({ pid: process.pid, ts: nowMs }));
+		await fs.promises.link(stagingPath, lockPath);
+	} catch (error) {
+		try {
+			await file.close();
+		} catch {
+			// best effort
+		}
+		await unlinkQuietly(stagingPath);
+		throw error;
+	}
+	await unlinkQuietly(stagingPath);
 	return file;
 }
 
