@@ -1,8 +1,13 @@
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { awaitDaemonConnection } from "#core/hub/index.ts";
 import { resolveAgentDepthState } from "#core/swarm/agents/types.ts";
 import { registerWorkstreamStartup } from "./start.ts";
 import { registerWorkstreamTools } from "./tools.ts";
+
+const workstreamsDir = path.dirname(fileURLToPath(import.meta.url));
+export const workstreamsSkillPath = path.join(workstreamsDir, "skills", "workstreams", "SKILL.md");
 
 /**
  * The workstreams feature domain — durable, repo-neutral coordination state for
@@ -15,6 +20,7 @@ export default function registerWorkstreams(pi: ExtensionAPI): void {
 
 	if (isTopLevel && !atMaxDepth) {
 		registerWorkstreamTools(pi, awaitDaemonConnection);
+		pi.on("resources_discover", () => ({ skillPaths: [workstreamsSkillPath] }));
 	}
 	if (isTopLevel) {
 		registerWorkstreamStartup(pi, awaitDaemonConnection);

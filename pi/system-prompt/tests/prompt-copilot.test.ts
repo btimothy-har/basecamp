@@ -7,7 +7,7 @@ import { assemblePrompt } from "../prompt.ts";
 import { useAgentMode, useTempHome } from "./helpers.ts";
 
 describe("assemblePrompt copilot", () => {
-	it("includes copilot mode and Repo Logseq without engineering style", async (t) => {
+	it("composes generic work posture with the copilot style", async (t) => {
 		useAgentMode(t, "copilot");
 		const homeDir = await useTempHome(t);
 		const basecampDir = path.join(homeDir, ".pi", "basecamp");
@@ -25,14 +25,17 @@ describe("assemblePrompt copilot", () => {
 			readOnly: false,
 		});
 
-		assert.match(prompt, /# Repo Copilot/);
+		// copilot is a style over the shared execution posture, not its own mode fragment
+		assert.match(prompt, /# Work/);
+		assert.match(prompt, /You are the repo copilot for the current repository/);
 		assert.match(prompt, /# Repo Logseq/);
+		assert.match(prompt, /# Code Craft/);
 		assert.doesNotMatch(prompt, /# Repo Copilot Context/);
 		assert.doesNotMatch(prompt, /# Your Role as an Engineer/);
 		assert.doesNotMatch(prompt, /CUSTOM ENGINEERING STYLE/);
 	});
 
-	it("copilot mode documents workstream launch, dedupe, and pull-based curation", async (t) => {
+	it("keeps copilot posture in the style and defers tool mechanics to the skill", async (t) => {
 		useAgentMode(t, "copilot");
 		await useTempHome(t);
 
@@ -47,36 +50,22 @@ describe("assemblePrompt copilot", () => {
 			readOnly: false,
 		});
 
-		// decoupled surface: create/edit shape the record; launch stages the worktree + pane
-		assert.match(prompt, /create_workstream/);
-		assert.match(prompt, /edit_workstream/);
-		assert.match(prompt, /launch_workstream/);
-		assert.match(prompt, /list_workstreams/);
-		assert.match(prompt, /set_workstream_status/);
-		// the migrated tool name replaces the deprecated launch-index name
-		assert.doesNotMatch(prompt, /list_workstream_launches/);
-		// content versioning: edit revises in place and retains the prior version
-		assert.match(prompt, /keeps the old version/);
-		assert.match(prompt, /It does not start an agent/);
-		assert.match(prompt, /Tell the user to run `pi --workstream` in the opened pane/);
-		assert.match(prompt, /infers the slug from the worktree label/);
-		assert.match(prompt, /`cd <worktree-path> && pi --workstream=<slug>`/);
-		// launch is decoupled from the record, so the same workstream carries across repos
-		assert.match(prompt, /launched into a different repo for cross-repo coordination/);
-		// --copilot dropped the plan() sibling framing; copilot stages but does not implement in-session
+		// posture and boundaries stay in the always-on style
+		assert.match(prompt, /Copilot stages work; it does not implement in-session/);
+		assert.match(prompt, /do not supervise, drive, or manage it/);
+		assert.match(prompt, /Workstream agents never write Logseq/);
+		assert.match(prompt, /remains the user-facing durable record/);
+		assert.match(prompt, /appends an agent row — additive, never overwriting/);
+		assert.match(prompt, /Apply the `workstreams` skill/);
+		// --copilot dropped the plan() sibling framing
 		assert.doesNotMatch(prompt, /plan\(\)/);
 		assert.doesNotMatch(prompt, /siblings, not replacements/);
-		assert.match(prompt, /Copilot stages work; it does not implement in-session/);
-		// non-management framing: copilot does not drive the workstream session
-		assert.match(prompt, /do not supervise, drive, or manage it/);
-		// pull-based curation (handle only after pi --workstream) and no-Logseq-write rule preserved
-		assert.match(prompt, /ask_agent/);
-		assert.match(prompt, /Workstream agents never write Logseq/);
-		// durable internal coordination state in the daemon; dossier stays the user-facing record
-		assert.match(prompt, /durable internal coordination state in the daemon/);
-		assert.match(prompt, /remains the user-facing durable record/);
-		// multi-agent additive model
-		assert.match(prompt, /appends an agent row — additive, never overwriting/);
+
+		// cross-tool sequencing is deferred, not restated in the always-on prompt
+		assert.doesNotMatch(prompt, /create_workstream/);
+		assert.doesNotMatch(prompt, /launch_workstream/);
+		assert.doesNotMatch(prompt, /set_workstream_status/);
+		assert.doesNotMatch(prompt, /keeps the old version/);
 	});
 
 	it("hides the plan tool from the copilot capabilities index but keeps it in other modes", async (t) => {
