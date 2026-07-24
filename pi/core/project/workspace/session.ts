@@ -54,9 +54,17 @@ async function restoreActiveWorktreeState(pi: ExtensionAPI, ctx: ExtensionContex
 
 	const saved = activeWorktree.worktree;
 	try {
-		// Adopt-or-rebuild: activateWorktree reuses the worktree if it still exists, or rebuilds it
-		// from the surviving branch if a prior exit reaped it, and (re)leases it either way. A rebuild
-		// re-pays the setup hook to reprovision the environment.
+		// Adopt-or-rebuild: activateWorktree reuses the worktree at the saved label if it still exists,
+		// or rebuilds it from the surviving branch if a prior exit reaped it, and (re)leases it either way.
+		// A rebuild re-pays the setup hook to reprovision the environment.
+		//
+		// Restore keys off the saved *label*, and a `wt/<slug>` label is deliberately generic (issue #310
+		// Phase 3), so it is not 1:1 with a branch: if this session exited clean (worktree reaped, label
+		// freed) and another session has since taken that label for a different branch, restore attaches
+		// that worktree on the other branch rather than this session's. Accepted by design — the worktree
+		// is a disposable space, the branch is the work, so recovery is switching to the intended branch.
+		// A dirty exit cannot hit this: the worktree survives holding its branch, and git forbids a second
+		// checkout of it.
 		const wt = await requireWorkspaceRuntime().activateWorktree(saved.label, saved.branch ?? undefined);
 		if (wt.created) {
 			await runRebuiltWorktreeSetup(pi, ctx, workspaceState.repo.name, workspaceState.repo.root, wt);

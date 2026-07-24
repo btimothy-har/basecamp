@@ -3,7 +3,7 @@ import {
 	copilotWorktreeTarget,
 	currentUserId,
 	type ExecutionWorktreeTarget,
-	normalizeWorktreeSlug,
+	executionWorktreeTarget,
 	userWorktreePrefix,
 } from "#core/git/worktrees/target.ts";
 import type { WorkspaceWorktree } from "#core/project/workspace/state.ts";
@@ -12,41 +12,27 @@ export { copilotWorktreeTarget, type ExecutionWorktreeTarget, userWorktreePrefix
 
 export const CUSTOM_WORKTREE_CHOICE = "Enter custom worktree label";
 
-const SUGGESTED_WORKTREE_LABEL_MAX_LENGTH = 32;
-const FALLBACK_WORKTREE_SLUG = "worktree";
-
 export interface ExecutionWorktreeChoices {
 	choices: string[];
 	targetsByChoice: Map<string, ExecutionWorktreeTarget>;
 }
 
-function normalizeSessionTag(value: string | null | undefined): string {
-	return (value ?? "").toLowerCase().replace(/[^a-z0-9]+/g, "");
-}
-
 function stripKnownPrefix(value: string, prefix: string): string {
 	const lower = value.trim().toLowerCase();
-	for (const knownPrefix of [`wt-${prefix}/`, `${prefix}/`, `wt-${prefix}-`, `${prefix}-`]) {
+	for (const knownPrefix of [`wt-${prefix}/`, `wt/`, `${prefix}/`, `wt-${prefix}-`, `${prefix}-`]) {
 		if (lower.startsWith(knownPrefix)) return lower.slice(knownPrefix.length);
 	}
 	return lower;
 }
 
-function buildExecutionWorktreeTarget(prefix: string, slug: string, sessionTag: string): ExecutionWorktreeTarget {
-	const worktreePrefix = `wt-${prefix}/`;
-	const tag = normalizeSessionTag(sessionTag);
-	const tagSegment = tag ? `${tag}-` : "";
-	const baseSlug = tagSegment && slug.startsWith(tagSegment) ? slug.slice(tagSegment.length) : slug;
-	const maxSlugLength = Math.max(1, SUGGESTED_WORKTREE_LABEL_MAX_LENGTH - worktreePrefix.length - tagSegment.length);
-	const cappedSlug = baseSlug.slice(0, maxSlugLength).replace(/-+$/g, "") || FALLBACK_WORKTREE_SLUG;
-	return {
-		worktreeLabel: `${worktreePrefix}${tagSegment}${cappedSlug}`,
-		branchName: `${prefix}/${tagSegment}${cappedSlug}`,
-	};
-}
-
+/**
+ * Target that adopts an existing worktree. It names the branch the picker displayed rather than
+ * leaving it null: provisioning ignores the branch when the worktree is still registered, so this
+ * only matters if the worktree is reaped between building the choices and the user confirming — and
+ * then it rebuilds the branch the user asked for instead of deriving a bogus one from the label.
+ */
 function existingWorktreeTarget(wt: WorkspaceWorktree): ExecutionWorktreeTarget {
-	return { worktreeLabel: wt.label, branchName: null };
+	return { worktreeLabel: wt.label, branchName: wt.branch };
 }
 
 export function suggestWorktreeTarget(
@@ -55,9 +41,7 @@ export function suggestWorktreeTarget(
 	sessionTag: string,
 	userId = currentUserId(),
 ): ExecutionWorktreeTarget {
-	const prefix = userWorktreePrefix(userId);
-	const slug = normalizeWorktreeSlug(worktreeSlug ?? goal);
-	return buildExecutionWorktreeTarget(prefix, slug, sessionTag);
+	return executionWorktreeTarget(worktreeSlug ?? goal, sessionTag, userId);
 }
 
 export function customWorktreeTarget(
@@ -65,9 +49,7 @@ export function customWorktreeTarget(
 	sessionTag: string,
 	userId = currentUserId(),
 ): ExecutionWorktreeTarget {
-	const prefix = userWorktreePrefix(userId);
-	const slug = normalizeWorktreeSlug(stripKnownPrefix(value, prefix));
-	return buildExecutionWorktreeTarget(prefix, slug, sessionTag);
+	return executionWorktreeTarget(stripKnownPrefix(value, userWorktreePrefix(userId)), sessionTag, userId);
 }
 
 function normalizeWorktreePath(value: string): string {
@@ -102,13 +84,20 @@ export function buildExecutionWorktreeChoices(
 		handledLabels.add(activeExisting.label);
 	}
 
+	// A generic `wt/<slug>` label no longer uniquely identifies a branch, so when a worktree
+	// already holds it we resume THAT worktree (reuse its branch) rather than forcing the
+	// suggested branch; only a free label offers a fresh Create on the suggested branch.
 	const suggestedExisting = existing.find((wt) => wt.label === suggested.worktreeLabel);
 	if (!handledLabels.has(suggested.worktreeLabel)) {
-		const suggestedChoice = suggestedExisting
-			? `Resume: ${suggested.worktreeLabel} (${suggestedExisting.branch ?? "detached"})`
-			: `Create: ${suggested.worktreeLabel}`;
-		choices.push(suggestedChoice);
-		targetsByChoice.set(suggestedChoice, suggested);
+		if (suggestedExisting) {
+			const choice = `Resume: ${suggestedExisting.label} (${suggestedExisting.branch ?? "detached"})`;
+			choices.push(choice);
+			targetsByChoice.set(choice, existingWorktreeTarget(suggestedExisting));
+		} else {
+			const choice = `Create: ${suggested.worktreeLabel}`;
+			choices.push(choice);
+			targetsByChoice.set(choice, suggested);
+		}
 	}
 	handledLabels.add(suggested.worktreeLabel);
 

@@ -4,6 +4,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { resolveAvailableWorktreeLabel } from "#core/git/worktrees/crud.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import { runWorktreeSetup } from "#core/project/workspace/setup.ts";
 import {
@@ -247,16 +248,32 @@ export async function runHandoff(
 	} else {
 		const target = await selectWorktreeTarget(pi, ctx, plan.goal, plan.worktreeSlug);
 		if (!target) return { status: "cancelled" };
+		// Label resolution runs inside the try: it shells out to git, and the plan tool does not wrap
+		// this call — an escaping throw would surface as a raw tool error after the plan was approved.
+		let label = target.worktreeLabel;
 		try {
-			worktree = workspaceWorktreeToHandoffWorktree(
-				await activateWorkspaceWorktree(target.worktreeLabel, target.branchName),
-			);
+			label = await resolveHandoffWorktreeLabel(pi, target);
+			worktree = workspaceWorktreeToHandoffWorktree(await activateWorkspaceWorktree(label, target.branchName));
 		} catch (error) {
-			return { status: "activation_failed", label: target.worktreeLabel, error };
+			return { status: "activation_failed", label, error };
 		}
 	}
 
 	return { status: "ready", worktree, setupSummary: await provisionWorktree(pi, ctx, worktree) };
+}
+
+/**
+ * Pick a label that is free or already holds the target's branch, so provisioning never adopts a
+ * same-slug worktree on a different branch. Every target naming a branch — create, custom, and
+ * resume alike — goes through this; for a resume whose worktree is still registered on that branch
+ * it resolves to the same label. Only a target with no branch (a detached worktree) keeps its label
+ * as-is, since there is nothing to match or rebuild against.
+ */
+async function resolveHandoffWorktreeLabel(pi: ExtensionAPI, target: ExecutionWorktreeTarget): Promise<string> {
+	if (!target.branchName) return target.worktreeLabel;
+	const repo = getWorkspaceState()?.repo;
+	if (!repo) return target.worktreeLabel;
+	return resolveAvailableWorktreeLabel(pi, repo.root, repo.name, target.worktreeLabel, target.branchName);
 }
 
 /** Run the per-repo worktree setup command for a freshly created worktree. */
