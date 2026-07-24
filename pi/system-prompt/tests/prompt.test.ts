@@ -161,7 +161,14 @@ describe("assemblePrompt", () => {
 		}
 
 		setAgentMode("work");
-		assertCraft(assemblePrompt({ ...options, agentPrompt: "custom worker prompt" }));
+		const personaPrompt = assemblePrompt({ ...options, agentPrompt: "custom worker prompt" });
+		assertCraft(personaPrompt);
+
+		// a persona composes craft with its own posture, but has no user to collaborate with
+		assert.match(personaPrompt, /custom worker prompt/);
+		assert.doesNotMatch(personaPrompt, /# Your Role as an Engineer/);
+		assert.doesNotMatch(personaPrompt, /You are a \*\*partner\*\*, not a follower\./);
+		assert.doesNotMatch(personaPrompt, /# Work/);
 	});
 
 	it("emits environment facts and the runtime block as one contiguous category", async (t) => {
