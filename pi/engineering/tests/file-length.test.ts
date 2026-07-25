@@ -237,20 +237,28 @@ describe("file-length reminder", () => {
 		assert.equal(harness.sent.length, 4);
 	});
 
-	it("keeps mutative worker guidance aligned with the runtime policy", () => {
-		const workerPrompt = fs.readFileSync(
-			path.resolve(import.meta.dirname, "..", "..", "core", "swarm", "agents", "builtin", "worker.md"),
+	it("keeps the shared craft guidance aligned with the runtime policy", () => {
+		// The caps live in the craft block, which every code-writing consumer composes — including
+		// the mutative worker, which no longer carries its own copy.
+		const craft = fs.readFileSync(
+			path.resolve(import.meta.dirname, "..", "..", "system-prompt", "defaults", "styles", "craft.md"),
 			"utf8",
 		);
 
 		for (const guidance of [
-			"TypeScript/HTML 350",
-			"shell 400",
-			"SQL 800",
-			"CSS/Python/other recognized source files 500",
+			"350 lines for TypeScript and HTML",
+			"400 for shell",
+			"800 for SQL",
+			"500 for CSS, Python, and other recognized source files",
 			"advisory, not a gate",
 		]) {
-			assert.ok(workerPrompt.includes(guidance), `worker prompt should include ${guidance}`);
+			assert.ok(craft.includes(guidance), `craft block should include ${guidance}`);
 		}
+
+		const workerPrompt = fs.readFileSync(
+			path.resolve(import.meta.dirname, "..", "..", "core", "swarm", "agents", "builtin", "worker.md"),
+			"utf8",
+		);
+		assert.ok(!workerPrompt.includes("soft caps"), "worker must not restate the caps");
 	});
 });

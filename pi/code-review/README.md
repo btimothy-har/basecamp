@@ -41,3 +41,7 @@ The annotation pane collects optional user reactions. The private packet stores 
 - `artifact.ts` — private review packet.
 
 The feature reviews the current branch only. PR-number and arbitrary-branch targets are out of scope.
+
+## Review posture
+
+`/skill:code-review` runs an **independently sourced** review of the current branch. It is user-invoked (`disable-model-invocation` — hidden from the model, primary-only) and dispatches seven fixed report-only lenses plus risk-driven adaptive general reviewers. The primary acts as review chair: it verifies and normalizes reports, semantically deduplicates shared root causes, reconciles severity, and summarizes the final set, but it must obtain an independent reviewer report before adding a concern it noticed itself. `report_findings` computes the verdict deterministically from that synthesized set; a per-finding `response` never changes it. Source selection and semantic deduplication are deliberately model judgment, raw reviewer reports/provenance are not retained, and the verdict is deterministic only after synthesis. Manual only.

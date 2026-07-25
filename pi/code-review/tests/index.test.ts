@@ -46,14 +46,15 @@ describe("code-review registration", () => {
 		assert.deepEqual(resourceHandlers[0]?.(), { skillPaths: [codeReviewSkillPath] });
 	});
 
-	it("registers the tool but hides the skill in subagent sessions", (t) => {
+	it("registers neither the tool nor the skill in subagent sessions", (t) => {
 		preserveDepth(t);
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		const { pi, toolNames, resourceHandlers } = createMockPi();
 
 		registerCodeReview(pi);
 
-		assert.deepEqual(toolNames, ["report_findings"]);
+		// only the review chair reports findings; the dispatched lenses just return reports
+		assert.deepEqual(toolNames, []);
 		assert.equal(resourceHandlers.length, 0);
 	});
 });

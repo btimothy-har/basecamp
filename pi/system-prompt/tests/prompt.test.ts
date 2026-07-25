@@ -1,39 +1,11 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
-import * as os from "node:os";
 import * as path from "node:path";
-import { describe, it, type TestContext } from "node:test";
-import { resetAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
-import type { CatalogItem } from "#core/catalog/index.ts";
+import { describe, it } from "node:test";
+import { setAgentMode } from "#core/agent-mode/index.ts";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import { assemblePrompt } from "../prompt.ts";
-
-async function useTempHome(t: TestContext): Promise<string> {
-	const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-prompts-"));
-	const previousHome = process.env.HOME;
-	process.env.HOME = homeDir;
-	t.after(async () => {
-		if (previousHome === undefined) {
-			delete process.env.HOME;
-		} else {
-			process.env.HOME = previousHome;
-		}
-		await fs.rm(homeDir, { recursive: true, force: true });
-	});
-	return homeDir;
-}
-
-function useDefaultAgentMode(t: TestContext): void {
-	resetAgentMode();
-	t.after(() => {
-		resetAgentMode();
-	});
-}
-
-function useAgentMode(t: TestContext, mode: Parameters<typeof setAgentMode>[0]): void {
-	useDefaultAgentMode(t);
-	setAgentMode(mode);
-}
+import { useDefaultAgentMode, useTempHome } from "./helpers.ts";
 
 describe("assemblePrompt", () => {
 	it("includes restored default engineering, mode, and environment prompts", async (t) => {
@@ -54,7 +26,7 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /# Work/);
 		assert.match(prompt, /# Your Role as an Engineer/);
 		assert.match(prompt, /You are a \*\*partner\*\*, not a follower\./);
-		assert.match(prompt, /### File Length/);
+		assert.match(prompt, /^## File Length$/m);
 		assert.match(prompt, /350 lines for TypeScript and HTML/);
 		assert.match(prompt, /800 for SQL/);
 		assert.match(prompt, /tighter limit/);
@@ -77,10 +49,8 @@ describe("assemblePrompt", () => {
 			readOnly: false,
 		};
 		const assertLifecycle = (prompt: string): void => {
-			assert.equal(prompt.match(/Skill lifecycle:/g)?.length, 1);
-			assert.match(prompt, /load it if its instructions are not already present/);
-			assert.match(prompt, /Reuse loaded instructions across ordinary turns and tasks/);
-			assert.match(prompt, /an intentional refresh is needed/);
+			assert.equal(prompt.match(/Apply a skill whose instructions are already in context/g)?.length, 1);
+			assert.match(prompt, /load it with `skill` when they are not/);
 			assert.doesNotMatch(prompt, /\b(?:Always )?[Ii]nvoke\b[^\n]*\bskills?\b/);
 		};
 		const modeExpectations = [
@@ -166,13 +136,44 @@ describe("assemblePrompt", () => {
 		);
 	});
 
-	it("includes copilot mode and Repo Logseq without engineering style", async (t) => {
-		useAgentMode(t, "copilot");
-		const homeDir = await useTempHome(t);
-		const basecampDir = path.join(homeDir, ".pi", "basecamp");
-		await fs.mkdir(path.join(basecampDir, "styles"), { recursive: true });
-		await fs.writeFile(path.join(basecampDir, "styles", "engineering.md"), "CUSTOM ENGINEERING STYLE\n", "utf8");
+	it("includes the code craft block in every mode and for persona prompts", async (t) => {
+		useDefaultAgentMode(t);
+		await useTempHome(t);
+		const options = {
+			workspace: null,
+			project: null,
+			effectiveCwd: "/repo",
+			toolItems: [],
+			skillItems: [],
+			agentItems: [],
+			contextFiles: [],
+		};
+		const assertCraft = (prompt: string): void => {
+			assert.equal(prompt.match(/# Code Craft/g)?.length, 1);
+			assert.match(prompt, /Never comment the "what"/);
+			assert.match(prompt, /Never use comments as section dividers/);
+			assert.match(prompt, /350 lines for TypeScript and HTML/);
+		};
 
+		for (const mode of ["work", "analysis", "planning", "copilot"] as const) {
+			setAgentMode(mode);
+			assertCraft(assemblePrompt(options));
+		}
+
+		setAgentMode("work");
+		const personaPrompt = assemblePrompt({ ...options, agentPrompt: "custom worker prompt" });
+		assertCraft(personaPrompt);
+
+		// a persona composes craft with its own posture, but has no user to collaborate with
+		assert.match(personaPrompt, /custom worker prompt/);
+		assert.doesNotMatch(personaPrompt, /# Your Role as an Engineer/);
+		assert.doesNotMatch(personaPrompt, /You are a \*\*partner\*\*, not a follower\./);
+		assert.doesNotMatch(personaPrompt, /# Work/);
+	});
+
+	it("emits environment facts and the runtime block as one contiguous category", async (t) => {
+		useDefaultAgentMode(t);
+		await useTempHome(t);
 		const prompt = assemblePrompt({
 			workspace: null,
 			project: null,
@@ -181,153 +182,16 @@ describe("assemblePrompt", () => {
 			skillItems: [],
 			agentItems: [],
 			contextFiles: [],
-			readOnly: false,
 		});
 
-		assert.match(prompt, /# Repo Copilot/);
-		assert.match(prompt, /# Repo Logseq/);
-		assert.doesNotMatch(prompt, /# Repo Copilot Context/);
-		assert.doesNotMatch(prompt, /# Your Role as an Engineer/);
-		assert.doesNotMatch(prompt, /CUSTOM ENGINEERING STYLE/);
-	});
+		const factsAt = prompt.indexOf("# Environment");
+		const runtimeAt = prompt.indexOf("Is directory a git repo:");
+		assert.ok(factsAt > prompt.indexOf("Available in this session:"));
+		assert.ok(runtimeAt > factsAt);
 
-	it("copilot mode documents workstream launch, dedupe, and pull-based curation", async (t) => {
-		useAgentMode(t, "copilot");
-		await useTempHome(t);
-
-		const prompt = assemblePrompt({
-			workspace: null,
-			project: null,
-			effectiveCwd: "/repo",
-			toolItems: [],
-			skillItems: [],
-			agentItems: [],
-			contextFiles: [],
-			readOnly: false,
-		});
-
-		// decoupled surface: create/edit shape the record; launch stages the worktree + pane
-		assert.match(prompt, /create_workstream/);
-		assert.match(prompt, /edit_workstream/);
-		assert.match(prompt, /launch_workstream/);
-		assert.match(prompt, /list_workstreams/);
-		assert.match(prompt, /set_workstream_status/);
-		// the migrated tool name replaces the deprecated launch-index name
-		assert.doesNotMatch(prompt, /list_workstream_launches/);
-		// content versioning: edit revises in place and retains the prior version
-		assert.match(prompt, /keeps the old version/);
-		assert.match(prompt, /It does not start an agent/);
-		assert.match(prompt, /Tell the user to run `pi --workstream` in the opened pane/);
-		assert.match(prompt, /infers the slug from the worktree label/);
-		assert.match(prompt, /`cd <worktree-path> && pi --workstream=<slug>`/);
-		// launch is decoupled from the record, so the same workstream carries across repos
-		assert.match(prompt, /launched into a different repo for cross-repo coordination/);
-		// --copilot dropped the plan() sibling framing; copilot stages but does not implement in-session
-		assert.doesNotMatch(prompt, /plan\(\)/);
-		assert.doesNotMatch(prompt, /siblings, not replacements/);
-		assert.match(prompt, /Copilot stages work; it does not implement in-session/);
-		// non-management framing: copilot does not drive the workstream session
-		assert.match(prompt, /do not supervise, drive, or manage it/);
-		// pull-based curation (handle only after pi --workstream) and no-Logseq-write rule preserved
-		assert.match(prompt, /ask_agent/);
-		assert.match(prompt, /Workstream agents never write Logseq/);
-		// durable internal coordination state in the daemon; dossier stays the user-facing record
-		assert.match(prompt, /durable internal coordination state in the daemon/);
-		assert.match(prompt, /remains the user-facing durable record/);
-		// multi-agent additive model
-		assert.match(prompt, /appends an agent row — additive, never overwriting/);
-	});
-
-	it("hides the plan tool from the copilot capabilities index but keeps it in other modes", async (t) => {
-		const toolItems: CatalogItem[] = [
-			{ type: "tools", name: "plan", description: "Submit a plan" },
-			{ type: "tools", name: "bash", description: "Run a command" },
-		];
-		await useTempHome(t);
-
-		useAgentMode(t, "copilot");
-		const copilotPrompt = assemblePrompt({
-			workspace: null,
-			project: null,
-			effectiveCwd: "/repo",
-			toolItems,
-			skillItems: [],
-			agentItems: [],
-			contextFiles: [],
-			readOnly: false,
-		});
-
-		assert.match(copilotPrompt, /Tools \(1\):/);
-		assert.match(copilotPrompt, /^- bash — Run a command$/m);
-		assert.doesNotMatch(copilotPrompt, /^- plan —/m);
-
-		useAgentMode(t, "work");
-		const workPrompt = assemblePrompt({
-			workspace: null,
-			project: null,
-			effectiveCwd: "/repo",
-			toolItems,
-			skillItems: [],
-			agentItems: [],
-			contextFiles: [],
-			readOnly: false,
-		});
-
-		assert.match(workPrompt, /Tools \(2\):/);
-		assert.match(workPrompt, /^- plan — Submit a plan$/m);
-	});
-
-	it("places Repo Logseq after project context and before the environment block", async (t) => {
-		useAgentMode(t, "copilot");
-		await useTempHome(t);
-
-		const prompt = assemblePrompt({
-			workspace: null,
-			project: {
-				projectName: "test-project",
-				project: null,
-				additionalDirs: [],
-				workingStyle: "engineering",
-				contextContent: "Project-specific context.",
-				warnings: [],
-			},
-			effectiveCwd: "/repo",
-			toolItems: [],
-			skillItems: [],
-			agentItems: [],
-			contextFiles: [],
-			readOnly: false,
-		});
-
-		const projectContextIndex = prompt.indexOf("# Project Context");
-		const logseqContextIndex = prompt.indexOf("# Repo Logseq");
-		const envBlockIndex = prompt.indexOf("You are an AI assistant. You are operating inside pi-coding-agent");
-
-		assert.notEqual(projectContextIndex, -1);
-		assert.notEqual(logseqContextIndex, -1);
-		assert.notEqual(envBlockIndex, -1);
-		assert.ok(projectContextIndex < logseqContextIndex);
-		assert.ok(logseqContextIndex < envBlockIndex);
-	});
-
-	it("does not include Repo Logseq for agent prompts in copilot mode", async (t) => {
-		useAgentMode(t, "copilot");
-		await useTempHome(t);
-
-		const prompt = assemblePrompt({
-			workspace: null,
-			project: null,
-			effectiveCwd: "/repo",
-			toolItems: [],
-			skillItems: [],
-			agentItems: [],
-			contextFiles: [],
-			agentPrompt: "custom worker prompt",
-			readOnly: false,
-		});
-
-		assert.match(prompt, /custom worker prompt/);
-		assert.doesNotMatch(prompt, /# Repo Copilot/);
-		assert.doesNotMatch(prompt, /# Repo Logseq/);
+		// nothing from another category may separate the authored facts from the runtime block
+		const between = prompt.slice(factsAt, runtimeAt);
+		assert.doesNotMatch(between, /Available in this session:|# Project Context|# Your Role as an Engineer/);
+		assert.equal(prompt.match(/Scratch directory:/g)?.length, 1);
 	});
 });

@@ -36,3 +36,9 @@ The shim defaults `PLAYWRIGHT_MCP_HEADLESS=false`, `PLAYWRIGHT_MCP_ISOLATED=fals
 ## Legacy state
 
 The former Puppeteer profile at `~/.pi/basecamp/browser/profile` is not reused, migrated, chmodded, or deleted by the browser integration, and the integration never attaches to or terminates a legacy Chrome process listening on port 9222. Legacy state is handled separately after its browser is closed: `basecamp doctor --clean` is the one sanctioned path that reclaims the retired profile, and only once it is provably unused (no live `SingletonLock` holder, cold past the staleness threshold) and the user confirms.
+
+## Architecture posture
+
+`pi/browser/` exposes no custom browser tools and is **primary-only**: a top-level session discovers the `playwright-cli` skill on demand and gets one private PATH entry — a gated shim for the exact-pinned `@playwright/cli`. Subagents get neither, and the shim rejects `BASECAMP_AGENT_DEPTH > 0`. The shim blocks install commands and confines automatically named artifacts to a bounded private directory; an explicit filename remains the user-directed project-artifact escape hatch.
+
+Playwright owns a fresh managed profile. The retired `~/.pi/basecamp/browser/profile` and any legacy Chrome/CDP process are never migrated, modified, or terminated in normal operation. The sole exception is `basecamp doctor --clean`, which may reclaim the retired profile only when it is **provably unused** — superseded, unlocked (its Chrome `SingletonLock` names no live pid), and cold (past the staleness threshold) — and only after explicit user confirmation. It never touches a live process or a held/warm profile.
