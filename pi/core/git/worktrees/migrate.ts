@@ -1,9 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { isStrictlyWithin, isWithin } from "../../host/paths.ts";
-import { worktreesRoot } from "../constants.ts";
-import { gitOutput } from "../repo.ts";
+import { worktreesRoot } from "#core/git/constants.ts";
+import { gitOutput } from "#core/git/repo.ts";
+import { isStrictlyWithin, isWithin } from "#core/host/paths.ts";
 import {
 	labelFromWorktreePath,
 	parseWorktreeList,

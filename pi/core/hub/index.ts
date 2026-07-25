@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getAgentDepth } from "../host/env.ts";
+import { getAgentDepth } from "#core/host/env.ts";
 import { connect, type DaemonConnection } from "./connection.ts";
 import {
 	type DaemonIdentityDeps,

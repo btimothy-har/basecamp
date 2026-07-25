@@ -1,7 +1,7 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resolveModelAlias } from "../../model/index.ts";
-import { resolveModelFromString } from "../../model/resolution.ts";
+import { resolveModelAlias } from "#core/model/index.ts";
+import { resolveModelFromString } from "#core/model/resolution.ts";
 
 export function resolveTitleModel(): string | undefined {
 	return resolveModelAlias("title");

@@ -8,9 +8,9 @@
  */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { PlanDraft, SectionName } from "../../schemas/plan.ts";
-import type { ReviewState } from "../../schemas/task.ts";
-import { deriveGoalContextReviewState } from "../draft.ts";
+import type { PlanDraft, SectionName } from "#tasks/schemas/plan.ts";
+import type { ReviewState } from "#tasks/schemas/task.ts";
+import { deriveGoalContextReviewState } from "#tasks/workflows/draft.ts";
 
 /** Sections that appear as individual review items (not goal/context). */
 export const INDIVIDUAL_SECTIONS: SectionName[] = ["design", "success", "boundaries"];

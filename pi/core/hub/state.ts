@@ -1,5 +1,5 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { processScoped } from "../global-registry.ts";
+import { processScoped } from "#core/global-registry.ts";
 import type { DaemonConnection } from "./connection.ts";
 import type { SessionMetadataPublisher } from "./metadata.ts";
 

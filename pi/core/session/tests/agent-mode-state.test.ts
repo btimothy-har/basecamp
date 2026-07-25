@@ -12,7 +12,7 @@ import {
 	resetAgentMode,
 	restoreAgentModeFromSessionState,
 	setAgentMode,
-} from "../../agent-mode/index.ts";
+} from "#core/agent-mode/index.ts";
 import {
 	buildSessionStatePath,
 	createDefaultSessionState,
@@ -22,7 +22,7 @@ import {
 	resetCurrentSessionState,
 	saveSessionState,
 	updateCurrentSessionState,
-} from "../state/index.ts";
+} from "#core/session/state/index.ts";
 
 async function createTempDir(t: { after(fn: () => Promise<void> | void): void }): Promise<string> {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-agent-mode-state-"));

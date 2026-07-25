@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
-import { CREATE_CHOICE, createWorktreeFlow, promptWorktreeChoice, type WorktreeSelection } from "../command.ts";
-import type { WorkspaceRuntimeService } from "../runtime.ts";
-import type { RepoContext, WorkspaceWorktree } from "../state.ts";
+import { useTempWorktreesRoot } from "#core/git/tests/worktree-root.ts";
+import {
+	CREATE_CHOICE,
+	createWorktreeFlow,
+	promptWorktreeChoice,
+	type WorktreeSelection,
+} from "#core/project/workspace/command.ts";
+import type { WorkspaceRuntimeService } from "#core/project/workspace/runtime.ts";
+import type { RepoContext, WorkspaceWorktree } from "#core/project/workspace/state.ts";
 
 // Deterministic user prefix so branch assertions don't depend on the runner's $USER.
 process.env.USER = "zz";

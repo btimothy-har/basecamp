@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { startGoalCycle } from "../lifecycle/goal-cycle.ts";
-import { defaultTasksDir, registerTasks, tasksFilePath } from "../lifecycle/index.ts";
-import type { Task } from "../schemas/task.ts";
-import { registerTaskGuards } from "../tools/guards.ts";
-import { registerTaskTools } from "../tools/task-tools.ts";
+import { startGoalCycle } from "#tasks/lifecycle/goal-cycle.ts";
+import { defaultTasksDir, registerTasks, tasksFilePath } from "#tasks/lifecycle/index.ts";
+import type { Task } from "#tasks/schemas/task.ts";
+import { registerTaskGuards } from "#tasks/tools/guards.ts";
+import { registerTaskTools } from "#tasks/tools/task-tools.ts";
 
 interface RegisteredToolResult {
 	content: { type: "text"; text: string }[];

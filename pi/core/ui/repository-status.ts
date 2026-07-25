@@ -1,8 +1,8 @@
 import { existsSync, readFileSync, statSync, watch } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { lookupPullRequestStatus, type PullRequestStatus } from "../git/pr-status.ts";
-import { getWorkspaceEffectiveCwd, getWorkspaceState, onWorkspaceChange } from "../project/workspace/state.ts";
+import { lookupPullRequestStatus, type PullRequestStatus } from "#core/git/pr-status.ts";
+import { getWorkspaceEffectiveCwd, getWorkspaceState, onWorkspaceChange } from "#core/project/workspace/state.ts";
 
 const PULL_REQUEST_REFRESH_MS = 5 * 60 * 1_000;
 

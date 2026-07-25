@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Finding } from "../findings.ts";
-import { computeVerdict, mergeFindings } from "../synthesis.ts";
+import type { Finding } from "#code-review/findings.ts";
+import { computeVerdict, mergeFindings } from "#code-review/synthesis.ts";
 
 function finding(overrides: Partial<Finding>): Finding {
 	return {

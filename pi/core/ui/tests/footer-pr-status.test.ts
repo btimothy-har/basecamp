@@ -5,7 +5,7 @@ import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { hyperlink, resetCapabilitiesCache, setCapabilities, visibleWidth } from "@earendil-works/pi-tui";
-import { registerFooter } from "../footer.ts";
+import { registerFooter } from "#core/ui/footer.ts";
 
 type ThemeColor = Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0];
 type ThemeFg = (color: ThemeColor, text: string) => string;

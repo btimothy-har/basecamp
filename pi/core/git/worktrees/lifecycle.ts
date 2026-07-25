@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { worktreesRoot } from "../constants.ts";
+import { worktreesRoot } from "#core/git/constants.ts";
 import {
 	ensureWorktreeLabel,
 	findWorktreeRecord,

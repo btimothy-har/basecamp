@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { renderTaskWidgetLines, type TaskProgressRenderTheme, type TaskProgressSnapshot } from "../widget.ts";
+import {
+	renderTaskWidgetLines,
+	type TaskProgressRenderTheme,
+	type TaskProgressSnapshot,
+} from "#tasks/lifecycle/widget.ts";
 
 const theme: TaskProgressRenderTheme = { fg: (_color, text) => text };
 

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
-import { withHerdrBlocked } from "../ui/herdr.ts";
+import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import { EscalateDialog } from "./dialog/index.ts";
 import { renderCall, renderResult } from "./render.ts";
 import type { QuestionAnswer } from "./types.ts";

@@ -1,17 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { AgentMode } from "../../agent-mode/index.ts";
-import type { WorkspaceState } from "../../project/workspace/state.ts";
-import type { DaemonConnection } from "../connection.ts";
-import { type SessionMetadataDeps, type SessionMetadataPublisher, startSessionMetadataPublisher } from "../metadata.ts";
-import type { OutboundFrame } from "../protocol/index.ts";
+import type { AgentMode } from "#core/agent-mode/index.ts";
+import type { DaemonConnection } from "#core/hub/connection.ts";
+import {
+	type SessionMetadataDeps,
+	type SessionMetadataPublisher,
+	startSessionMetadataPublisher,
+} from "#core/hub/metadata.ts";
+import type { OutboundFrame } from "#core/hub/protocol/index.ts";
 import {
 	clearHubMetadataWiring,
 	createHubMetadataWiring,
 	getHubMetadataPublisher,
 	type HubConnectionState,
 	replaceHubMetadataWiring,
-} from "../state.ts";
+} from "#core/hub/state.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
 
 function workspace(active: boolean): WorkspaceState {
 	return {

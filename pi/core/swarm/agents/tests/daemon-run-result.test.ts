@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
-import { readRunResultSidecar, resolveRunResultPath, upsertRunResultAttempt } from "../run-result.ts";
+import { readRunResultSidecar, resolveRunResultPath, upsertRunResultAttempt } from "#core/swarm/agents/run-result.ts";
 
 const tempDirs: string[] = [];
 

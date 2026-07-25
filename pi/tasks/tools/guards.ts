@@ -14,8 +14,8 @@ import { isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/copilot.ts";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { isSubagent } from "#core/host/env.ts";
 import { hasInvokedSkill } from "#core/skills/tracker.ts";
-import type { TasksRuntime } from "../lifecycle/index.ts";
-import { isCompleteTaskStopWorkDetails } from "../lifecycle/text.ts";
+import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
+import { isCompleteTaskStopWorkDetails } from "#tasks/lifecycle/text.ts";
 
 const TASK_TOOLS = new Set([
 	"update_goal",

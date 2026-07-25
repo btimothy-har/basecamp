@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { readLogseqGraphDir, readWorktreeSetupCommand } from "../config.ts";
+import { readLogseqGraphDir, readWorktreeSetupCommand } from "#core/host/config.ts";
 
 const REPO = "basecamp";
 

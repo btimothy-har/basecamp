@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerDirtyWorktreeReminder } from "../dirty-reminder.ts";
-import type { WorkspaceState } from "../state.ts";
+import { registerDirtyWorktreeReminder } from "#core/project/workspace/dirty-reminder.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import { activeWorktreeState, baseWorkspaceState, WORKTREE_DIR } from "./guards-harness.ts";
 
 type EventHandler = () => Promise<void> | void;

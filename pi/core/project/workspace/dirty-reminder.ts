@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getAgentDepth } from "../../host/env.ts";
+import { getAgentDepth } from "#core/host/env.ts";
 import { getWorkspaceState } from "./state.ts";
 
 const GIT_STATUS_TIMEOUT_MS = 10_000;

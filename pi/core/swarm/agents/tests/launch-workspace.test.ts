@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import { describe, it } from "node:test";
-import type { AgentWorkspaceProvision } from "../agent-workspace.ts";
-import { buildAgentLaunchSpec, type SharedAgentLaunchInput } from "../launch.ts";
+import type { AgentWorkspaceProvision } from "#core/swarm/agents/agent-workspace.ts";
+import { buildAgentLaunchSpec, type SharedAgentLaunchInput } from "#core/swarm/agents/launch.ts";
 import { createMockPi, installDaemonToolTestHooks } from "./harness.ts";
 
 const REPO_ROOT = "/repo/main-checkout";

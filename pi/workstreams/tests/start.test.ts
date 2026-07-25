@@ -16,7 +16,7 @@ import {
 	parseWorkstreamFlagValue,
 	registerWorkstreamStartup,
 	sessionHasPriorTurns,
-} from "../start.ts";
+} from "#workstreams/start.ts";
 import { FakeDaemonClient, makeCtx, makeDeps } from "./start-harness.ts";
 
 class FakePi {

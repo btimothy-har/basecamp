@@ -2,7 +2,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { buildSessionStatePath } from "../index.ts";
+import { buildSessionStatePath } from "#core/session/state/index.ts";
 
 export async function createTempDir(t: { after(fn: () => Promise<void> | void): void }): Promise<string> {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-session-state-"));

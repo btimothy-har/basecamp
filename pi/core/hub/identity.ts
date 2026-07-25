@@ -1,9 +1,9 @@
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getAgentMode } from "../agent-mode/index.ts";
-import { getAgentDepth } from "../host/env.ts";
-import { getWorkspaceState, type WorkspaceState } from "../project/workspace/state.ts";
-import { shortSessionId as defaultShortSessionId } from "../session/session-id.ts";
-import { formatTitle } from "../ui/index.ts";
+import { getAgentMode } from "#core/agent-mode/index.ts";
+import { getAgentDepth } from "#core/host/env.ts";
+import { getWorkspaceState, type WorkspaceState } from "#core/project/workspace/state.ts";
+import { shortSessionId as defaultShortSessionId } from "#core/session/session-id.ts";
+import { formatTitle } from "#core/ui/index.ts";
 import type { DaemonIdentity } from "./connection.ts";
 import { buildDeterministicAgentHandle } from "./handles.ts";
 

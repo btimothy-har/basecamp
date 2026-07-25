@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { CatalogItem } from "#core/catalog/index.ts";
-import { assemblePrompt } from "../prompt.ts";
+import { assemblePrompt } from "#system-prompt/prompt.ts";
 import { useAgentMode, useTempHome } from "./helpers.ts";
 
 describe("assemblePrompt copilot", () => {

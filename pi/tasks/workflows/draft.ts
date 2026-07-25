@@ -5,9 +5,9 @@
  * keep their ✓ status, changed sections reset to ★ (needs re-review).
  */
 
-import type { PlanDraft, PlanSection } from "../schemas/plan.ts";
-import { SECTION_NAMES } from "../schemas/plan.ts";
-import type { ReviewState, TaskStatus } from "../schemas/task.ts";
+import type { PlanDraft, PlanSection } from "#tasks/schemas/plan.ts";
+import { SECTION_NAMES } from "#tasks/schemas/plan.ts";
+import type { ReviewState, TaskStatus } from "#tasks/schemas/task.ts";
 import type { HandoffWorktreeResult } from "./handoff/index.ts";
 import type { WorktreeSetupSummary } from "./handoff/worktree-setup.ts";
 

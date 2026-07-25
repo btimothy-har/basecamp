@@ -2,7 +2,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createLocalBashOperations, isToolCallEventType } from "@earendil-works/pi-coding-agent";
-import { isWithin } from "../../host/paths.ts";
+import { isWithin } from "#core/host/paths.ts";
 import { allowedWriteDirsFrom, getWorkspaceState, listWorkspaceAllowedRoots, type WorkspaceState } from "./state.ts";
 
 /** Expand ~ in path (mirrors pi's path-utils expandPath). */

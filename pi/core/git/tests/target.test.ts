@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { copilotWorktreeTarget, userWorktreePrefix } from "../worktrees/target.ts";
+import { copilotWorktreeTarget, userWorktreePrefix } from "#core/git/worktrees/target.ts";
 
 describe("userWorktreePrefix", () => {
 	it("uses the first two safe characters from the user id", () => {

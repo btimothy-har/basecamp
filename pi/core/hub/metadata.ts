@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode/index.ts";
-import { getWorkspaceState, onWorkspaceChange, type WorkspaceState } from "../project/workspace/state.ts";
+import { type AgentMode, getAgentMode, onAgentModeChange } from "#core/agent-mode/index.ts";
+import { getWorkspaceState, onWorkspaceChange, type WorkspaceState } from "#core/project/workspace/state.ts";
 import type { DaemonConnection } from "./connection.ts";
 import { deriveDaemonIdentity, sanitizeDisplayLabel } from "./identity.ts";
 import type { SessionMetadataFrame } from "./protocol/index.ts";

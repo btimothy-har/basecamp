@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
-import { getConnectListeners } from "../../../hub/state.ts";
-import { registerAgentSurfaces } from "../surfaces.ts";
+import { getConnectListeners } from "#core/hub/state.ts";
+import { registerAgentSurfaces } from "#core/swarm/agents/surfaces.ts";
 import { daemonToolDeps, MockConnection, MockPi } from "./harness.ts";
 
 // Regression guard for the /reload double-subscribe bug: the hub WebSocket survives

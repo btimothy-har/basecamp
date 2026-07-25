@@ -4,10 +4,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { worktreesRoot } from "../../../git/constants.ts";
-import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
-import type { WorkspaceState } from "../../../project/workspace/state.ts";
-import { type AgentWorkspaceProvision, discardAgentWorkspace, provisionAgentWorkspace } from "../agent-workspace.ts";
+import { worktreesRoot } from "#core/git/constants.ts";
+import { useTempWorktreesRoot } from "#core/git/tests/worktree-root.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
+import {
+	type AgentWorkspaceProvision,
+	discardAgentWorkspace,
+	provisionAgentWorkspace,
+} from "#core/swarm/agents/agent-workspace.ts";
 
 useTempWorktreesRoot();
 

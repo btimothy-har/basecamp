@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { executeListWorkstreams, type ListWorkstreamsResultDetails } from "../tools.ts";
+import { executeListWorkstreams, type ListWorkstreamsResultDetails } from "#workstreams/tools.ts";
 import { FakeDaemonClient, makeDeps, makeWorkstreamDetail, makeWorkstreamSummary } from "./tools-harness.ts";
 
 describe("list_workstreams", () => {

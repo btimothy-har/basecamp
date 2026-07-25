@@ -13,10 +13,10 @@
 import * as os from "node:os";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getCapabilities, hyperlink, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import { type AgentMode, getAgentMode, onAgentModeChange } from "../agent-mode/index.ts";
-import type { PullRequestStatus } from "../git/pr-status.ts";
-import { getWorkspaceEffectiveCwd, getWorkspaceState, type WorkspaceState } from "../project/workspace/state.ts";
-import { getInvokedSkills } from "../skills/tracker.ts";
+import { type AgentMode, getAgentMode, onAgentModeChange } from "#core/agent-mode/index.ts";
+import type { PullRequestStatus } from "#core/git/pr-status.ts";
+import { getWorkspaceEffectiveCwd, getWorkspaceState, type WorkspaceState } from "#core/project/workspace/state.ts";
+import { getInvokedSkills } from "#core/skills/tracker.ts";
 import { getModeLabel } from "./mode.ts";
 import { createFooterRepositoryStatusTracker, type RepositoryStatusTracker } from "./repository-status.ts";
 

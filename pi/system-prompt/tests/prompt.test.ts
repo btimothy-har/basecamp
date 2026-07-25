@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { describe, it } from "node:test";
 import { setAgentMode } from "#core/agent-mode/index.ts";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
-import { assemblePrompt } from "../prompt.ts";
+import { assemblePrompt } from "#system-prompt/prompt.ts";
 import { useDefaultAgentMode, useTempHome } from "./helpers.ts";
 
 describe("assemblePrompt", () => {

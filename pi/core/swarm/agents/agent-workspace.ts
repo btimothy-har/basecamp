@@ -9,8 +9,8 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { errorMessage } from "../../errors.ts";
-import { AGENT_BRANCH_NAMESPACE } from "../../git/constants.ts";
+import { errorMessage } from "#core/errors.ts";
+import { AGENT_BRANCH_NAMESPACE } from "#core/git/constants.ts";
 import {
 	branchTip,
 	createSnapshotCommit,
@@ -18,11 +18,11 @@ import {
 	gitOutput,
 	isMergedInto,
 	isWorktreeClean,
-} from "../../git/repo.ts";
-import { createAgentWorktree, deleteBranch, removeWorktree } from "../../git/worktrees/lifecycle.ts";
-import { readWorktreeSetupCommand } from "../../host/config.ts";
-import { runWorktreeSetup } from "../../project/workspace/setup.ts";
-import type { WorkspaceState } from "../../project/workspace/state.ts";
+} from "#core/git/repo.ts";
+import { createAgentWorktree, deleteBranch, removeWorktree } from "#core/git/worktrees/lifecycle.ts";
+import { readWorktreeSetupCommand } from "#core/host/config.ts";
+import { runWorktreeSetup } from "#core/project/workspace/setup.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
 
 export function agentBranchName(agentHandle: string): string {
 	return `${AGENT_BRANCH_NAMESPACE}${agentHandle}`;

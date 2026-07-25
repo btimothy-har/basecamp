@@ -3,7 +3,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { isModelInvocationDisabled } from "../skills/skill-content.ts";
+import { isModelInvocationDisabled } from "#core/skills/skill-content.ts";
 import { registerCatalogProvider } from "./index.ts";
 
 export function registerCatalogProviders(pi: ExtensionAPI): void {

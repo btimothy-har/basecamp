@@ -11,4 +11,4 @@ Framework UI for a basecamp session — status footer, title auto-naming, and th
 
 ## Dependencies
 
-- **core** (sibling modules, via relative imports): agent-mode state, session/workspace state, skill-tracker, and model-alias resolution. Consumed from outside `core` only as `formatTitle` (swarm's daemon widget), via `#core/ui/index.ts`.
+- **core** (sibling modules, via `#core/*`): agent-mode state, session/workspace state, skill-tracker, and model-alias resolution. Consumed from outside `core` only as `formatTitle` (swarm's daemon widget), via `#core/ui/index.ts`.

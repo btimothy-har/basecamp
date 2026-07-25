@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildReactions, findingSummaryLines, responseDisplayLines } from "../annotate-pane.ts";
-import type { Finding } from "../findings.ts";
+import { buildReactions, findingSummaryLines, responseDisplayLines } from "#code-review/annotate-pane.ts";
+import type { Finding } from "#code-review/findings.ts";
 
 function finding(overrides: Partial<Finding>): Finding {
 	return {

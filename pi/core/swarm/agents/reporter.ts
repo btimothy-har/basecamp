@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { sleep } from "../../async.ts";
+import { sleep } from "#core/async.ts";
 import type { DaemonConnection } from "./client.ts";
 import {
 	appendText,

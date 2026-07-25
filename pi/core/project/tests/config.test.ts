@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { resolveProjectState } from "../config.ts";
+import { resolveProjectState } from "#core/project/config.ts";
 
 async function createTempHome(t: { after(fn: () => Promise<void>): void }): Promise<string> {
 	const homeDir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-projects-"));

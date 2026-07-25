@@ -2,9 +2,14 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { worktreesRoot } from "../../../git/constants.ts";
-import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
-import { collectPruneCandidates, confirmAndPrune, type PruneCandidate, pruneWorktree } from "../prune.ts";
+import { worktreesRoot } from "#core/git/constants.ts";
+import { useTempWorktreesRoot } from "#core/git/tests/worktree-root.ts";
+import {
+	collectPruneCandidates,
+	confirmAndPrune,
+	type PruneCandidate,
+	pruneWorktree,
+} from "#core/project/workspace/prune.ts";
 
 useTempWorktreesRoot();
 

@@ -1,4 +1,4 @@
-import { buildAgentHandle } from "../../hub/index.ts";
+import { buildAgentHandle } from "#core/hub/index.ts";
 import type { DaemonClient, DaemonDispatchFrameOptions, DaemonDispatchResult } from "./client.ts";
 
 /**

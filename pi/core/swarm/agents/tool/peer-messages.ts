@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import type { DaemonConnection } from "../../../hub/index.ts";
-import { createDaemonClient } from "../rpc.ts";
+import type { DaemonConnection } from "#core/hub/index.ts";
+import { createDaemonClient } from "#core/swarm/agents/rpc.ts";
 import {
 	type DaemonToolDeps,
 	formatMessageStatusContent,

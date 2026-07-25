@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildAgentEnv, buildAgentTitleBase, processEnvForSpawn } from "../launch.ts";
+import { buildAgentEnv, buildAgentTitleBase, processEnvForSpawn } from "#core/swarm/agents/launch.ts";
 import { installDaemonToolTestHooks } from "./harness.ts";
 
 describe("agent launch helpers", () => {

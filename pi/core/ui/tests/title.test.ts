@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { clearModelAliasProvidersForTesting } from "../../model/index.ts";
-import { type GenerateTitleCompletionOptions, generateTitleCompletion, validateTitleResponse } from "../title.ts";
+import { clearModelAliasProvidersForTesting } from "#core/model/index.ts";
+import { type GenerateTitleCompletionOptions, generateTitleCompletion, validateTitleResponse } from "#core/ui/title.ts";
 
 function model(provider: string, id: string): Model<Api> {
 	return { provider, id, name: id, api: "test-api" } as unknown as Model<Api>;

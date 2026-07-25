@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { type DaemonStatusInfo, previewDaemonMessage, publishDaemonStatus, renderDaemonStatus } from "../status.ts";
+import {
+	type DaemonStatusInfo,
+	previewDaemonMessage,
+	publishDaemonStatus,
+	renderDaemonStatus,
+} from "#core/hub/status.ts";
 
 type Theme = (color: string, text: string) => string;
 

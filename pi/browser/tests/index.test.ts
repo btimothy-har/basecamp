@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
-import registerBrowser, { browserCliBinDir, browserCliPath, browserSkillPath } from "../index.ts";
+import registerBrowser, { browserCliBinDir, browserCliPath, browserSkillPath } from "#browser/index.ts";
 
 interface ResourceContribution {
 	skillPaths: string[];

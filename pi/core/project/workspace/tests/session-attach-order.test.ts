@@ -4,10 +4,10 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { worktreesRoot } from "../../../git/constants.ts";
-import { parseSessionLease } from "../../../git/worktrees/lease.ts";
-import { registerWorkspaceRuntime, resetWorkspaceRuntimeForTesting } from "../runtime.ts";
-import { registerWorkspaceSession } from "../session.ts";
+import { worktreesRoot } from "#core/git/constants.ts";
+import { parseSessionLease } from "#core/git/worktrees/lease.ts";
+import { registerWorkspaceRuntime, resetWorkspaceRuntimeForTesting } from "#core/project/workspace/runtime.ts";
+import { registerWorkspaceSession } from "#core/project/workspace/session.ts";
 import {
 	argsEqual,
 	clearAgentDepthEnv,

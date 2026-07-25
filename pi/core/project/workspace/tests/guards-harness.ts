@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import type { UserBashEvent, UserBashEventResult } from "@earendil-works/pi-coding-agent";
-import { registerWorkspaceGuards } from "../guards.ts";
-import type { WorkspaceState as BasecampWorkspaceState } from "../state.ts";
+import { registerWorkspaceGuards } from "#core/project/workspace/guards.ts";
+import type { WorkspaceState as BasecampWorkspaceState } from "#core/project/workspace/state.ts";
 
 export interface GuardEvent {
 	type: "tool_call";

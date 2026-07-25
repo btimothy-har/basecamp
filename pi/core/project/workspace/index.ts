@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { isSubagent } from "../../host/env.ts";
+import { isSubagent } from "#core/host/env.ts";
 import { registerWorktreeCommand } from "./command.ts";
 import { registerDirtyWorktreeReminder } from "./dirty-reminder.ts";
 import { registerWorkspaceGuards } from "./guards.ts";

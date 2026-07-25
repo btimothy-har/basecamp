@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { listCatalogItemsByType } from "../catalog/index.ts";
+import { listCatalogItemsByType } from "#core/catalog/index.ts";
 import registerSwarm from "./index.ts";
 
 type ToolSpec = { name: string };

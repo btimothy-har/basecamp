@@ -3,7 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { worktreesRoot } from "../constants.ts";
+import { worktreesRoot } from "#core/git/constants.ts";
 import {
 	branchName,
 	ensureWorktreeLabel,
@@ -12,7 +12,7 @@ import {
 	parseWorktreeList,
 	validateNoSymlinkedWorktreePath,
 	validateWorktreePath,
-} from "../worktrees/crud.ts";
+} from "#core/git/worktrees/crud.ts";
 import { useTempWorktreesRoot } from "./worktree-root.ts";
 
 useTempWorktreesRoot();

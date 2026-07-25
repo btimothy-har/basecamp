@@ -1,4 +1,4 @@
-import { DEFAULT_HEALTH_TIMEOUT_MS, optionalString, requestJsonOverUds } from "../../../hub/index.ts";
+import { DEFAULT_HEALTH_TIMEOUT_MS, optionalString, requestJsonOverUds } from "#core/hub/index.ts";
 
 export interface RunSummaryTaskInfo {
 	goal?: string | null;

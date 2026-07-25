@@ -7,7 +7,7 @@
  */
 
 import type { AgentMode } from "#core/agent-mode/index.ts";
-import type { GoalCycle, Task } from "../schemas/task.ts";
+import type { GoalCycle, Task } from "#tasks/schemas/task.ts";
 import type { TasksRuntime } from "./index.ts";
 
 /** Archive the currently-active cycle, if any, snapshotting its live tasks. */

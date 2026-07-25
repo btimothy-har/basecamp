@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Frame } from "../../../hub/protocol/index.ts";
-import { PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
-import { registerAskAgentTool, registerPeerMessageTools } from "../tools.ts";
+import type { Frame } from "#core/hub/protocol/index.ts";
+import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
+import { registerAskAgentTool, registerPeerMessageTools } from "#core/swarm/agents/tools.ts";
 import {
 	createMockPi,
 	daemonToolDeps,

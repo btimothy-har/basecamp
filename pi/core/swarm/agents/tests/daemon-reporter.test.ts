@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { DaemonConnection } from "../client.ts";
-import { registerDaemonReporter } from "../reporter.ts";
-import { registerAgentSurfaces } from "../surfaces.ts";
-import type { DaemonToolDeps } from "../tools.ts";
+import type { DaemonConnection } from "#core/swarm/agents/client.ts";
+import { registerDaemonReporter } from "#core/swarm/agents/reporter.ts";
+import { registerAgentSurfaces } from "#core/swarm/agents/surfaces.ts";
+import type { DaemonToolDeps } from "#core/swarm/agents/tools.ts";
 import { MockConnection, MockPi } from "./harness.ts";
 import { installReporterEnvHooks, telemetryFrames, waitForFrameCount } from "./reporter-harness.ts";
 

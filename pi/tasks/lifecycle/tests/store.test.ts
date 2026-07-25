@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import type { GoalCycle } from "../../schemas/task.ts";
-import { loadCycles, saveCycles, TASKS_SCHEMA_VERSION } from "../store.ts";
+import { loadCycles, saveCycles, TASKS_SCHEMA_VERSION } from "#tasks/lifecycle/store.ts";
+import type { GoalCycle } from "#tasks/schemas/task.ts";
 
 function tmpFile(): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-tasks-store-"));

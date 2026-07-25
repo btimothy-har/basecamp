@@ -3,8 +3,12 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { worktreesRoot } from "../constants.ts";
-import { migrateLegacyWorktrees, planLegacyWorktreeMigration, shouldRetryMoveWithForce } from "../worktrees/migrate.ts";
+import { worktreesRoot } from "#core/git/constants.ts";
+import {
+	migrateLegacyWorktrees,
+	planLegacyWorktreeMigration,
+	shouldRetryMoveWithForce,
+} from "#core/git/worktrees/migrate.ts";
 import { useTempWorktreesRoot } from "./worktree-root.ts";
 
 useTempWorktreesRoot();

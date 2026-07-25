@@ -11,12 +11,12 @@ import type {
 	SessionShutdownEvent,
 	SessionStartEvent,
 } from "@earendil-works/pi-coding-agent";
-import { reapOwnedSessionWorktree } from "../../git/worktrees/lease.ts";
-import { migrateLegacyWorktrees } from "../../git/worktrees/migrate.ts";
-import { sweepSessionWorktrees } from "../../git/worktrees/session-sweep.ts";
-import { readLogseqGraphDir, readWorktreeSetupCommand } from "../../host/config.ts";
-import { getAgentDepth, getBasecampEnv } from "../../host/env.ts";
-import { getCurrentSessionState } from "../../session/state/index.ts";
+import { reapOwnedSessionWorktree } from "#core/git/worktrees/lease.ts";
+import { migrateLegacyWorktrees } from "#core/git/worktrees/migrate.ts";
+import { sweepSessionWorktrees } from "#core/git/worktrees/session-sweep.ts";
+import { readLogseqGraphDir, readWorktreeSetupCommand } from "#core/host/config.ts";
+import { getAgentDepth, getBasecampEnv } from "#core/host/env.ts";
+import { getCurrentSessionState } from "#core/session/state/index.ts";
 import { workspaceMatchesActiveWorktreeState } from "./affinity.ts";
 import { requireWorkspaceRuntime } from "./runtime.ts";
 import { runWorktreeSetup, shouldRunWorktreeSetup } from "./setup.ts";

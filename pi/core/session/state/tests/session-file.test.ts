@@ -10,7 +10,7 @@ import {
 	loadSessionState,
 	resetCurrentSessionState,
 	saveSessionState,
-} from "../index.ts";
+} from "#core/session/state/index.ts";
 import { createContext, createTempDir, writeStateFile, writeTranscriptHeader } from "./session-state-harness.ts";
 
 describe("session state file helpers", () => {

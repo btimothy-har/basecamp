@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { deriveDaemonIdentity } from "../../../hub/identity.ts";
-import type { WorkspaceState } from "../../../project/workspace/state.ts";
+import { deriveDaemonIdentity } from "#core/hub/identity.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import { installDaemonToolTestHooks } from "./harness.ts";
 
 describe("deriveDaemonIdentity", () => {

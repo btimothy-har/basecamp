@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { resolveDaemonPaths } from "../../../hub/index.ts";
-import type { Frame } from "../../../hub/protocol/index.ts";
-import { PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
-import { buildAgentTaskText } from "../executor.ts";
-import { registerDaemonTools } from "../tools.ts";
+import { resolveDaemonPaths } from "#core/hub/index.ts";
+import type { Frame } from "#core/hub/protocol/index.ts";
+import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
+import { buildAgentTaskText } from "#core/swarm/agents/executor.ts";
+import { registerDaemonTools } from "#core/swarm/agents/tools.ts";
 import {
 	createMockPi,
 	daemonToolDeps,

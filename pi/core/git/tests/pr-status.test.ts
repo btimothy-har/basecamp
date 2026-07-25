@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { lookupPullRequestStatus, type PullRequestState } from "../pr-status.ts";
+import { lookupPullRequestStatus, type PullRequestState } from "#core/git/pr-status.ts";
 
 type ExecOptions = Parameters<ExtensionAPI["exec"]>[2];
 type ExecResult = Awaited<ReturnType<ExtensionAPI["exec"]>>;

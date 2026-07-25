@@ -4,9 +4,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AnnotateResult } from "../annotate-pane.ts";
-import type { Finding, ReviewScope } from "../findings.ts";
-import { registerReviewTool } from "../tools.ts";
+import type { AnnotateResult } from "#code-review/annotate-pane.ts";
+import type { Finding, ReviewScope } from "#code-review/findings.ts";
+import { registerReviewTool } from "#code-review/tools.ts";
 
 interface ReviewToolResult {
 	content: { type: "text"; text: string }[];
