@@ -12,9 +12,9 @@ import {
 	ensureAgentDir,
 	type RunWorkspace,
 	sanitizeAgentSpawnEnv,
-} from "../executor.ts";
-import { getBasecampExtensionToolNames } from "../launch.ts";
-import type { AgentConfig } from "../types.ts";
+} from "#core/swarm/agents/executor.ts";
+import { getBasecampExtensionToolNames } from "#core/swarm/agents/launch.ts";
+import type { AgentConfig } from "#core/swarm/agents/types.ts";
 
 describe("buildAgentRunName", () => {
 	it("accepts readable suffixes and trims outer whitespace", () => {

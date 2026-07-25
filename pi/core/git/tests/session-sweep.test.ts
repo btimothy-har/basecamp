@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { worktreesRoot } from "../constants.ts";
-import { SESSION_COLD_TTL_MS, sessionLeaseReason } from "../worktrees/lease.ts";
-import { sweepSessionWorktrees } from "../worktrees/session-sweep.ts";
+import { worktreesRoot } from "#core/git/constants.ts";
+import { SESSION_COLD_TTL_MS, sessionLeaseReason } from "#core/git/worktrees/lease.ts";
+import { sweepSessionWorktrees } from "#core/git/worktrees/session-sweep.ts";
 import { useTempWorktreesRoot } from "./worktree-root.ts";
 
 useTempWorktreesRoot();

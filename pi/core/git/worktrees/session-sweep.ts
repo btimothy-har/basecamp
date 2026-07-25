@@ -11,7 +11,7 @@
 
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { AGENT_BRANCH_NAMESPACE, worktreesRoot } from "../constants.ts";
+import { AGENT_BRANCH_NAMESPACE, worktreesRoot } from "#core/git/constants.ts";
 import { type GitWorktreeRecord, gitWorktreeRecords } from "./crud.ts";
 import { classifySessionWorktree, reapSessionWorktree } from "./lease.ts";
 

@@ -9,7 +9,7 @@ import {
 	onCurrentSessionTitleChange,
 	resetCurrentSessionState,
 	updateCurrentSessionState,
-} from "../index.ts";
+} from "#core/session/state/index.ts";
 import { createContext, createTempDir } from "./session-state-harness.ts";
 
 describe("current session state", () => {

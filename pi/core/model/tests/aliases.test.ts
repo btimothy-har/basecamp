@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { loadModelAliasConfig, readModelAliasConfig } from "../aliases.ts";
+import { loadModelAliasConfig, readModelAliasConfig } from "#core/model/aliases.ts";
 
 async function createTempDir(t: { after(fn: () => Promise<void>): void }): Promise<string> {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-model-aliases-"));

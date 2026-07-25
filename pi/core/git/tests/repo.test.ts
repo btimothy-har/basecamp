@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { deriveRepoIdentity, resolveGitInfo } from "../repo.ts";
+import { deriveRepoIdentity, resolveGitInfo } from "#core/git/repo.ts";
 
 interface ExecCall {
 	command: string;

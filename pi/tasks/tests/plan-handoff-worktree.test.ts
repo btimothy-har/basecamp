@@ -7,7 +7,7 @@ import {
 	selectWorktreeTarget,
 	shouldReuseActiveWorktreeForHandoff,
 	workspaceWorktreeToHandoffWorktree,
-} from "../workflows/handoff/index.ts";
+} from "#tasks/workflows/handoff/index.ts";
 
 function worktree(overrides: Partial<WorkspaceWorktree> = {}): WorkspaceWorktree {
 	return {

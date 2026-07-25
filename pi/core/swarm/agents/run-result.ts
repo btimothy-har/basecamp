@@ -1,8 +1,8 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isRecord } from "../../host/files.ts";
-import { resolveDaemonPaths } from "../../hub/index.ts";
+import { isRecord } from "#core/host/files.ts";
+import { resolveDaemonPaths } from "#core/hub/index.ts";
 
 export const BASECAMP_RUNNER_MANAGED_RESULT = "BASECAMP_RUNNER_MANAGED_RESULT";
 export const BASECAMP_RUN_RESULT_PATH = "BASECAMP_RUN_RESULT_PATH";

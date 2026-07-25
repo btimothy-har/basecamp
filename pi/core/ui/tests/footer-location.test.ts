@@ -4,8 +4,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resetAgentMode, setAgentMode } from "../../agent-mode/index.ts";
-import { registerFooter } from "../footer.ts";
+import { resetAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
+import { registerFooter } from "#core/ui/footer.ts";
 
 type ThemeFg = (color: Parameters<import("@earendil-works/pi-coding-agent").Theme["fg"]>[0], text: string) => string;
 

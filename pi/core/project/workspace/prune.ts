@@ -10,9 +10,9 @@
 
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { findWorktreeRecord, gitWorktreeRecords, listWorktrees } from "../../git/worktrees/crud.ts";
-import { classifySessionWorktree, isWorktreeClean } from "../../git/worktrees/lease.ts";
-import { deleteBranch, removeWorktree } from "../../git/worktrees/lifecycle.ts";
+import { findWorktreeRecord, gitWorktreeRecords, listWorktrees } from "#core/git/worktrees/crud.ts";
+import { classifySessionWorktree, isWorktreeClean } from "#core/git/worktrees/lease.ts";
+import { deleteBranch, removeWorktree } from "#core/git/worktrees/lifecycle.ts";
 import { requireWorkspaceRuntime } from "./runtime.ts";
 
 const AGENT_LABEL_RE = /^agent-[a-z0-9]+\//;

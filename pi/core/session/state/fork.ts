@@ -2,7 +2,7 @@
 
 import * as fs from "node:fs";
 import type { ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { isRecord } from "../../host/files.ts";
+import { isRecord } from "#core/host/files.ts";
 import type { BasecampSessionState } from "./model.ts";
 import { loadSessionState } from "./persistence.ts";
 

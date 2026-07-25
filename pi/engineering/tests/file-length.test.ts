@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI, ToolResultEvent } from "@earendil-works/pi-coding-agent";
-import { registerFileLengthReminder } from "../file-length.ts";
+import { registerFileLengthReminder } from "#engineering/file-length.ts";
 
 interface SentReminder {
 	message: { customType: string; content: string; display: boolean };

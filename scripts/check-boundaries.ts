@@ -1,12 +1,16 @@
 /**
  * Import-boundary check — enforces the modularity contract:
  *
- *   1. A context may import #core/* freely.
+ *   1. Any file may import #core/* freely — core's own files included.
  *   2. A context may import another context only via its public entry
- *      (#<context>/index.ts). Same-context imports must be relative.
+ *      (#<context>/index.ts). Its own files it reaches at any depth (#<self>/…).
  *   3. Relative imports may not escape the context's pi/<context> directory.
  *   4. core imports no other context.
  *   5. Legacy package specifiers (pi-core/…, pi-ui/…, pi-tasks/…) are gone.
+ *   6. Relative imports name a sibling in the same directory ("./x.ts") and
+ *      nothing else. Every ../ is spelled #<context>/… instead, so a specifier
+ *      says where the target lives rather than how far up to climb — and stays
+ *      correct when either file moves.
  *
  * Run: node scripts/check-boundaries.ts (wired into npm run check / lint).
  */
@@ -93,15 +97,14 @@ for (const context of CONTEXTS) {
 				const target = alias ?? "";
 				if (!CONTEXTS.includes(target as (typeof CONTEXTS)[number])) {
 					violations.push(`${relFile}: unknown context alias "${spec}"`);
-				} else if (target === context) {
-					violations.push(`${relFile}: same-context import "${spec}" must be relative`);
 				} else if (target === "core") {
-					// rule 1: #core/* is free — but core itself may not import contexts (rule 4)
+					// rule 1: #core/* is free from anywhere, core included
+				} else if (context === "core") {
+					violations.push(`${relFile}: core must not import other contexts ("${spec}")`);
+				} else if (target === context) {
+					// rule 2: a context reaches its own files at any depth
 				} else if (spec !== `#${target}/index.ts` && !allowlist.includes(spec)) {
 					violations.push(`${relFile}: deep cross-context import "${spec}" (use #${target}/index.ts)`);
-				}
-				if (context === "core") {
-					violations.push(`${relFile}: core must not import other contexts ("${spec}")`);
 				}
 				continue;
 			}
@@ -109,6 +112,9 @@ for (const context of CONTEXTS) {
 				const resolved = path.resolve(path.dirname(file), spec);
 				if (!resolved.startsWith(tsRoot + path.sep) && resolved !== tsRoot) {
 					violations.push(`${relFile}: relative import escapes context ts/ ("${spec}")`);
+				} else if (spec.startsWith("../")) {
+					const alias = `#${context}/${path.relative(tsRoot, resolved).split(path.sep).join("/")}`;
+					violations.push(`${relFile}: parent-relative import "${spec}" (use "${alias}")`);
 				}
 			}
 			// bare specifiers (node:, @earendil-works/*, ws, …) are fine

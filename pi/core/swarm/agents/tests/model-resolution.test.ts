@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { resolveModel } from "../model-resolution.ts";
+import { resolveModel } from "#core/swarm/agents/model-resolution.ts";
 
 describe("resolveModel", () => {
 	it("passes through reserved model strategies", () => {

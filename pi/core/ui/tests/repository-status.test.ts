@@ -4,8 +4,12 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import type { PullRequestStatus } from "../../git/pr-status.ts";
-import { type RepositoryStatusOptions, RepositoryStatusTracker, type RepositoryTarget } from "../repository-status.ts";
+import type { PullRequestStatus } from "#core/git/pr-status.ts";
+import {
+	type RepositoryStatusOptions,
+	RepositoryStatusTracker,
+	type RepositoryTarget,
+} from "#core/ui/repository-status.ts";
 
 interface Deferred<T> {
 	promise: Promise<T>;

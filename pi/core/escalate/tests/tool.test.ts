@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { registerEscalate } from "../tool.ts";
-import type { Question, QuestionAnswer } from "../types.ts";
+import { registerEscalate } from "#core/escalate/tool.ts";
+import type { Question, QuestionAnswer } from "#core/escalate/types.ts";
 
 interface ToolResult {
 	content: { type: string; text: string }[];

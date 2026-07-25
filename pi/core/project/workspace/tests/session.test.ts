@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { registerLogseqAllowedRootProvider, shouldReapOnShutdown } from "../session.ts";
-import { listWorkspaceAllowedRoots } from "../state.ts";
+import { registerLogseqAllowedRootProvider, shouldReapOnShutdown } from "#core/project/workspace/session.ts";
+import { listWorkspaceAllowedRoots } from "#core/project/workspace/state.ts";
 
 describe("shouldReapOnShutdown", () => {
 	it("reaps only on a top-level quit", () => {

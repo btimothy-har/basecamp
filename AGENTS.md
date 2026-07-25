@@ -21,7 +21,7 @@ The repo root is the Pi package (`package.json` / `tsconfig.json` / `biome.json`
 
 `basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.)
 
-Cross-domain TypeScript imports use Node subpath imports (`#core/*` freely; other domains only via `#<domain>/index.ts`; core imports no other domain), enforced by `scripts/check-boundaries.ts` in `npm run check`.
+TypeScript imports use Node subpath aliases, never parent traversal: `./sibling.ts` is the only legal relative form and every `../` is spelled `#<domain>/…`. Cross-domain, `#core/*` is free (from inside core too) and other domains resolve only via `#<domain>/index.ts`; core imports no other domain. Enforced by `scripts/check-boundaries.ts` in `npm run check`.
 
 ## Documentation
 

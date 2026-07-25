@@ -7,7 +7,7 @@
 
 import { getSelectListTheme, type KeybindingsManager, type Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, Editor, type EditorTheme, type Focusable, matchesKey, type TUI } from "@earendil-works/pi-tui";
-import type { DialogState, Question, QuestionAnswer } from "../types.ts";
+import type { DialogState, Question, QuestionAnswer } from "#core/escalate/types.ts";
 import { goBack, submitOptionAnswer, submitTextAnswer } from "./flow.ts";
 import { type FocusArea, renderDialog } from "./view.ts";
 

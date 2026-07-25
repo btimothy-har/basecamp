@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ADJECTIVES, NAME_BANK, NOUNS } from "../bank.ts";
-import { ADJ_ADJ_NOUN, ADJ_NOUN, generateName } from "../generate.ts";
+import { ADJECTIVES, NAME_BANK, NOUNS } from "#core/naming/bank.ts";
+import { ADJ_ADJ_NOUN, ADJ_NOUN, generateName } from "#core/naming/generate.ts";
 
 function sequenceRng(values: number[]): () => number {
 	let index = 0;

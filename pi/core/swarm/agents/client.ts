@@ -6,7 +6,7 @@
  * that want types without reaching into each implementation module.
  */
 
-export type { DaemonConnection, DaemonIdentity } from "../../hub/index.ts";
+export type { DaemonConnection, DaemonIdentity } from "#core/hub/index.ts";
 export {
 	createDaemonClient,
 	type DaemonClient,

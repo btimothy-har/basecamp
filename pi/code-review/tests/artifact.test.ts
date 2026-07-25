@@ -3,9 +3,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
+import { persistReviewArtifact, type ReviewResult } from "#code-review/artifact.ts";
+import type { Finding } from "#code-review/findings.ts";
 import { isSubagent } from "#core/host/env.ts";
-import { persistReviewArtifact, type ReviewResult } from "../artifact.ts";
-import type { Finding } from "../findings.ts";
 
 interface AnnotatedFinding extends Finding {
 	reaction: string | null;

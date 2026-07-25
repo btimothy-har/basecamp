@@ -1,6 +1,6 @@
 import * as os from "node:os";
 import * as path from "node:path";
-import { getBasecampEnv } from "../host/env.ts";
+import { getBasecampEnv } from "#core/host/env.ts";
 
 // Resolved at use-time (never captured at import) so tests can redirect it via
 // BASECAMP_WORKTREES_ROOT; defaults to ~/.worktrees.

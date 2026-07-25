@@ -23,6 +23,8 @@ The always-present foundation domain for basecamp. `pi/core` is the first module
 
 Core is the foundation of the boundary rules (`scripts/check-boundaries.ts`): every context may import `#core/*`; core imports no other context. Cross-context imports go through the owning context's public index rather than deep internal paths.
 
+`#core/*` is free from **inside** core too, and a file reaches anything outside its own directory by alias rather than by climbing: `./sibling.ts` is the only legal relative form, and every `../` is spelled `#core/hub/protocol/index.ts`. This holds repo-wide — each context reaches its own files as `#<context>/…` — so a specifier states *where the target lives* instead of *how far up to climb*, and survives either file moving. It is enforced, not advisory: a reintroduced `../` fails the boundary check with the alias to use. Cross-context imports are unaffected and still go through `#<other>/index.ts`.
+
 ### State convention: wiring vs. surviving
 
 There are two kinds of module state, with different rules:

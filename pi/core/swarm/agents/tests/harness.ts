@@ -3,9 +3,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach } from "node:test";
-import { type Frame, type OutboundFrame, PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
-import type { WorkspaceState } from "../../../project/workspace/state.ts";
-import type { DaemonConnection } from "../client.ts";
+import { type Frame, type OutboundFrame, PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
+import type { WorkspaceState } from "#core/project/workspace/state.ts";
+import type { DaemonConnection } from "#core/swarm/agents/client.ts";
 
 export interface RegisteredTool {
 	name: string;

@@ -1,10 +1,10 @@
-import { processScoped } from "../global-registry.ts";
+import { processScoped } from "#core/global-registry.ts";
 import {
 	getCurrentSessionState,
 	SESSION_STATE_AGENT_MODES,
 	type SessionStateAgentMode,
 	updateCurrentSessionStateIfInitialized,
-} from "../session/state/index.ts";
+} from "#core/session/state/index.ts";
 import { isCopilotMode } from "./copilot.ts";
 
 export type AgentMode = SessionStateAgentMode;

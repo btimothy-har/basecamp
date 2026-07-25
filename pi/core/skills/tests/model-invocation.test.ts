@@ -4,10 +4,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { listCatalogItemsByType } from "../../catalog/index.ts";
-import { registerCatalogProviders } from "../../catalog/providers.ts";
-import { registerSkillTool } from "../skill.ts";
-import { isModelInvocationDisabled } from "../skill-content.ts";
+import { listCatalogItemsByType } from "#core/catalog/index.ts";
+import { registerCatalogProviders } from "#core/catalog/providers.ts";
+import { registerSkillTool } from "#core/skills/skill.ts";
+import { isModelInvocationDisabled } from "#core/skills/skill-content.ts";
 
 interface SkillCommand {
 	name: string;

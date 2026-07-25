@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import { Value } from "@sinclair/typebox/value";
-import { ReportFindingsParams } from "../findings.ts";
+import { ReportFindingsParams } from "#code-review/findings.ts";
 
 const scope = { base: "origin/main", mergeBase: "abc1234", cwd: "/repo", label: "branch x → origin/main" };
 const summary = "Synthesized review summary.";

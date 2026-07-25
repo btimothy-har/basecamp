@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { buildUserContext } from "../user-context.ts";
+import { buildUserContext } from "#core/session/user-context.ts";
 
 function entry(message: unknown): SessionEntry {
 	return { type: "message", message } as unknown as SessionEntry;

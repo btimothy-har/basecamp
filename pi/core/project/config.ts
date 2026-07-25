@@ -2,9 +2,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { processScoped } from "../global-registry.ts";
-import { isRecord } from "../host/files.ts";
-import { basecampConfigPath, basecampRoot } from "../host/paths.ts";
+import { processScoped } from "#core/global-registry.ts";
+import { isRecord } from "#core/host/files.ts";
+import { basecampConfigPath, basecampRoot } from "#core/host/paths.ts";
 import { registerWorkspaceAllowedRootsProvider, requireWorkspaceState } from "./workspace/state.ts";
 
 // --- Project config + resolved state cell ---

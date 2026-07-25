@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { type DaemonConnection, waitForFrame } from "../../hub/index.ts";
+import { type DaemonConnection, waitForFrame } from "#core/hub/index.ts";
 import type {
 	AttachWorkstreamAgentAckFrame,
 	CancelAckFrame,
@@ -14,7 +14,7 @@ import type {
 	WaitResultFrame,
 	WaitResultItem,
 	WorkstreamAgentStatus,
-} from "../../hub/protocol/index.ts";
+} from "#core/hub/protocol/index.ts";
 
 export interface DaemonDispatchFrameOptions {
 	agentId: string;

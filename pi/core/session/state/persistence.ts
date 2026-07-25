@@ -2,7 +2,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { isRecord, writeJsonFileAtomic } from "../../host/files.ts";
+import { isRecord, writeJsonFileAtomic } from "#core/host/files.ts";
 import {
 	type BasecampSessionState,
 	defaultSessionStateDir,

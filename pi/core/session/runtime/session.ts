@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { setCopilotLaunchReader } from "../../agent-mode/copilot.ts";
-import { restoreAgentModeFromSessionState, setAgentMode } from "../../agent-mode/index.ts";
+import { setCopilotLaunchReader } from "#core/agent-mode/copilot.ts";
+import { restoreAgentModeFromSessionState, setAgentMode } from "#core/agent-mode/index.ts";
 
 export function registerSession(pi: ExtensionAPI): void {
 	pi.registerFlag("copilot", {

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceWorktree } from "#core/project/workspace/state.ts";
-import { startWorkstream, type WorkstreamStartDeps } from "../start.ts";
+import { startWorkstream, type WorkstreamStartDeps } from "#workstreams/start.ts";
 import { FakeDaemonClient, makeCtx, makeDeps, makeWorkspace, makeWorkstreamDetail } from "./start-harness.ts";
 
 async function runStart(

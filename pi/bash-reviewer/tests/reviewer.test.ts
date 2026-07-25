@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent } from "@earendil-works/pi-coding-agent";
-import { registerBashReviewer } from "../index.ts";
+import { registerBashReviewer } from "#bash-reviewer/index.ts";
 
 interface EmittedEvent {
 	channel: string;

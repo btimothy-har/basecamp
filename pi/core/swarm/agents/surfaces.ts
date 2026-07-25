@@ -1,10 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { processScoped } from "../../global-registry.ts";
-import { basecampExtensionRoot } from "../../host/paths.ts";
-import { awaitDaemonConnection, deriveDaemonIdentity, onDaemonConnect, resolveDaemonPaths } from "../../hub/index.ts";
-import { resolveModelAlias } from "../../model/index.ts";
-import { getWorkspaceState } from "../../project/workspace/state.ts";
-import { hasInvokedSkill } from "../../skills/tracker.ts";
+import { processScoped } from "#core/global-registry.ts";
+import { basecampExtensionRoot } from "#core/host/paths.ts";
+import { awaitDaemonConnection, deriveDaemonIdentity, onDaemonConnect, resolveDaemonPaths } from "#core/hub/index.ts";
+import { resolveModelAlias } from "#core/model/index.ts";
+import { getWorkspaceState } from "#core/project/workspace/state.ts";
+import { hasInvokedSkill } from "#core/skills/tracker.ts";
 import { fetchRunSummary } from "./client.ts";
 import { type PeerDeliveryState, registerPeerMessageDeliveryHandler } from "./delivery.ts";
 import { registerDaemonReporter } from "./reporter.ts";

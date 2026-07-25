@@ -8,7 +8,7 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { processScoped } from "../global-registry.ts";
+import { processScoped } from "#core/global-registry.ts";
 
 const getTrackerState = processScoped("basecamp.skillTracker", () => ({
 	invokedSkills: new Set<string>(),

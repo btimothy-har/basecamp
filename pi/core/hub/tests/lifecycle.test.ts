@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { getAgentMode, setAgentMode } from "../../agent-mode/index.ts";
-import type { DaemonConnection } from "../connection.ts";
-import { registerHubConnection } from "../index.ts";
-import type { OutboundFrame } from "../protocol/index.ts";
-import { clearHubMetadataWiring, getHubConnectionState } from "../state.ts";
+import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
+import type { DaemonConnection } from "#core/hub/connection.ts";
+import { registerHubConnection } from "#core/hub/index.ts";
+import type { OutboundFrame } from "#core/hub/protocol/index.ts";
+import { clearHubMetadataWiring, getHubConnectionState } from "#core/hub/state.ts";
 
 type EventHandler = (...args: unknown[]) => unknown;
 

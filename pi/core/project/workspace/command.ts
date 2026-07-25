@@ -3,10 +3,10 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { listWorktrees, resolveAvailableWorktreeLabel, type WorktreeSummary } from "../../git/worktrees/crud.ts";
-import { executionWorktreeTarget } from "../../git/worktrees/target.ts";
-import { readWorktreeSetupCommand } from "../../host/config.ts";
-import { shortSessionId } from "../../session/session-id.ts";
+import { listWorktrees, resolveAvailableWorktreeLabel, type WorktreeSummary } from "#core/git/worktrees/crud.ts";
+import { executionWorktreeTarget } from "#core/git/worktrees/target.ts";
+import { readWorktreeSetupCommand } from "#core/host/config.ts";
+import { shortSessionId } from "#core/session/session-id.ts";
 import { runWorktreePrune } from "./prune.ts";
 import { requireWorkspaceRuntime, type WorkspaceRuntimeService } from "./runtime.ts";
 import { runWorktreeSetup, shouldRunWorktreeSetup } from "./setup.ts";

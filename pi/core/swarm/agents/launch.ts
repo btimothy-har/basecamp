@@ -1,9 +1,9 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getAgentDepth } from "../../host/env.ts";
-import { isWithin } from "../../host/paths.ts";
-import { resolveDaemonPaths } from "../../hub/index.ts";
+import { getAgentDepth } from "#core/host/env.ts";
+import { isWithin } from "#core/host/paths.ts";
+import { resolveDaemonPaths } from "#core/hub/index.ts";
 import type { AgentWorkspaceProvision } from "./agent-workspace.ts";
 import type { AgentConfig } from "./discovery.ts";
 import { buildAgentRunName, buildPiArgs, type RunWorkspace, sanitizeAgentSpawnEnv } from "./executor.ts";

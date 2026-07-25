@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
-import { isRecord } from "../host/files.ts";
-import { basecampConfigPath } from "../host/paths.ts";
+import { isRecord } from "#core/host/files.ts";
+import { basecampConfigPath } from "#core/host/paths.ts";
 
 export type ConfiguredModelAliases = Record<string, string>;
 

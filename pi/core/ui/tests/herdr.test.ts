@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { withHerdrBlocked } from "../herdr.ts";
+import { withHerdrBlocked } from "#core/ui/herdr.ts";
 
 function emitter(events: unknown[]): Pick<ExtensionAPI, "events"> {
 	return {

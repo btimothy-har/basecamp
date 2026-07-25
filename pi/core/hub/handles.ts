@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { ADJ_NOUN, generateName } from "../naming/index.ts";
+import { ADJ_NOUN, generateName } from "#core/naming/index.ts";
 
 /**
  * A deterministic [0, 1) stream derived from an opaque hex seed, so name

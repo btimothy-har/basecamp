@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildWorkstreamsPath, parseWorkstreamDetailResponse, parseWorkstreamsResponse } from "../view/workstream.ts";
+import {
+	buildWorkstreamsPath,
+	parseWorkstreamDetailResponse,
+	parseWorkstreamsResponse,
+} from "#core/swarm/agents/view/workstream.ts";
 
 describe("daemon workstream HTTP helpers", () => {
 	it("buildWorkstreamsPath builds the correct path with only provided filters", () => {

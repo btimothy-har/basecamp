@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createSnapshotCommit } from "../repo.ts";
+import { createSnapshotCommit } from "#core/git/repo.ts";
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 

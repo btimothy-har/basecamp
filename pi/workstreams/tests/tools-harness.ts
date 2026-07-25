@@ -3,7 +3,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { WorktreeResult } from "#core/git/worktrees/crud.ts";
 import type { WorkspaceState, WorkspaceWorktree } from "#core/project/workspace/state.ts";
 import type { DaemonClient, WorkstreamDetail, WorkstreamSummary } from "#core/swarm/agents/client.ts";
-import type { HerdrWorkstreamOpenResult } from "../herdr.ts";
+import type { HerdrWorkstreamOpenResult } from "#workstreams/herdr.ts";
 import {
 	type CreateWorkstreamResultDetails,
 	type EditWorkstreamResultDetails,
@@ -12,7 +12,7 @@ import {
 	executeLaunchWorkstream,
 	type LaunchWorkstreamResultDetails,
 	type WorkstreamToolsDeps,
-} from "../tools.ts";
+} from "#workstreams/tools.ts";
 
 export function makeWorkstreamDetail(overrides: Partial<WorkstreamDetail> = {}): WorkstreamDetail {
 	return {

@@ -3,7 +3,7 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
-import { createNativeConfigModelAliasProvider } from "../index.ts";
+import { createNativeConfigModelAliasProvider } from "#core/model/index.ts";
 
 async function createTempDir(t: TestContext): Promise<string> {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-model-alias-provider-"));

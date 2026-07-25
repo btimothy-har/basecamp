@@ -5,7 +5,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { writeJsonFileAtomic } from "#core/host/files.ts";
 import { basecampRoot } from "#core/host/paths.ts";
-import type { GoalCycle } from "../schemas/task.ts";
+import type { GoalCycle } from "#tasks/schemas/task.ts";
 
 export function defaultTasksDir(homeDir = os.homedir()): string {
 	return path.join(basecampRoot(homeDir), "tasks");

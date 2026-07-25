@@ -1,7 +1,7 @@
 /** Shared tool-result renderers for the tasks context: ✓-success and pending-"..." Text widgets. */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import type { TasksRuntime } from "../lifecycle/index.ts";
+import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
 
 export function renderSuccess(message: string, theme: Theme) {
 	const { Text } = require("@earendil-works/pi-tui");

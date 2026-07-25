@@ -15,11 +15,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
-import { startGoalCycle } from "../lifecycle/goal-cycle.ts";
-import type { TasksRuntime } from "../lifecycle/index.ts";
-import type { PlanDraft } from "../schemas/plan.ts";
-import type { GoalCycle } from "../schemas/task.ts";
-import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "../workflows/draft.ts";
+import { startGoalCycle } from "#tasks/lifecycle/goal-cycle.ts";
+import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
+import type { PlanDraft } from "#tasks/schemas/plan.ts";
+import type { GoalCycle } from "#tasks/schemas/task.ts";
+import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "#tasks/workflows/draft.ts";
 import {
 	buildHandoffCompactionInstructions,
 	buildHandoffMessage,
@@ -28,8 +28,8 @@ import {
 	HANDOFF_COMPACTION_THRESHOLD_PERCENT,
 	type PendingImplementationHandoff,
 	runHandoff,
-} from "../workflows/handoff/index.ts";
-import { showReviewOverlay } from "../workflows/review/index.ts";
+} from "#tasks/workflows/handoff/index.ts";
+import { showReviewOverlay } from "#tasks/workflows/review/index.ts";
 import { renderPartial, renderSuccess } from "./render.ts";
 
 export interface PlanAccess {

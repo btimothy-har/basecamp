@@ -1,14 +1,23 @@
 import { randomUUID } from "node:crypto";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { errorMessage } from "../../../errors.ts";
-import type { DaemonConnection } from "../../../hub/index.ts";
-import { buildAgentHandle } from "../../../hub/index.ts";
-import { type AgentWorkspaceProvision, discardAgentWorkspace, provisionAgentWorkspace } from "../agent-workspace.ts";
-import { discoverAgents } from "../discovery.ts";
-import { dispatchWithHandleRetry } from "../dispatch-retry.ts";
-import { buildAgentLaunchSpec, buildAgentTitleBase, processEnvForSpawn, resolveParentSession } from "../launch.ts";
-import { createDaemonClient } from "../rpc.ts";
+import { errorMessage } from "#core/errors.ts";
+import type { DaemonConnection } from "#core/hub/index.ts";
+import { buildAgentHandle } from "#core/hub/index.ts";
+import {
+	type AgentWorkspaceProvision,
+	discardAgentWorkspace,
+	provisionAgentWorkspace,
+} from "#core/swarm/agents/agent-workspace.ts";
+import { discoverAgents } from "#core/swarm/agents/discovery.ts";
+import { dispatchWithHandleRetry } from "#core/swarm/agents/dispatch-retry.ts";
+import {
+	buildAgentLaunchSpec,
+	buildAgentTitleBase,
+	processEnvForSpawn,
+	resolveParentSession,
+} from "#core/swarm/agents/launch.ts";
+import { createDaemonClient } from "#core/swarm/agents/rpc.ts";
 import {
 	type DaemonToolDeps,
 	DispatchAgentParams,

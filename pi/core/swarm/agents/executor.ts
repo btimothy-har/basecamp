@@ -8,7 +8,7 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { isWithin } from "../../host/paths.ts";
+import { isWithin } from "#core/host/paths.ts";
 import { type AgentConfig, getAgentToolAllowlist, getWorkspacelessAgentToolAllowlist } from "./types.ts";
 
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");

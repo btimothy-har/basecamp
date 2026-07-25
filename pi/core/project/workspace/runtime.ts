@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resolveGitInfo } from "../../git/repo.ts";
+import { resolveGitInfo } from "#core/git/repo.ts";
 import {
 	attachWorktreeDir,
 	findWorktreeRecord,
@@ -10,12 +10,12 @@ import {
 	labelFromWorktreePath,
 	listWorktrees as listGitWorktrees,
 	type WorktreeResult,
-} from "../../git/worktrees/crud.ts";
-import { acquireSessionLease } from "../../git/worktrees/lease.ts";
-import { processScoped } from "../../global-registry.ts";
-import { registerCwdProvider } from "../../host/exec.ts";
-import { isWithin } from "../../host/paths.ts";
-import { updateCurrentSessionStateIfInitialized } from "../../session/state/index.ts";
+} from "#core/git/worktrees/crud.ts";
+import { acquireSessionLease } from "#core/git/worktrees/lease.ts";
+import { processScoped } from "#core/global-registry.ts";
+import { registerCwdProvider } from "#core/host/exec.ts";
+import { isWithin } from "#core/host/paths.ts";
+import { updateCurrentSessionStateIfInitialized } from "#core/session/state/index.ts";
 import { buildActiveWorktreeState } from "./affinity.ts";
 import { SCRATCH_ROOT } from "./constants.ts";
 import type {

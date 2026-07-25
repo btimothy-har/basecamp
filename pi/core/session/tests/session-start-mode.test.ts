@@ -4,15 +4,15 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resetCopilotLaunchForTesting } from "../../agent-mode/copilot.ts";
-import { getAgentMode, resetAgentMode } from "../../agent-mode/index.ts";
-import { registerSession } from "../runtime/session.ts";
+import { resetCopilotLaunchForTesting } from "#core/agent-mode/copilot.ts";
+import { getAgentMode, resetAgentMode } from "#core/agent-mode/index.ts";
+import { registerSession } from "#core/session/runtime/session.ts";
 import {
 	createDefaultSessionState,
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 	saveSessionState,
-} from "../state/index.ts";
+} from "#core/session/state/index.ts";
 
 async function createTempDir(t: { after(fn: () => Promise<void> | void): void }): Promise<string> {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "basecamp-session-start-mode-"));

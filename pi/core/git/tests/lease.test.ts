@@ -11,7 +11,7 @@ import {
 	reapSessionWorktree,
 	SESSION_COLD_TTL_MS,
 	sessionLeaseReason,
-} from "../worktrees/lease.ts";
+} from "#core/git/worktrees/lease.ts";
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { ADJECTIVES, NOUNS } from "../../naming/index.ts";
-import { buildAgentHandle, buildDeterministicAgentHandle } from "../handles.ts";
+import { buildAgentHandle, buildDeterministicAgentHandle } from "#core/hub/handles.ts";
+import { ADJECTIVES, NOUNS } from "#core/naming/index.ts";
 
 // adjective-noun-<6 lowercase hex>. Structural, not a golden string, so it guards
 // the handle format + determinism contract without breaking on benign bank edits.

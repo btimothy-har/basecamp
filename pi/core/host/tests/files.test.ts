@@ -3,8 +3,8 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { isRecord, readJsonFile, writeJsonFileAtomic } from "../files.ts";
-import { isStrictlyWithin, isWithin } from "../paths.ts";
+import { isRecord, readJsonFile, writeJsonFileAtomic } from "#core/host/files.ts";
+import { isStrictlyWithin, isWithin } from "#core/host/paths.ts";
 
 describe("isRecord", () => {
 	it("accepts plain objects and rejects null, arrays, and primitives", () => {

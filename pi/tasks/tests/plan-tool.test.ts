@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { TasksRuntime } from "../lifecycle/index.ts";
-import { registerPlan } from "../tools/plan-tool.ts";
+import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
+import { registerPlan } from "#tasks/tools/plan-tool.ts";
 
 interface PlanParams {
 	goal: string;

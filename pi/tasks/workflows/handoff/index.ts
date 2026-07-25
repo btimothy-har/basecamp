@@ -16,9 +16,9 @@ import {
 } from "#core/project/workspace/state.ts";
 import { shortSessionId } from "#core/session/session-id.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
-import type { PlanDraft } from "../../schemas/plan.ts";
-import type { TaskStatus } from "../../schemas/task.ts";
-import { collectApprovedNotes } from "../draft.ts";
+import type { PlanDraft } from "#tasks/schemas/plan.ts";
+import type { TaskStatus } from "#tasks/schemas/task.ts";
+import { collectApprovedNotes } from "#tasks/workflows/draft.ts";
 import {
 	buildExecutionWorktreeChoices,
 	CUSTOM_WORKTREE_CHOICE,

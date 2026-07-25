@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { useTempWorktreesRoot } from "../../../git/tests/worktree-root.ts";
-import { parseSessionLease } from "../../../git/worktrees/lease.ts";
-import { WorkspaceRuntimeService } from "../runtime.ts";
+import { useTempWorktreesRoot } from "#core/git/tests/worktree-root.ts";
+import { parseSessionLease } from "#core/git/worktrees/lease.ts";
+import { WorkspaceRuntimeService } from "#core/project/workspace/runtime.ts";
 import { createLinkedWorktreePi, type ExecCall, REPO_ROOT, WORKTREE_DIR } from "./service-harness.ts";
 
 useTempWorktreesRoot();

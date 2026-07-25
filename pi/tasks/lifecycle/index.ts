@@ -23,7 +23,7 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { setAgentMode } from "#core/agent-mode/index.ts";
 import { getCurrentSessionState } from "#core/session/state/index.ts";
-import type { GoalCycle, TasksState } from "../schemas/task.ts";
+import type { GoalCycle, TasksState } from "#tasks/schemas/task.ts";
 import { loadCycles, saveCycles, tasksFilePath } from "./store.ts";
 import { buildSteerContent } from "./text.ts";
 import { renderTaskWidgetLines } from "./widget.ts";

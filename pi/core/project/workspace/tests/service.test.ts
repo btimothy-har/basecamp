@@ -3,16 +3,16 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { worktreesRoot } from "../../../git/constants.ts";
+import { worktreesRoot } from "#core/git/constants.ts";
+import { registerWorkspaceRuntime, resetWorkspaceRuntimeForTesting } from "#core/project/workspace/runtime.ts";
+import { registerWorkspaceSession } from "#core/project/workspace/session.ts";
 import {
 	createDefaultSessionState,
 	getCurrentSessionState,
 	initializeCurrentSessionState,
 	resetCurrentSessionState,
 	saveSessionState,
-} from "../../../session/state/index.ts";
-import { registerWorkspaceRuntime, resetWorkspaceRuntimeForTesting } from "../runtime.ts";
-import { registerWorkspaceSession } from "../session.ts";
+} from "#core/session/state/index.ts";
 import {
 	argsEqual,
 	BRANCH,

@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
-import { sleep } from "../async.ts";
+import { sleep } from "#core/async.ts";
 import type { DaemonPaths } from "./paths.ts";
 
 export type FindDaemonPidFn = (socketPath: string) => Promise<number | null>;

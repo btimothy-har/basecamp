@@ -2,7 +2,7 @@
  * Type definitions for the agent system.
  */
 
-import { getAgentDepth } from "../../host/env.ts";
+import { getAgentDepth } from "#core/host/env.ts";
 
 // Re-export agent discovery types so runtime modules have one import surface.
 export type { AgentConfig, ModelStrategy } from "./discovery.ts";

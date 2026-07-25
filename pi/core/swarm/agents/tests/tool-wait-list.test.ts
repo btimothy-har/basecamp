@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Frame, ListAgentItem } from "../../../hub/protocol/index.ts";
-import { PROTOCOL_VERSION } from "../../../hub/protocol/index.ts";
-import { createDaemonClient } from "../client.ts";
-import { registerDaemonTools } from "../tools.ts";
+import type { Frame, ListAgentItem } from "#core/hub/protocol/index.ts";
+import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
+import { createDaemonClient } from "#core/swarm/agents/client.ts";
+import { registerDaemonTools } from "#core/swarm/agents/tools.ts";
 import {
 	createMockPi,
 	daemonToolDeps,

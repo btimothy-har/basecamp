@@ -1,7 +1,7 @@
 /** /model-aliases command — alias CRUD flows over the forms in alias-forms.ts. */
 
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
-import { exec } from "../host/exec.ts";
+import { exec } from "#core/host/exec.ts";
 import { promptWithInitialValue, showAliasDetail, showAliasList } from "./alias-forms.ts";
 import { type ConfiguredModelAliases, errorMessage, loadModelAliasConfig } from "./aliases.ts";
 
