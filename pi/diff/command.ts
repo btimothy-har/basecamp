@@ -67,8 +67,11 @@ async function drainOwnedReview(pi: ExtensionAPI, worktreeDir: string, live: Hun
 		return { notes: read.notes, blocked: "could not close the previous review's tab" };
 	}
 
-	if (await closeAndForget(pi, worktreeDir, owned.tabId)) return { notes: [] };
-	return { notes: [], blocked: "could not close the previous review's tab" };
+	// A tab that never registered a session holds no notes, so a close that fails
+	// — which `herdr tab close` does deterministically once the tab is gone — is
+	// not worth stopping for. Blocking here would strand every later call.
+	if (!(await closeAndForget(pi, worktreeDir, owned.tabId))) forgetTab(worktreeDir);
+	return { notes: [] };
 }
 
 /** Keeps the ids whenever the close fails, so a later run can still reclaim the tab. */

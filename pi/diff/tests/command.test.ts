@@ -218,6 +218,20 @@ describe("/diff", () => {
 		assert.equal(ownedReview(WORKTREE)?.sessionId, NEW_SESSION, "the dead id must be replaced, not retained");
 	});
 
+	it("recovers when a tab that never registered a session can no longer be closed", async (t) => {
+		// `herdr tab close` exits 1 for a tab that is already gone, so retrying it
+		// forever would strand /diff exactly as the dead-session case did. No session
+		// ever attached here, so there are no notes to protect by stopping.
+		herdrEnv(t);
+		rememberTab(WORKTREE, "w9:tGone");
+		const h = harness({ tabCloseCode: 7, noteReads: [[]] });
+
+		await h.run();
+
+		assert.deepEqual(argsFor(h.calls, "herdr", "tab create")?.slice(0, 2), ["tab", "create"], "must still open a diff");
+		assert.equal(ownedReview(WORKTREE)?.tabId, "w9:t2", "the unclosable tab must not keep displacing new ones");
+	});
+
 	it("leaves a foreign hunk session alone", async (t) => {
 		herdrEnv(t);
 		const h = harness({ preexisting: ["not-ours"], noteReads: [[]] });
