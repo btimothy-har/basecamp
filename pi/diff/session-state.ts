@@ -1,25 +1,38 @@
 /**
- * Tabs `/diff` has opened, keyed by worktree.
+ * Hunk reviews `/diff` has opened, keyed by worktree.
  *
- * Surviving state, not wiring: a hunk tab outlives the session that opened it,
- * and losing the tab id on /reload would strand a tab nothing can close.
+ * Surviving state, not wiring: the tab and the hunk session behind it outlive
+ * the pi session that opened them, and losing their ids on /reload would
+ * strand a window nothing can close and notes nothing can read.
  */
 
 import { processScoped } from "#core/global-registry.ts";
 
-interface OpenTabs {
-	byWorktree: Map<string, string>;
+export interface OwnedReview {
+	tabId: string;
+	/** Absent until hunk registers with its daemon, which can fail. */
+	sessionId?: string;
 }
 
-const getOpenTabs = processScoped<OpenTabs>("basecamp.diffTabs", () => ({ byWorktree: new Map() }));
+interface OwnedReviews {
+	byWorktree: Map<string, OwnedReview>;
+}
+
+const getOwnedReviews = processScoped<OwnedReviews>("basecamp.diffTabs", () => ({ byWorktree: new Map() }));
 
 export function rememberTab(worktreeDir: string, tabId: string): void {
-	getOpenTabs().byWorktree.set(worktreeDir, tabId);
+	getOwnedReviews().byWorktree.set(worktreeDir, { tabId });
 }
 
-export function forgetTab(worktreeDir: string): string | undefined {
-	const tabs = getOpenTabs().byWorktree;
-	const tabId = tabs.get(worktreeDir);
-	tabs.delete(worktreeDir);
-	return tabId;
+export function attachSession(worktreeDir: string, sessionId: string): void {
+	const owned = getOwnedReviews().byWorktree.get(worktreeDir);
+	if (owned) owned.sessionId = sessionId;
+}
+
+export function ownedReview(worktreeDir: string): OwnedReview | undefined {
+	return getOwnedReviews().byWorktree.get(worktreeDir);
+}
+
+export function forgetTab(worktreeDir: string): void {
+	getOwnedReviews().byWorktree.delete(worktreeDir);
 }
