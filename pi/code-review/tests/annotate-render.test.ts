@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { listItems, ReactionStore } from "#code-review/annotate/model.ts";
+import { CommentStore, listItems } from "#code-review/annotate/model.ts";
 import {
 	findingLocation,
 	renderCommentLabel,
@@ -92,7 +92,7 @@ describe("renderFindingCard", () => {
 
 describe("renderFindingList", () => {
 	it("marks commented findings and points the cursor at the selection", () => {
-		const store = new ReactionStore(2);
+		const store = new CommentStore(2);
 		store.set(1, "disagree");
 		const findings = [
 			finding({ severity: "critical", title: "Unsafe write", file: "src/a.ts", lineStart: 7 }),

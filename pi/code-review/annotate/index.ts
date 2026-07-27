@@ -1,7 +1,7 @@
 /**
  * The annotation pane: a finding list that drills into a card carrying an optional user comment.
  *
- * Both views read comment text from the ReactionStore and write it back only through card events —
+ * Both views read comment text from the CommentStore and write it back only through card events —
  * the Editor is a buffer, never an authority. See model.ts for why that ownership matters.
  */
 
@@ -10,7 +10,7 @@ import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-age
 import { type Component, Container, Editor, type EditorTheme, Spacer, Text } from "@earendil-works/pi-tui";
 import type { Finding } from "#code-review/findings.ts";
 import { cardIntent, editorIntent, listIntent } from "./keys.ts";
-import { type CardEvent, type CardState, clampIndex, listItems, ReactionStore, reduceCard } from "./model.ts";
+import { type CardEvent, type CardState, CommentStore, clampIndex, listItems, reduceCard } from "./model.ts";
 import {
 	cardHint,
 	listHint,
@@ -34,7 +34,7 @@ const EDITOR_INSET = 2;
 function showFindingList(
 	ui: AnnotateUI,
 	findings: Finding[],
-	store: ReactionStore,
+	store: CommentStore,
 	initial: number,
 ): Promise<ListOutcome> {
 	return ui.custom<ListOutcome>((_tui, theme, _keybindings, done) => {
@@ -87,7 +87,7 @@ function showFindingList(
 }
 
 /** Resolves with the finding the user was last on, so the list reopens where they left it. */
-function showFindingCard(ui: AnnotateUI, findings: Finding[], store: ReactionStore, initial: number): Promise<number> {
+function showFindingCard(ui: AnnotateUI, findings: Finding[], store: CommentStore, initial: number): Promise<number> {
 	return ui.custom<number>((tui, theme, _keybindings, done) => {
 		let state: CardState = { current: clampIndex(initial, findings.length), editing: false };
 
@@ -176,13 +176,13 @@ function showFindingCard(ui: AnnotateUI, findings: Finding[], store: ReactionSto
 export async function annotateFindings(ui: AnnotateUI, findings: Finding[]): Promise<AnnotateResult> {
 	if (findings.length === 0) return { cancelled: false, reactions: [] };
 
-	const store = new ReactionStore(findings.length);
+	const store = new CommentStore(findings.length);
 	let selected = 0;
 
 	while (true) {
 		const outcome = await showFindingList(ui, findings, store, selected);
 		if (outcome.kind === "cancel") return { cancelled: true, reactions: [] };
-		if (outcome.kind === "submit") return { cancelled: false, reactions: store.toReactions() };
+		if (outcome.kind === "submit") return { cancelled: false, reactions: store.toComments() };
 		selected = await showFindingCard(ui, findings, store, outcome.index);
 	}
 }

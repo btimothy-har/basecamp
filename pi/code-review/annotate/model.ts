@@ -5,43 +5,43 @@
  * buffer: it is populated from the store on focus-in, and the store is written exclusively from
  * values carried on events. `Editor.submitValue()` empties itself *before* invoking `onSubmit`, so
  * any code that reads `getText()` after a submit reads an empty editor and destroys the comment.
+ *
+ * "Comment" is the word everywhere inside the domain; "reaction" belongs to the packet schema, and
+ * `toComments()`'s caller converts at that boundary.
  */
 
 import type { Finding } from "#code-review/findings.ts";
 
-export class ReactionStore {
-	readonly #comments = new Map<number, string>();
-	readonly #total: number;
+export class CommentStore {
+	private readonly comments = new Map<number, string>();
+	readonly total: number;
 
 	constructor(total: number) {
-		this.#total = total;
+		this.total = total;
 	}
 
 	get(index: number): string {
-		return this.#comments.get(index) ?? "";
+		return this.comments.get(index) ?? "";
 	}
 
 	has(index: number): boolean {
-		return this.#comments.has(index);
+		return this.comments.has(index);
 	}
 
 	/** Trims on write; a blank comment clears the entry rather than storing an empty string. */
 	set(index: number, text: string): void {
 		const trimmed = text.trim();
-		if (trimmed) this.#comments.set(index, trimmed);
-		else this.#comments.delete(index);
+		if (trimmed) this.comments.set(index, trimmed);
+		else this.comments.delete(index);
 	}
 
 	get count(): number {
-		return this.#comments.size;
+		return this.comments.size;
 	}
 
-	get total(): number {
-		return this.#total;
-	}
-
-	toReactions(): (string | null)[] {
-		return Array.from({ length: this.#total }, (_unused, index) => this.#comments.get(index) ?? null);
+	/** One slot per finding, index-aligned, with `null` where the user left no comment. */
+	toComments(): (string | null)[] {
+		return Array.from({ length: this.total }, (_unused, index) => this.comments.get(index) ?? null);
 	}
 }
 
@@ -62,7 +62,7 @@ export function clampIndex(index: number, total: number): number {
 	return index;
 }
 
-export function reduceCard(state: CardState, event: CardEvent, store: ReactionStore): CardState {
+export function reduceCard(state: CardState, event: CardEvent, store: CommentStore): CardState {
 	switch (event.type) {
 		case "focusEditor":
 			return state.editing ? state : { ...state, editing: true };
@@ -89,6 +89,6 @@ export interface FindingListItem {
 	commented: boolean;
 }
 
-export function listItems(findings: Finding[], store: ReactionStore): FindingListItem[] {
+export function listItems(findings: Finding[], store: CommentStore): FindingListItem[] {
 	return findings.map((finding, index) => ({ index, finding, commented: store.has(index) }));
 }
