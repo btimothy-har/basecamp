@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { deriveRepoIdentity, resolveGitInfo } from "#core/git/repo.ts";
+import { deriveRepoIdentity, resolveGitInfo, resolveReviewBase } from "#core/git/repo.ts";
 
 interface ExecCall {
 	command: string;
@@ -65,6 +65,54 @@ describe("deriveRepoIdentity", () => {
 
 	it("falls back for a single-segment unparseable path", () => {
 		assert.equal(deriveRepoIdentity("not-a-url", "fallback"), "fallback");
+	});
+});
+
+describe("resolveReviewBase", () => {
+	const repoRoot = path.resolve("/repos/repo");
+	const MERGE_BASE = "abc123mergebase";
+
+	function pi(options: { originHead?: string; hasRemoteRef?: boolean; expectRef: string }): ExtensionAPI {
+		return createPi((call) => {
+			assert.equal(call.command, "git");
+			if (argsEqual(call.args, ["-C", repoRoot, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])) {
+				return options.originHead
+					? { code: 0, stdout: `${options.originHead}\n`, stderr: "" }
+					: { code: 1, stdout: "", stderr: "" };
+			}
+			if (call.args[2] === "rev-parse") {
+				const ref = call.args[4];
+				const known = options.hasRemoteRef !== false && ref === options.expectRef;
+				return known || ref === "main" ? { code: 0, stdout: "sha\n", stderr: "" } : { code: 1, stdout: "", stderr: "" };
+			}
+			if (argsEqual(call.args, ["-C", repoRoot, "merge-base", options.expectRef, "HEAD"])) {
+				return { code: 0, stdout: `${MERGE_BASE}\n`, stderr: "" };
+			}
+			throw new Error(`Unexpected exec call: ${call.command} ${JSON.stringify(call.args)}`);
+		});
+	}
+
+	it("prefers the remote-tracking ref, since nothing here ever fetches", async () => {
+		// A local `main` left behind by an earlier pull would place the base before
+		// the real branch point and pull upstream commits into the review.
+		const result = await resolveReviewBase(pi({ originHead: "origin/main", expectRef: "origin/main" }), repoRoot);
+
+		assert.equal(result, MERGE_BASE);
+	});
+
+	it("falls back to the local branch when no remote-tracking ref exists", async () => {
+		const result = await resolveReviewBase(
+			pi({ originHead: "origin/main", hasRemoteRef: false, expectRef: "main" }),
+			repoRoot,
+		);
+
+		assert.equal(result, MERGE_BASE);
+	});
+
+	it("surfaces the existing error when the default branch cannot be detected", async () => {
+		const failing = createPi(() => ({ code: 1, stdout: "", stderr: "" }));
+
+		await assert.rejects(() => resolveReviewBase(failing, repoRoot), /Could not determine default branch/);
 	});
 });
 

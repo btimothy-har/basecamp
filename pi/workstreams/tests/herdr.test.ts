@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import { HERDR_COMMAND_TIMEOUT_MS, type HerdrEnv } from "#core/ui/herdr-pane.ts";
 import {
 	buildHerdrWorkstreamOpenArgs,
-	HERDR_WORKSTREAM_OPEN_TIMEOUT_MS,
-	type HerdrWorkstreamEnv,
 	type HerdrWorkstreamWorkspaceInput,
 	type HerdrWorkstreamWorktreeInput,
 	openWorkstreamInHerdr,
@@ -28,7 +27,7 @@ interface MockPi {
 	exec(command: string, args: string[], options?: { timeout?: number }): Promise<ExecResult>;
 }
 
-const baseEnv: HerdrWorkstreamEnv = {
+const baseEnv: HerdrEnv = {
 	HERDR_ENV: "1",
 	HERDR_SOCKET_PATH: "/tmp/herdr.sock",
 	HERDR_PANE_ID: "wmain:proot",
@@ -208,7 +207,7 @@ describe("openWorkstreamInHerdr", () => {
 					"--no-focus",
 					"--json",
 				],
-				options: { timeout: HERDR_WORKSTREAM_OPEN_TIMEOUT_MS },
+				options: { timeout: HERDR_COMMAND_TIMEOUT_MS },
 			},
 		]);
 	});

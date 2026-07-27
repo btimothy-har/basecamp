@@ -1,15 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { errorMessage } from "#core/errors.ts";
-
-export const HERDR_WORKSTREAM_OPEN_TIMEOUT_MS = 5000;
-
-export interface HerdrWorkstreamEnv {
-	HERDR_ENV?: string;
-	HERDR_SOCKET_PATH?: string;
-	HERDR_PANE_ID?: string;
-	HERDR_WORKSPACE_ID?: string;
-	BASECAMP_AGENT_DEPTH?: string;
-}
+import {
+	checkHerdrEligibility,
+	type HerdrCommandResult,
+	type HerdrEnv,
+	type HerdrSkipReason,
+	runHerdr,
+} from "#core/ui/herdr-pane.ts";
 
 export interface HerdrWorkstreamWorkspaceInput {
 	protectedRoot?: string;
@@ -25,13 +21,7 @@ export interface HerdrWorkstreamWorktreeInput {
 	label: string;
 }
 
-export type HerdrWorkstreamSkipReason =
-	| "missing-herdr-env"
-	| "missing-herdr-socket-path"
-	| "missing-herdr-pane-id"
-	| "subagent"
-	| "headless"
-	| "missing-cwd";
+export type HerdrWorkstreamSkipReason = HerdrSkipReason | "missing-cwd";
 
 export interface HerdrWorkstreamOpenArgsOpened {
 	args: string[];
@@ -70,7 +60,7 @@ export type HerdrWorkstreamOpenResult =
 	  };
 
 export interface HerdrWorkstreamOpenEligibilityInput {
-	env: HerdrWorkstreamEnv;
+	env: HerdrEnv;
 	hasUI?: boolean;
 }
 
@@ -78,31 +68,12 @@ function skipped(reason: HerdrWorkstreamSkipReason, message: string): HerdrWorks
 	return { args: null, status: "skipped", reason, message };
 }
 
-function agentDepth(env: HerdrWorkstreamEnv): number {
-	const raw = env.BASECAMP_AGENT_DEPTH;
-	if (raw === undefined || raw.trim() === "") return 0;
-	const parsed = Number(raw);
-	return Number.isFinite(parsed) ? parsed : 1;
-}
-
 export function shouldOpenWorkstreamInHerdr(
 	input: HerdrWorkstreamOpenEligibilityInput,
 ): HerdrWorkstreamOpenArgsSkipped | null {
-	if (input.env.HERDR_ENV !== "1")
-		return skipped("missing-herdr-env", "Herdr workstream open skipped: not running in Herdr.");
-	if (!input.env.HERDR_SOCKET_PATH) {
-		return skipped("missing-herdr-socket-path", "Herdr workstream open skipped: missing Herdr socket path.");
-	}
-	if (!input.env.HERDR_PANE_ID) {
-		return skipped("missing-herdr-pane-id", "Herdr workstream open skipped: missing Herdr pane id.");
-	}
-	if (agentDepth(input.env) !== 0) {
-		return skipped("subagent", "Herdr workstream open skipped: only primary sessions can open workstreams in Herdr.");
-	}
-	if (input.hasUI === false) {
-		return skipped("headless", "Herdr workstream open skipped: session has no UI.");
-	}
-	return null;
+	const ineligible = checkHerdrEligibility({ env: input.env, hasUI: input.hasUI, subject: "workstreams" });
+	if (!ineligible) return null;
+	return skipped(ineligible.reason, `Herdr workstream open skipped: ${ineligible.detail}`);
 }
 
 function workspaceCwd(workspace: HerdrWorkstreamWorkspaceInput): string | null {
@@ -112,7 +83,7 @@ function workspaceCwd(workspace: HerdrWorkstreamWorkspaceInput): string | null {
 export function buildHerdrWorkstreamOpenArgs(
 	workspace: HerdrWorkstreamWorkspaceInput,
 	worktree: HerdrWorkstreamWorktreeInput,
-	env: HerdrWorkstreamEnv,
+	env: HerdrEnv,
 ): HerdrWorkstreamOpenArgsResult {
 	const skip = shouldOpenWorkstreamInHerdr({ env, hasUI: workspace.hasUI });
 	if (skip) return skip;
@@ -129,42 +100,38 @@ export function buildHerdrWorkstreamOpenArgs(
 	return { args };
 }
 
+function mapHerdrCommandResult(result: HerdrCommandResult<null>, args: string[]): HerdrWorkstreamOpenResult {
+	if (result.status === "ok") {
+		return {
+			status: "opened",
+			message: "Herdr workstream opened.",
+			args,
+			stdout: result.stdout,
+			stderr: result.stderr,
+		};
+	}
+	return {
+		status: "failed",
+		message: result.message,
+		args,
+		error: result.error,
+		exitCode: result.exitCode,
+		stdout: result.stdout,
+		stderr: result.stderr,
+	};
+}
+
 export async function openWorkstreamInHerdr(
 	pi: Pick<ExtensionAPI, "exec">,
 	workspace: HerdrWorkstreamWorkspaceInput,
 	worktree: HerdrWorkstreamWorktreeInput,
-	env: HerdrWorkstreamEnv = process.env,
+	env: HerdrEnv = process.env,
 ): Promise<HerdrWorkstreamOpenResult> {
 	const built = buildHerdrWorkstreamOpenArgs(workspace, worktree, env);
 	if (built.args === null) {
 		return { status: "skipped", reason: built.reason, message: built.message };
 	}
 
-	try {
-		const result = await pi.exec("herdr", built.args, { timeout: HERDR_WORKSTREAM_OPEN_TIMEOUT_MS });
-		if (result.code !== 0) {
-			return {
-				status: "failed",
-				message: `Herdr workstream open failed with exit code ${result.code}.`,
-				exitCode: result.code,
-				stdout: result.stdout,
-				stderr: result.stderr,
-				args: built.args,
-			};
-		}
-		return {
-			status: "opened",
-			message: "Herdr workstream opened.",
-			args: built.args,
-			stdout: result.stdout,
-			stderr: result.stderr,
-		};
-	} catch (err) {
-		return {
-			status: "failed",
-			message: "Herdr workstream open failed.",
-			error: errorMessage(err),
-			args: built.args,
-		};
-	}
+	const result = await runHerdr(pi, built.args, "workstream open", () => null);
+	return mapHerdrCommandResult(result, built.args);
 }

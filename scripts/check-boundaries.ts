@@ -29,6 +29,7 @@ const CONTEXTS = [
 	"pull-request",
 	"browser",
 	"code-review",
+	"diff",
 	"workstreams",
 ] as const;
 

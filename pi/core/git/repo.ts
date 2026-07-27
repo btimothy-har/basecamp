@@ -33,6 +33,22 @@ export async function detectDefaultBranch(pi: ExtensionAPI, repoRoot: string): P
 	throw new Error("Could not determine default branch (expected origin/HEAD, main, or master)");
 }
 
+/**
+ * Merge-base of the detected default branch and HEAD — the SHA to pass a diff
+ * viewer as a single `git diff <target>` argument for a base→working-tree diff
+ * (committed and uncommitted changes). On the default branch itself merge-base
+ * yields HEAD's SHA, which degrades to a working-tree diff downstream.
+ */
+export async function resolveReviewBase(pi: ExtensionAPI, repoRoot: string): Promise<string> {
+	const defaultBranch = await detectDefaultBranch(pi, repoRoot);
+	// The remote-tracking ref when it exists: nothing here ever fetches, so a local
+	// default branch left behind by an earlier pull would place the base before the
+	// real branch point and silently pull upstream commits into the review.
+	const remote = `origin/${defaultBranch}`;
+	const ref = (await tryGitOutput(pi, repoRoot, ["rev-parse", "--verify", remote])) ? remote : defaultBranch;
+	return await gitOutput(pi, repoRoot, ["merge-base", ref, "HEAD"]);
+}
+
 export async function branchExists(pi: ExtensionAPI, repoRoot: string, branch: string): Promise<boolean> {
 	return (await tryGitOutput(pi, repoRoot, ["rev-parse", "--verify", `refs/heads/${branch}`])) !== null;
 }

@@ -29,6 +29,8 @@ basecamp solves this with a Pi extension that:
 
 Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-works/pi).
 
+`/diff` additionally requires [hunk](https://github.com/modem-dev/hunk) (`npm i -g hunkdiff`, `brew install hunk`, or nixpkgs) and a [Herdr](https://herdr.dev) session; without both it reports what is missing and does nothing.
+
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp
@@ -99,10 +101,21 @@ Use it to list, add, edit, or remove configured projects.
 | `/worktree [label]` | Create a worktree or switch to an existing one (`/worktree prune` reclaims dormant ones) |
 | `/skill:pull-request` | Prepare or publish a pull request and carry it through CI |
 | `/skill:code-review` | Run an independent multi-agent review of the current branch |
+| `/diff` | Review this branch's changes in hunk and send your inline notes back to the agent |
 | `/title [text]` | Generate a session title from the conversation, or set one manually |
 | `/model-aliases` | Manage model aliases (list, add, edit, remove) |
 
 The model-invocable `pull-request` skill is primary-only. New PRs stay draft through CI, and the skill asks before marking one ready; without explicit ready intent it stops at the green draft. It follows repository-required reviews after readiness and never merges the PR.
+
+### Reviewing a Diff
+
+`/diff` opens [hunk](https://github.com/modem-dev/hunk) in its own Herdr tab showing everything the branch has changed since it left the default branch — committed and uncommitted work together, in one view. The session blocks while you read. Annotate any line with `c`, come back to pi, confirm, and your notes arrive as line-anchored feedback for the agent to act on. The tab closes behind you.
+
+Blocking is deliberate: hunk keeps notes in memory only, so they have to be read while its window is still open. If the read fails, `/diff` says so and leaves the window up rather than reporting an empty review.
+
+Agents can annotate the same diff through the `annotate_changeset` tool, which records their rationale beside the code they changed. That rationale is stamped with the base it was written against and stops appearing once the branch moves past it.
+
+`/diff` is primary-only and needs both Herdr and `hunk`; without them it reports what is missing and changes nothing.
 
 ### Browser Automation
 
@@ -379,7 +392,7 @@ Docker and Podman-on-macOS through the included wrapper are supported. Most Term
 
 basecamp is organized by the artifacts it ships:
 
-- `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, browser, agents, code review, and workstream features
+- `pi/` — the single Pi extension (`pi/extension.ts` + `pi/<domain>/`), registered from the repo root: project context, session UI, worktrees, workflow, git, engineering, browser, agents, code review, diff review, and workstream features
 - `src/basecamp/` — the single `basecamp` Python distribution (one ordinary src-layout package): setup/config/install CLI plus the `core`, `workspace`, and `hub` (daemon + agents dashboard) subpackages
 - `evals/` — non-shipping evaluation integrations; currently the Harbor adapter for isolated Terminal-Bench runs of Pi with Basecamp
 

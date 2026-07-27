@@ -80,6 +80,10 @@ All TypeScript ships as **one** Pi extension (`pi/extension.ts`; manifest = the 
 
 Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `pull-request` owns the primary-only PR lifecycle skill, while `code-review` and `workstreams` consume `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
 
+### Diff Surface
+
+`/diff` is Basecamp's diff/review surface: primary-only, hard-dependent on both Herdr and an installed `hunk`, scoped to `merge-base(defaultBranch, HEAD)` as a single `git diff` target so committed and uncommitted work show together. It blocks the session while you review, then returns your inline notes as line-anchored feedback; `annotate_changeset` lets the working agent seed its own rationale onto the same diff. The constraints that shape it — why the block is load-bearing, why sidecars are launch-only, and why every `herdr pane run` argument is quoted — are in `pi/diff/README.md`.
+
 ### Code Review
 
 `/skill:code-review` is a primary-only, user-invoked independent review of the current branch: it dispatches fixed and adaptive report-only reviewers, the primary synthesizes and semantically deduplicates their reports, and `report_findings` computes a deterministic verdict over that final set. Manual only. See `pi/code-review/README.md` for the review method, flow, result handling, and verdict rules.
