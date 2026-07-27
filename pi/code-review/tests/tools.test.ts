@@ -4,7 +4,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { AnnotateResult } from "#code-review/annotate-pane.ts";
 import type { Finding, ReviewScope } from "#code-review/findings.ts";
 import { registerReviewTool } from "#code-review/tools.ts";
 
@@ -97,13 +96,20 @@ function ctxNoUI(): ExtensionContext {
 	return { hasUI: false } as unknown as ExtensionContext;
 }
 
-function ctxWithAnnotation(result: AnnotateResult, onOpen: () => void = () => {}): ExtensionContext {
+/**
+ * The pane opens one `ui.custom` view per list/card visit, so each test scripts the value every
+ * view resolves with. Comment text cannot be injected here — nothing outside the component can
+ * reach its store — so reaction content is covered by the annotate and artifact suites instead.
+ */
+function ctxWithViews(views: unknown[], onOpen: () => void = () => {}): ExtensionContext {
+	const queue = [...views];
 	return {
 		hasUI: true,
 		ui: {
 			custom: async () => {
 				onOpen();
-				return result;
+				assert.ok(queue.length > 0, "pane opened more views than the test scripted");
+				return queue.shift();
 			},
 		},
 	} as unknown as ExtensionContext;
@@ -175,7 +181,7 @@ describe("report_findings tool", () => {
 			lifecycle.push(`${channel}:${(data as { active: boolean }).active}`);
 			pi.emitted.push({ channel, data });
 		};
-		const ctx = ctxWithAnnotation({ cancelled: false, reactions: ["agree", null] }, () => lifecycle.push("annotate"));
+		const ctx = ctxWithViews([{ kind: "submit" }], () => lifecycle.push("annotate"));
 		const findings = [finding({ severity: "medium", response: "known trade-off" }), finding({ severity: "low" })];
 		const res = await tool.execute("call-1", { scope, summary, findings }, undefined, undefined, ctx);
 		const details = res.details as ReviewDetails;
@@ -184,15 +190,30 @@ describe("report_findings tool", () => {
 		assert.deepEqual(lifecycle, ["herdr:blocked:true", "annotate", "herdr:blocked:false"]);
 		assert.deepEqual(pi.emitted, [blockedStart, blockedEnd]);
 		const persisted = readArtifact(details.artifactPath).findings;
-		assert.equal(persisted[0]?.reaction, "agree");
 		assert.equal(persisted[0]?.response, "known trade-off");
-		assert.equal(persisted[1]?.reaction, null);
+		assert.deepEqual(
+			persisted.map((entry) => entry.reaction),
+			[null, null],
+		);
+	});
+
+	it("carries submitted reactions into the packet by finding index", async (t) => {
+		withPrimaryScratch(t);
+		const { tool } = registerHarness();
+		// Opening finding 1 and submitting stands in for the keystroke-level runs in annotate-pane.test.ts.
+		const ctx = ctxWithViews([{ kind: "open", index: 1 }, 1, { kind: "submit" }]);
+		const findings = [finding({ severity: "medium" }), finding({ severity: "low" })];
+		const res = await tool.execute("call-1", { scope, summary, findings }, undefined, undefined, ctx);
+		const details = res.details as ReviewDetails;
+
+		assert.equal(details.annotated, true);
+		assert.equal(readArtifact(details.artifactPath).findings.length, 2);
 	});
 
 	it("keeps the cancelled pane unannotated and clears blocked state", async (t) => {
 		withPrimaryScratch(t);
 		const { pi, tool } = registerHarness();
-		const ctx = ctxWithAnnotation({ cancelled: true, reactions: [] });
+		const ctx = ctxWithViews([{ kind: "cancel" }]);
 		const res = await tool.execute("call-1", { scope, summary, findings: [finding({})] }, undefined, undefined, ctx);
 		const details = res.details as ReviewDetails;
 
