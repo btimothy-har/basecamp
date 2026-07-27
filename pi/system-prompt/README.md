@@ -72,7 +72,7 @@ That looks like an ownership-rule violation (a *how* inside a *what*), and it is
 
 The `copilot` mode is load-bearing beyond prose: `isCopilotMode` suppresses the style, hides `plan` from the capabilities index, hard-blocks the `plan` tool call in `#tasks`, and locks shift+tab. Do not remove it.
 
-Because copilot is launch-only and immutable, capabilities can be scoped by **gating registration** rather than filtering the index — see `pi/workstreams/index.ts`. An unregistered tool can never become callable mid-session, so unlike `plan` it needs no call-time block.
+Because copilot is launch-only and immutable, capabilities can be scoped by **gating registration** rather than filtering the index — see `pi/workstreams/index.ts`. The gating predicate must also be resolvable at extension-load time, which is why copilot-launch reads `process.argv` rather than `pi.getFlag`: Pi applies flag values only after extensions activate. An unregistered tool can never become callable mid-session, so unlike `plan` it needs no call-time block.
 
 The workstream **tool contracts live in the tool descriptions**, which the index already injects; `modes/copilot.md` keeps only the handful of facts no single tool description can assert (list before create, an edit does not reach a running session, launching is not starting, cross-repo launch, pull-based handles). A `workstreams` skill was tried and removed: ~320 of its 422 words restated those descriptions, and the ~100 that remained were too few to justify a file the copilot would have to load in every session.
 

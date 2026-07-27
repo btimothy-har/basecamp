@@ -29,7 +29,7 @@ Core is the foundation of the boundary rules (`scripts/check-boundaries.ts`): ev
 
 There are two kinds of module state, with different rules:
 
-- **Wiring** — providers and registries that the composition root re-establishes on every load (including `/reload`): cwd provider, catalog providers, model-alias providers, workspace service registration, copilot-launch reader, workspace hooks. These are **plain module state** (`let`/`const` at module scope). Re-registration on reload is guaranteed because `extension.ts` runs every module's `register*` in a fixed order; converting these to module state also stops stale pre-reload listener closures from firing.
+- **Wiring** — providers and registries that the composition root re-establishes on every load (including `/reload`): cwd provider, catalog providers, model-alias providers, workspace service registration, workspace hooks. These are **plain module state** (`let`/`const` at module scope). Re-registration on reload is guaranteed because `extension.ts` runs every module's `register*` in a fixed order; converting these to module state also stops stale pre-reload listener closures from firing.
 
 - **Surviving state** — live session data that must outlive `/reload` (pi re-imports the extension with fresh module instances, `moduleCache: false`): session state, agent mode, invoked skills, the workspace runtime service, project runtime, and the daemon WebSocket client. These use `processScoped(key, init)` from [`global-registry.ts`](global-registry.ts), which stores the value on `globalThis` behind a `Symbol.for` key. Key strings are stable across releases — renaming one silently drops state at the next `/reload`.
 
