@@ -78,7 +78,7 @@ describe("buildRepoLogseqContext", () => {
 		);
 		assert.ok(context.includes("Reconstruct current state from the last 14 days of journals."));
 		assert.ok(context.includes("Do not scan the whole graph. Do not read unrelated Logseq pages."));
-		assert.ok(context.includes("Load the `repo-memory` skill before writing repo memory"));
+		assert.ok(context.includes("Load the `copilot` skill before writing repo memory"));
 	});
 
 	it("does not read page or journal contents, or scan/list their files", async (t) => {

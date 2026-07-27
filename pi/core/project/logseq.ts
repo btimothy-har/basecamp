@@ -85,6 +85,6 @@ export function buildRepoLogseqContext(options: BuildRepoLogseqContextOptions): 
 		`Reconstruct current state from the last ${JOURNAL_READ_WINDOW_DAYS} days of journals. To trace one item further back, search the journals directory for its dossier page name.`,
 		"Do not scan the whole graph. Do not read unrelated Logseq pages. Open only the repo cockpit, a specifically relevant work dossier, or journals within that window.",
 		"",
-		"Load the `repo-memory` skill before writing repo memory; it owns the page schema and the write rules.",
+		"Load the `copilot` skill before writing repo memory; it owns the page schema and the write rules.",
 	].join("\n");
 }
