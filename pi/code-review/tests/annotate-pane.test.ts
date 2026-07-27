@@ -53,6 +53,12 @@ function type(text: string): string[] {
 	return [...text];
 }
 
+/** A bracketed paste over pi-tui's 10-line threshold, which the Editor stores behind a marker. */
+function bracketedPaste(lineCount: number): { keys: string; text: string } {
+	const text = Array.from({ length: lineCount }, (_unused, index) => `pasted evidence line ${index}`).join("\n");
+	return { keys: `\x1b[200~${text}\x1b[201~`, text };
+}
+
 function finding(overrides: Partial<Finding> = {}): Finding {
 	return {
 		dimension: "general",
@@ -158,6 +164,63 @@ describe("annotateFindings", () => {
 		const result = await annotateFindings(ui, twoFindings);
 
 		assert.deepEqual(result.reactions, [null, null]);
+	});
+
+	it("saves the whole of a large paste on both the Enter and the Esc path", async () => {
+		const paste = bracketedPaste(12);
+		const ui = harness([
+			(send) => send(SPACE),
+			(send) => {
+				send(DOWN, paste.keys, ENTER);
+				send(RIGHT, DOWN, paste.keys, ESC);
+				send(ESC);
+			},
+			(send) => send("s"),
+		]);
+
+		const result = await annotateFindings(ui, twoFindings);
+
+		assert.deepEqual(result.reactions, [paste.text, paste.text]);
+	});
+
+	it("keeps a pasted comment intact when the finding is revisited", async () => {
+		const paste = bracketedPaste(12);
+		const ui = harness([
+			(send) => send(SPACE),
+			(send) => send(DOWN, paste.keys, ESC, DOWN, ESC, ESC),
+			(send) => send("s"),
+		]);
+
+		const result = await annotateFindings(ui, twoFindings);
+
+		// Re-entering the box reseeds it from the store, which clears the Editor's paste map — the
+		// stored text must already be the real content or it becomes an orphaned marker forever.
+		assert.deepEqual(result.reactions, [paste.text, null]);
+	});
+
+	it("places the comment box under the label even when a finding quotes it", async () => {
+		const quoting = finding({
+			title: "Stale doc comment",
+			detail: "Your comment on line 5 no longer matches the code.",
+		});
+		let editing = "";
+		const ui = harness([
+			(send) => send(SPACE),
+			(send, render) => {
+				send(DOWN, ...type("ZZMARKER"));
+				editing = render();
+				send(ESC, ESC);
+			},
+			(send) => send("s"),
+		]);
+
+		await annotateFindings(ui, [quoting, finding({ title: "second" })]);
+
+		const lines = editing.split("\n");
+		const lastLabel = lines.map((line) => line.includes("Your comment")).lastIndexOf(true);
+		const box = lines.findIndex((line) => line.includes("ZZMARKER"));
+		assert.ok(lastLabel >= 0 && box >= 0, "expected both the label and the comment box to render");
+		assert.ok(box > lastLabel, `comment box rendered at ${box}, above the label at ${lastLabel}`);
 	});
 
 	it("discards every comment when the list is cancelled", async () => {

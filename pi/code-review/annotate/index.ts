@@ -7,7 +7,7 @@
 
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { DynamicBorder, getSelectListTheme } from "@earendil-works/pi-coding-agent";
-import { Container, Editor, type EditorTheme, Spacer, Text } from "@earendil-works/pi-tui";
+import { type Component, Container, Editor, type EditorTheme, Spacer, Text } from "@earendil-works/pi-tui";
 import type { Finding } from "#code-review/findings.ts";
 import { cardIntent, editorIntent, listIntent } from "./keys.ts";
 import { type CardEvent, type CardState, clampIndex, listItems, ReactionStore, reduceCard } from "./model.ts";
@@ -29,7 +29,7 @@ type AnnotateUI = Pick<ExtensionUIContext, "custom">;
 
 type ListOutcome = { kind: "open"; index: number } | { kind: "submit" } | { kind: "cancel" };
 
-const COMMENT_LABEL = "Your comment";
+const EDITOR_INSET = 2;
 
 function showFindingList(
 	ui: AnnotateUI,
@@ -102,12 +102,19 @@ function showFindingCard(ui: AnnotateUI, findings: Finding[], store: ReactionSto
 		const card = new Text("", 1, 0);
 		const commentLabel = new Text("", 1, 0);
 		const hint = new Text("", 1, 0);
+		// A slot child rather than a splice into rendered lines: position must follow the component
+		// tree, never a search through text that carries reviewer-authored finding content.
+		const editorSlot: Component = {
+			render: (width: number) => (state.editing ? editor.render(Math.max(width - EDITOR_INSET, 1)) : []),
+			invalidate: () => editor.invalidate(),
+		};
 
 		const container = new Container();
 		container.addChild(border);
 		container.addChild(card);
 		container.addChild(new Spacer(1));
 		container.addChild(commentLabel);
+		container.addChild(editorSlot);
 		container.addChild(new Spacer(1));
 		container.addChild(hint);
 		container.addChild(border);
@@ -132,18 +139,16 @@ function showFindingCard(ui: AnnotateUI, findings: Finding[], store: ReactionSto
 				card.setText(renderFindingCard(finding, state.current, findings.length, theme).join("\n"));
 				commentLabel.setText(renderCommentLabel(store.get(state.current), state.editing, theme));
 				hint.setText(cardHint(state.editing, theme));
-				const lines = container.render(width);
-				if (state.editing) {
-					const labelIndex = lines.findIndex((line) => line.includes(COMMENT_LABEL));
-					if (labelIndex >= 0) lines.splice(labelIndex + 1, 0, ...editor.render(width - 2));
-				}
-				return lines;
+				return container.render(width);
 			},
 			invalidate: () => container.invalidate(),
 			handleInput: (data: string) => {
 				if (state.editing) {
-					if (editorIntent(data, editor.getText() === "") === "blur") {
-						apply({ type: "blurEditor", text: editor.getText() });
+					// getExpandedText, not getText: a large paste lives in the buffer as a marker that
+					// only expands here, and the next focus-in setText() would drop its backing content.
+					const buffer = editor.getExpandedText();
+					if (editorIntent(data, buffer === "") === "blur") {
+						apply({ type: "blurEditor", text: buffer });
 						return;
 					}
 					editor.handleInput(data);
