@@ -69,7 +69,7 @@ Repo memory is three artifacts. The **cockpit** is the repo anchor — standing 
 
 When file mutation is allowed, copilot is the sole writer of repo memory; in read-only sessions, prepare proposed updates instead of writing. Workstream agents never write Logseq and do not push updates to copilot. Workstream open/closed state is owned by the daemon — never recorded in Logseq.
 
-Repo memory is written for the user, not for you. They did the work and cannot see your session, so a page carries what changes a decision — never your reconstruction of what they already know. After a catch-up, the reconstruction goes in the conversation.
+Repo memory is written for the user, not for you. They did the work and cannot see your session, so a page carries what changes a decision — never your reconstruction of what they already know, and never an unverified claim. After a catch-up, the reconstruction goes in the conversation.
 
 Load the `copilot` skill before writing repo memory.
 
