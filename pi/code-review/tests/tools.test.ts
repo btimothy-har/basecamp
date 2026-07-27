@@ -1,145 +1,19 @@
+/** `report_findings` behaviour without the annotation pane. Pane-driven cases live in tools-annotation.test.ts. */
+
 import assert from "node:assert/strict";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import { describe, it, type TestContext } from "node:test";
-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { Finding, ReviewScope } from "#code-review/findings.ts";
-import { registerReviewTool } from "#code-review/tools.ts";
-
-interface ReviewToolResult {
-	content: { type: "text"; text: string }[];
-	details?: unknown;
-}
-
-interface ReviewDetails {
-	decision: string;
-	counts: Record<string, number>;
-	findings: number;
-	annotated: boolean;
-	artifactPath: string;
-}
-
-interface RegisteredTool {
-	name: string;
-	execute(
-		toolCallId: string,
-		params: { scope: ReviewScope; summary: string; findings: Finding[] },
-		signal?: AbortSignal,
-		onUpdate?: unknown,
-		ctx?: ExtensionContext,
-	): Promise<ReviewToolResult>;
-}
-
-interface EmittedEvent {
-	channel: string;
-	data: unknown;
-}
-
-class FakePi {
-	readonly tools = new Map<string, RegisteredTool>();
-	readonly emitted: EmittedEvent[] = [];
-	readonly events = {
-		emit: (channel: string, data: unknown) => {
-			this.emitted.push({ channel, data });
-		},
-		on: () => () => {},
-	};
-	registerTool(tool: RegisteredTool): void {
-		this.tools.set(tool.name, tool);
-	}
-	getReportFindings(): RegisteredTool {
-		const tool = this.tools.get("report_findings");
-		assert.ok(tool, "report_findings tool should be registered");
-		return tool;
-	}
-}
-
-const scope: ReviewScope = {
-	base: "origin/main",
-	mergeBase: "abc1234",
-	cwd: "/repo",
-	label: "branch feature → origin/main",
-};
-const summary = "Synthesized review summary.";
-
-function finding(overrides: Partial<Finding>): Finding {
-	return {
-		dimension: "general",
-		severity: "low",
-		file: null,
-		lineStart: null,
-		lineEnd: null,
-		title: "Finding",
-		detail: "Detail",
-		remediation: null,
-		...overrides,
-	};
-}
-
-function preserveEnv(t: TestContext, name: string): void {
-	const original = process.env[name];
-	t.after(() => {
-		if (original === undefined) delete process.env[name];
-		else process.env[name] = original;
-	});
-}
-
-function withPrimaryScratch(t: TestContext): void {
-	preserveEnv(t, "BASECAMP_AGENT_DEPTH");
-	preserveEnv(t, "BASECAMP_SCRATCH_DIR");
-	delete process.env.BASECAMP_AGENT_DEPTH;
-	process.env.BASECAMP_SCRATCH_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "code-review-tool-"));
-}
-
-function ctxNoUI(): ExtensionContext {
-	return { hasUI: false } as unknown as ExtensionContext;
-}
-
-/**
- * The pane opens one `ui.custom` view per list/card visit, so each test scripts the value every
- * view resolves with. Comment text cannot be injected here — nothing outside the component can
- * reach its store — so reaction content is covered by the annotate and artifact suites instead.
- */
-function ctxWithViews(views: unknown[], onOpen: () => void = () => {}): ExtensionContext {
-	const queue = [...views];
-	return {
-		hasUI: true,
-		ui: {
-			custom: async () => {
-				onOpen();
-				assert.ok(queue.length > 0, "pane opened more views than the test scripted");
-				return queue.shift();
-			},
-		},
-	} as unknown as ExtensionContext;
-}
-
-function readArtifact(artifactPath: string): {
-	json: string;
-	summary: string;
-	findings: (Finding & { reaction: string | null })[];
-} {
-	const json = fs.readFileSync(artifactPath, "utf8");
-	const artifact = JSON.parse(json) as { summary: string; findings: (Finding & { reaction: string | null })[] };
-	return { json, summary: artifact.summary, findings: artifact.findings };
-}
-
-function registerHarness(): { pi: FakePi; tool: RegisteredTool } {
-	const pi = new FakePi();
-	registerReviewTool(pi as unknown as ExtensionAPI);
-	return { pi, tool: pi.getReportFindings() };
-}
-
-function register(): RegisteredTool {
-	return registerHarness().tool;
-}
-
-const blockedStart: EmittedEvent = {
-	channel: "herdr:blocked",
-	data: { active: true, label: "Waiting for code-review annotation" },
-};
-const blockedEnd: EmittedEvent = { channel: "herdr:blocked", data: { active: false } };
+import { describe, it } from "node:test";
+import type { Finding } from "#code-review/findings.ts";
+import {
+	ctxNoUI,
+	finding,
+	preserveEnv,
+	type ReviewDetails,
+	readArtifact,
+	register,
+	scope,
+	summary,
+	withPrimaryScratch,
+} from "./support/tool-fixtures.ts";
 
 describe("report_findings tool", () => {
 	it("throws when invoked in a subagent", async (t) => {
@@ -147,7 +21,7 @@ describe("report_findings tool", () => {
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		const tool = register();
 		await assert.rejects(
-			() => tool.execute("call-1", { scope, summary, findings: [finding({})] }, undefined, undefined, ctxNoUI()),
+			() => tool.execute("call-1", { scope, summary, findings: [finding()] }, undefined, undefined, ctxNoUI()),
 			/top-level session/,
 		);
 	});
@@ -171,70 +45,6 @@ describe("report_findings tool", () => {
 		const { findings } = artifact;
 		assert.equal(findings.length, 1);
 		assert.equal(findings[0]?.reaction, null);
-	});
-
-	it("opens the annotation pane inside a balanced blocked interval", async (t) => {
-		withPrimaryScratch(t);
-		const { pi, tool } = registerHarness();
-		const lifecycle: string[] = [];
-		pi.events.emit = (channel, data) => {
-			lifecycle.push(`${channel}:${(data as { active: boolean }).active}`);
-			pi.emitted.push({ channel, data });
-		};
-		const ctx = ctxWithViews([{ kind: "submit" }], () => lifecycle.push("annotate"));
-		const findings = [finding({ severity: "medium", response: "known trade-off" }), finding({ severity: "low" })];
-		const res = await tool.execute("call-1", { scope, summary, findings }, undefined, undefined, ctx);
-		const details = res.details as ReviewDetails;
-
-		assert.equal(details.annotated, true);
-		assert.deepEqual(lifecycle, ["herdr:blocked:true", "annotate", "herdr:blocked:false"]);
-		assert.deepEqual(pi.emitted, [blockedStart, blockedEnd]);
-		const persisted = readArtifact(details.artifactPath).findings;
-		assert.equal(persisted[0]?.response, "known trade-off");
-		assert.deepEqual(
-			persisted.map((entry) => entry.reaction),
-			[null, null],
-		);
-	});
-
-	it("carries submitted reactions into the packet by finding index", async (t) => {
-		withPrimaryScratch(t);
-		const { tool } = registerHarness();
-		// Opening finding 1 and submitting stands in for the keystroke-level runs in annotate-pane.test.ts.
-		const ctx = ctxWithViews([{ kind: "open", index: 1 }, 1, { kind: "submit" }]);
-		const findings = [finding({ severity: "medium" }), finding({ severity: "low" })];
-		const res = await tool.execute("call-1", { scope, summary, findings }, undefined, undefined, ctx);
-		const details = res.details as ReviewDetails;
-
-		assert.equal(details.annotated, true);
-		assert.equal(readArtifact(details.artifactPath).findings.length, 2);
-	});
-
-	it("keeps the cancelled pane unannotated and clears blocked state", async (t) => {
-		withPrimaryScratch(t);
-		const { pi, tool } = registerHarness();
-		const ctx = ctxWithViews([{ kind: "cancel" }]);
-		const res = await tool.execute("call-1", { scope, summary, findings: [finding({})] }, undefined, undefined, ctx);
-		const details = res.details as ReviewDetails;
-
-		assert.equal(details.annotated, false);
-		assert.equal(readArtifact(details.artifactPath).findings[0]?.reaction, null);
-		assert.deepEqual(pi.emitted, [blockedStart, blockedEnd]);
-	});
-
-	it("clears blocked state when annotation fails", async (t) => {
-		withPrimaryScratch(t);
-		const { pi, tool } = registerHarness();
-		const ctx = {
-			hasUI: true,
-			ui: { custom: async () => Promise.reject(new Error("annotation failed")) },
-		} as unknown as ExtensionContext;
-
-		await assert.rejects(
-			() => tool.execute("call-1", { scope, summary, findings: [finding({})] }, undefined, undefined, ctx),
-			/annotation failed/,
-		);
-		assert.deepEqual(pi.emitted, [blockedStart, blockedEnd]);
 	});
 
 	it("derives the verdict from severity and ignores the author response", async (t) => {
@@ -304,25 +114,6 @@ describe("report_findings tool", () => {
 			assert.equal(details.decision, decision);
 			assert.match(res.content[0]?.text ?? "", new RegExp(label));
 		}
-	});
-
-	it("does not open the pane or mark blocked when there are no findings", async (t) => {
-		withPrimaryScratch(t);
-		const { pi, tool } = registerHarness();
-		const ctx = {
-			hasUI: true,
-			ui: {
-				custom: async () => {
-					throw new Error("pane must not open for an empty review");
-				},
-			},
-		} as unknown as ExtensionContext;
-		const res = await tool.execute("call-1", { scope, summary, findings: [] }, undefined, undefined, ctx);
-		const details = res.details as ReviewDetails;
-
-		assert.equal(details.annotated, false);
-		assert.equal(details.decision, "approve");
-		assert.deepEqual(pi.emitted, []);
 	});
 
 	it("persists findings in merged severity order regardless of input order", async (t) => {
