@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -81,16 +81,18 @@ export function writeSidecar(worktreeDir: string, base: string, summary: string,
 	fs.chmodSync(dir, PRIVATE_DIR_MODE);
 
 	// Written aside and renamed so an interrupted write cannot leave torn JSON at
-	// a path every later /diff would keep handing to hunk.
-	const tempPath = `${filePath}.${process.pid}.tmp`;
+	// a path every later /diff would keep handing to hunk. O_EXCL over a random
+	// name means the descriptor is always one this call created, so the open mode
+	// alone decides permissions and the temp path is not predictable enough to
+	// hijack.
+	const tempPath = `${filePath}.${randomBytes(6).toString("hex")}.tmp`;
 	const fd = fs.openSync(
 		tempPath,
-		fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC,
+		fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL,
 		PRIVATE_FILE_MODE,
 	);
 	try {
 		fs.writeFileSync(fd, `${JSON.stringify(sidecar, null, 2)}\n`, "utf8");
-		fs.fchmodSync(fd, PRIVATE_FILE_MODE);
 	} finally {
 		fs.closeSync(fd);
 	}

@@ -56,7 +56,9 @@ describe("sidecar schema", () => {
 	});
 
 	it("accepts an annotation without optional rationale", () => {
-		assert.equal(check(validSidecar(), Sidecar), true);
+		const bare = validSidecar();
+		bare.files = [{ path: "a.ts", annotations: [{ newRange: [1, 1], summary: "only a summary" }] }];
+		assert.equal(check(bare, Sidecar), true);
 	});
 
 	it("rejects an empty top-level summary", () => {
@@ -202,6 +204,24 @@ describe("writeSidecar", () => {
 		assert.equal(mode, PRIVATE_DIR_MODE);
 	});
 
+	it("tightens a directory that already exists with a looser mode", (t) => {
+		// The directory chmod only earns its place when the directory pre-exists;
+		// a fresh mkdtemp would satisfy the mode assertion above without it.
+		const scratch = tmpScratch(t);
+		process.env.BASECAMP_SCRATCH_DIR = scratch;
+		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
+		const target = sidecarPath("/wt/loose");
+		fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o755 });
+		fs.chmodSync(path.dirname(target), 0o755);
+		fs.writeFileSync(target, "{}", { mode: 0o644 });
+		fs.chmodSync(target, 0o644);
+
+		writeSidecar("/wt/loose", "abc1234", "S.", [{ path: "a.ts", annotations: [{ newRange: [1, 1], summary: "x" }] }]);
+
+		assert.equal(fs.statSync(path.dirname(target)).mode & 0o777, PRIVATE_DIR_MODE);
+		assert.equal(fs.statSync(target).mode & 0o777, PRIVATE_FILE_MODE);
+	});
+
 	it("two worktrees write to distinct files", (t) => {
 		const scratch = tmpScratch(t);
 		process.env.BASECAMP_SCRATCH_DIR = scratch;
@@ -246,7 +266,7 @@ describe("readSidecarBase", () => {
 		assert.equal(readSidecarBase("/wt/torn"), null);
 	});
 
-	it("leaves no temp file behind, so a rename-based write is invisible to callers", (t) => {
+	it("leaves no scratch file beside the sidecar it produced", (t) => {
 		const dir = tmpScratch(t);
 		process.env.BASECAMP_SCRATCH_DIR = dir;
 		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
