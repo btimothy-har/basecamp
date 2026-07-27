@@ -1,15 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "#core/errors.ts";
+import { checkHerdrEligibility, type HerdrEnv, type HerdrSkipReason } from "#core/ui/herdr-pane.ts";
 
 export const HERDR_WORKSTREAM_OPEN_TIMEOUT_MS = 5000;
 
-export interface HerdrWorkstreamEnv {
-	HERDR_ENV?: string;
-	HERDR_SOCKET_PATH?: string;
-	HERDR_PANE_ID?: string;
-	HERDR_WORKSPACE_ID?: string;
-	BASECAMP_AGENT_DEPTH?: string;
-}
+export type HerdrWorkstreamEnv = HerdrEnv;
 
 export interface HerdrWorkstreamWorkspaceInput {
 	protectedRoot?: string;
@@ -25,13 +20,7 @@ export interface HerdrWorkstreamWorktreeInput {
 	label: string;
 }
 
-export type HerdrWorkstreamSkipReason =
-	| "missing-herdr-env"
-	| "missing-herdr-socket-path"
-	| "missing-herdr-pane-id"
-	| "subagent"
-	| "headless"
-	| "missing-cwd";
+export type HerdrWorkstreamSkipReason = HerdrSkipReason | "missing-cwd";
 
 export interface HerdrWorkstreamOpenArgsOpened {
 	args: string[];
@@ -78,31 +67,12 @@ function skipped(reason: HerdrWorkstreamSkipReason, message: string): HerdrWorks
 	return { args: null, status: "skipped", reason, message };
 }
 
-function agentDepth(env: HerdrWorkstreamEnv): number {
-	const raw = env.BASECAMP_AGENT_DEPTH;
-	if (raw === undefined || raw.trim() === "") return 0;
-	const parsed = Number(raw);
-	return Number.isFinite(parsed) ? parsed : 1;
-}
-
 export function shouldOpenWorkstreamInHerdr(
 	input: HerdrWorkstreamOpenEligibilityInput,
 ): HerdrWorkstreamOpenArgsSkipped | null {
-	if (input.env.HERDR_ENV !== "1")
-		return skipped("missing-herdr-env", "Herdr workstream open skipped: not running in Herdr.");
-	if (!input.env.HERDR_SOCKET_PATH) {
-		return skipped("missing-herdr-socket-path", "Herdr workstream open skipped: missing Herdr socket path.");
-	}
-	if (!input.env.HERDR_PANE_ID) {
-		return skipped("missing-herdr-pane-id", "Herdr workstream open skipped: missing Herdr pane id.");
-	}
-	if (agentDepth(input.env) !== 0) {
-		return skipped("subagent", "Herdr workstream open skipped: only primary sessions can open workstreams in Herdr.");
-	}
-	if (input.hasUI === false) {
-		return skipped("headless", "Herdr workstream open skipped: session has no UI.");
-	}
-	return null;
+	const ineligible = checkHerdrEligibility({ env: input.env, hasUI: input.hasUI, subject: "workstreams" });
+	if (!ineligible) return null;
+	return skipped(ineligible.reason, `Herdr workstream open skipped: ${ineligible.detail}`);
 }
 
 function workspaceCwd(workspace: HerdrWorkstreamWorkspaceInput): string | null {
