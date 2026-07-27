@@ -12,8 +12,10 @@ import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
 // Top-level-only extension tools — excluded from every dispatched agent's toolset so a
 // subagent never sees a tool it could only hit a hard guard on. `agent`/`escalate` are
-// dispatch/UI-only; `report_findings` is primary-only (guarded in pi/code-review/tools.ts).
-const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "report_findings"]);
+// dispatch/UI-only; `report_findings` is primary-only (guarded in pi/code-review/tools.ts)
+// and `annotate_changeset` likewise (pi/diff/annotate-tool.ts). Their own guards are not
+// enough: this list is built from the parent's registered tools, where they exist.
+const SUBAGENT_EXCLUDED_EXTENSION_TOOLS = new Set(["agent", "escalate", "report_findings", "annotate_changeset"]);
 
 interface ToolInfo {
 	name: string;

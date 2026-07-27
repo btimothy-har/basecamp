@@ -1,6 +1,6 @@
 # diff
 
-Basecamp's diff/review surface: `/diff` opens [hunk](https://github.com/modem-dev/hunk) in a Herdr tab, blocks the session while you review, and returns your inline annotations as line-anchored feedback. `annotate_changeset` lets the working agent put its own rationale beside the same diff.
+Basecamp's diff/review surface, filling the gap left when Companion was retired: `/diff` opens [hunk](https://github.com/modem-dev/hunk) in a Herdr tab, blocks the session while you review, and returns your inline annotations as line-anchored feedback. `annotate_changeset` lets the working agent put its own rationale beside the same diff.
 
 Basecamp launches and drives hunk; hunk renders and captures. Both are hard dependencies — absent Herdr or hunk, `/diff` reports why and changes nothing.
 
@@ -15,6 +15,8 @@ herdr tab close <tab_id>
 ```
 
 Scope is `merge-base(detectDefaultBranch(), HEAD)` passed as a **single** target. `hunk diff <target>` becomes `git diff --no-ext-diff --find-renames <target>`, so one view carries committed *and* uncommitted work — three-dot `main...HEAD` would show only commits. On the default branch the merge-base is HEAD, which degrades to a working-tree diff with no special case.
+
+All behaviour recorded here was verified against hunk 0.17.6 and herdr 0.7.5. hunk is pre-1.0 and host-installed, so these are observations of a moving target, not a contract.
 
 ## Why the session blocks
 
@@ -50,6 +52,10 @@ The tab id is `processScoped` (`basecamp.diffTabs`) because a hunk tab outlives 
 `runInHerdrPane` single-quotes every element, including the command name. Git refs legally contain `;`, `$`, `&`, and backticks, so this is a correctness requirement rather than hardening. `/diff` takes no arguments, which keeps user input out of the shell entirely.
 
 `herdr tab create` without an explicit `--workspace` creates the tab in whichever workspace currently has focus rather than the caller's, so `--workspace` is always sent.
+
+## Sidecar lifetime
+
+A sidecar is written per worktree and overwritten, never deleted, so it outlives the tool call that produced it. It records the review base it was anchored against and is attached only while that base still resolves — worktree directories are deliberately reused across branches, so an unstamped match would render one branch's rationale against another branch's line numbers.
 
 ## Annotation staleness
 
