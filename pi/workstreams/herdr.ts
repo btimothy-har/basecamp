@@ -1,10 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { errorMessage } from "#core/errors.ts";
-import { checkHerdrEligibility, type HerdrEnv, type HerdrSkipReason } from "#core/ui/herdr-pane.ts";
-
-export const HERDR_WORKSTREAM_OPEN_TIMEOUT_MS = 5000;
-
-export type HerdrWorkstreamEnv = HerdrEnv;
+import {
+	checkHerdrEligibility,
+	type HerdrCommandResult,
+	type HerdrEnv,
+	type HerdrSkipReason,
+	runHerdr,
+} from "#core/ui/herdr-pane.ts";
 
 export interface HerdrWorkstreamWorkspaceInput {
 	protectedRoot?: string;
@@ -59,7 +60,7 @@ export type HerdrWorkstreamOpenResult =
 	  };
 
 export interface HerdrWorkstreamOpenEligibilityInput {
-	env: HerdrWorkstreamEnv;
+	env: HerdrEnv;
 	hasUI?: boolean;
 }
 
@@ -82,7 +83,7 @@ function workspaceCwd(workspace: HerdrWorkstreamWorkspaceInput): string | null {
 export function buildHerdrWorkstreamOpenArgs(
 	workspace: HerdrWorkstreamWorkspaceInput,
 	worktree: HerdrWorkstreamWorktreeInput,
-	env: HerdrWorkstreamEnv,
+	env: HerdrEnv,
 ): HerdrWorkstreamOpenArgsResult {
 	const skip = shouldOpenWorkstreamInHerdr({ env, hasUI: workspace.hasUI });
 	if (skip) return skip;
@@ -99,42 +100,38 @@ export function buildHerdrWorkstreamOpenArgs(
 	return { args };
 }
 
+function mapHerdrCommandResult(result: HerdrCommandResult<null>, args: string[]): HerdrWorkstreamOpenResult {
+	if (result.status === "ok") {
+		return {
+			status: "opened",
+			message: "Herdr workstream opened.",
+			args,
+			stdout: result.stdout,
+			stderr: result.stderr,
+		};
+	}
+	return {
+		status: "failed",
+		message: result.message,
+		args,
+		error: result.error,
+		exitCode: result.exitCode,
+		stdout: result.stdout,
+		stderr: result.stderr,
+	};
+}
+
 export async function openWorkstreamInHerdr(
 	pi: Pick<ExtensionAPI, "exec">,
 	workspace: HerdrWorkstreamWorkspaceInput,
 	worktree: HerdrWorkstreamWorktreeInput,
-	env: HerdrWorkstreamEnv = process.env,
+	env: HerdrEnv = process.env,
 ): Promise<HerdrWorkstreamOpenResult> {
 	const built = buildHerdrWorkstreamOpenArgs(workspace, worktree, env);
 	if (built.args === null) {
 		return { status: "skipped", reason: built.reason, message: built.message };
 	}
 
-	try {
-		const result = await pi.exec("herdr", built.args, { timeout: HERDR_WORKSTREAM_OPEN_TIMEOUT_MS });
-		if (result.code !== 0) {
-			return {
-				status: "failed",
-				message: `Herdr workstream open failed with exit code ${result.code}.`,
-				exitCode: result.code,
-				stdout: result.stdout,
-				stderr: result.stderr,
-				args: built.args,
-			};
-		}
-		return {
-			status: "opened",
-			message: "Herdr workstream opened.",
-			args: built.args,
-			stdout: result.stdout,
-			stderr: result.stderr,
-		};
-	} catch (err) {
-		return {
-			status: "failed",
-			message: "Herdr workstream open failed.",
-			error: errorMessage(err),
-			args: built.args,
-		};
-	}
+	const result = await runHerdr(pi, built.args, "workstream open", () => null);
+	return mapHerdrCommandResult(result, built.args);
 }

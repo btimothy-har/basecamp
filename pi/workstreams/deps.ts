@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getOrCreateWorktree, type WorktreeResult } from "#core/git/worktrees/crud.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
+import { shellQuote } from "#core/host/shell.ts";
 import { resolveDaemonPaths } from "#core/hub/index.ts";
 import { ADJ_ADJ_NOUN, generateName } from "#core/naming/index.ts";
 import { runWorktreeSetup, type WorktreeSetupResult } from "#core/project/workspace/setup.ts";
@@ -72,10 +73,6 @@ export function defaultWorkstreamToolsDeps(getConnection: () => Promise<unknown>
 }
 
 export { errorMessage } from "#core/errors.ts";
-
-function shellQuote(s: string): string {
-	return `'${s.replace(/'/g, "'\\''")}'`;
-}
 
 export function workstreamLaunchCommand(slug: string): string {
 	return `pi --workstream=${slug}`;

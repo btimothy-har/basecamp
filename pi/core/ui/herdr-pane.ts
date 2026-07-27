@@ -2,6 +2,7 @@
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "#core/errors.ts";
+import { shellQuote } from "#core/host/shell.ts";
 
 export const HERDR_COMMAND_TIMEOUT_MS = 5000;
 
@@ -60,17 +61,8 @@ export function checkHerdrEligibility(input: HerdrEligibilityInput): HerdrInelig
 	return null;
 }
 
-/**
- * `herdr pane run` types its argument list into the pane's shell without escaping anything, so an
- * unquoted `a;touch x` executes. Git refs legally contain `;`, `$`, `&`, and backticks, so every
- * element is single-quoted before it can reach a shell.
- */
-export function shellQuote(arg: string): string {
-	return `'${arg.replaceAll("'", "'\\''")}'`;
-}
-
 export type HerdrCommandResult<T> =
-	| { status: "ok"; value: T; args: string[] }
+	| { status: "ok"; value: T; args: string[]; stdout?: string; stderr?: string }
 	| {
 			status: "failed";
 			message: string;
@@ -95,7 +87,7 @@ export interface OpenHerdrTabInput {
 
 type HerdrExec = Pick<ExtensionAPI, "exec">;
 
-async function runHerdr<T>(
+export async function runHerdr<T>(
 	pi: HerdrExec,
 	args: string[],
 	what: string,
@@ -113,7 +105,7 @@ async function runHerdr<T>(
 				stderr: result.stderr,
 			};
 		}
-		return { status: "ok", value: parse(result.stdout), args };
+		return { status: "ok", value: parse(result.stdout), args, stdout: result.stdout, stderr: result.stderr };
 	} catch (err) {
 		return { status: "failed", message: `Herdr ${what} failed.`, args, error: errorMessage(err) };
 	}
@@ -157,6 +149,11 @@ export async function openHerdrTab(
 	return await runHerdr(pi, args, "tab create", parseTabTarget);
 }
 
+/**
+ * `herdr pane run` types its argument list into the pane's shell without escaping anything, so an
+ * unquoted `a;touch x` executes. Git refs legally contain `;`, `$`, `&`, and backticks, so every
+ * element is single-quoted before it can reach a shell.
+ */
 export async function runInHerdrPane(pi: HerdrExec, paneId: string, argv: string[]): Promise<HerdrCommandResult<null>> {
 	const args = ["pane", "run", paneId, ...argv.map(shellQuote)];
 	return await runHerdr(pi, args, "pane run", () => null);
