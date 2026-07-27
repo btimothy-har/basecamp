@@ -34,6 +34,15 @@ The dossier reference leads and the workstream slug qualifies it. Work has a dos
 
 Record events, never workstream status. A journal page is fixed to its day, so writing "closed" freezes a fact that can change tomorrow — a workstream can be reopened. The daemon owns lifecycle; ask `list_workstreams` when you need current status.
 
+Every line earns its place by changing what the user does next. The failure mode is writing your own research onto the page:
+
+| Not this | This |
+|---|---|
+| The prototype grew far beyond the 07-13 record | 136 unpushed commits, 113 behind main — rebase and push before the demo |
+| Shipped since 07-13: the case-block flow, the tabbed case view, a new Profile tab | Scope has grown past the v1 slice, and the sign-off gates were never revisited against it |
+| Branch diff is +23,577 lines across 207 files | *(nothing — the number changes no decision)* |
+| Post-Summit catch-up; today reconciled ~93 commits on `main` | *(nothing — that is your catch-up, not the work)* |
+
 ## Work dossier — durable context
 
 Only what stays true. If a fact will be wrong next week, it belongs in a journal.
@@ -77,11 +86,19 @@ It earns its place even near-empty: journal blocks nest under its reference, so 
 
 ## Writing
 
-Propose before writing. Show the actual Logseq-formatted blocks and get approval; when the user edits your proposal, use their version verbatim.
+Write for the user, later. They did the work, and they cannot see your session.
+
+- **Their frame, not yours.** Never write relative to your own prior entry or your own research. "Beyond the 07-13 record", "since my last note", "today reconciled 93 commits" is bookkeeping about you. State what stands.
+- **No recap of their own work.** A feature list of what they built is not memory. Write what it now makes overdue, risky, or possible.
+- **A number appears only when it is the decision.** "136 unpushed commits before a this-week demo" earns its place; "+23,577 lines across 207 files" does not.
+
+Length is the tell. When a work item's block starts reading like a report, you are writing your research instead of their memory.
+
+Propose before writing. Show the actual Logseq-formatted blocks and get approval; when the user edits your proposal, use their version verbatim. After a gap — any session where you reconstructed state from git, GitHub, or a tracker — the reconstruction goes in the conversation, and only the lines that change what the user does next go in the proposal.
 
 Append to journals. Edit dossiers in place, and only when durable framing actually changed. Never rewrite a journal entry to reflect what you now know — write today's correction as today's block.
 
-Capture durable coordination value, not raw transcripts, dispatch receipts, or unverified claims. Only record what actually happened.
+Capture durable coordination value, not raw transcripts, dispatch receipts, or unverified claims.
 
 In read-only sessions, prepare the same proposals and hand them to the user instead of writing.
 
