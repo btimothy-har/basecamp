@@ -4,7 +4,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { resetCopilotLaunchForTesting } from "#core/agent-mode/copilot.ts";
 import { getAgentMode, resetAgentMode } from "#core/agent-mode/index.ts";
 import { registerSession } from "#core/session/runtime/session.ts";
 import {
@@ -60,10 +59,12 @@ class FakePi {
 	}
 }
 
+const originalArgv = process.argv;
+
 afterEach(() => {
 	resetCurrentSessionState();
 	resetAgentMode();
-	resetCopilotLaunchForTesting();
+	process.argv = originalArgv;
 });
 
 describe("registerSession copilot mode startup", () => {
@@ -84,7 +85,7 @@ describe("registerSession copilot mode startup", () => {
 		initializeCurrentSessionState(createContext("copilot-start"), dir);
 		const pi = new FakePi();
 		registerSession(pi as unknown as ExtensionAPI);
-		pi.setFlag("copilot", true);
+		process.argv = [...originalArgv, "--copilot"];
 
 		await pi.emitSessionStart();
 

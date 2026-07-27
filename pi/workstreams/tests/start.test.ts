@@ -4,7 +4,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
-import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/agent-mode/copilot.ts";
 import { getAgentMode, resetAgentMode } from "#core/agent-mode/index.ts";
 import {
 	getCurrentSessionState,
@@ -51,9 +50,11 @@ class FakePi {
 	}
 }
 
+const originalArgv = process.argv;
+
 describe("registerWorkstreamStartup", () => {
 	afterEach(() => {
-		resetCopilotLaunchForTesting();
+		process.argv = originalArgv;
 	});
 
 	it("registers a boolean startup flag", () => {
@@ -76,7 +77,7 @@ describe("registerWorkstreamStartup", () => {
 
 		registerWorkstreamStartup(pi as unknown as ExtensionAPI, async () => null, harness.deps);
 		pi.setFlag("workstream", true);
-		setCopilotLaunchReader(() => true);
+		process.argv = [...originalArgv, "--copilot"];
 		await pi.emitSessionStart(ctx);
 
 		assert.equal(harness.enterExploreModeCalls.length, 0);
