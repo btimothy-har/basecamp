@@ -54,10 +54,10 @@ describe("assemblePrompt copilot", () => {
 		assert.match(prompt, /Copilot stages work; it does not implement in-session/);
 		assert.match(prompt, /do not supervise, drive, or manage it/);
 		assert.match(prompt, /Workstream agents never write Logseq/);
-		assert.match(prompt, /user-facing durable record of the workstream's objective, context, and decisions/);
+		assert.match(prompt, /user-facing durable record of the work item's objective, context, and decisions/);
 		assert.match(prompt, /appends an agent row — additive, never overwriting/);
-		// page schema and Logseq mechanics live in the repo-memory skill, not the mode fragment
-		assert.match(prompt, /Load the `repo-memory` skill before writing repo memory/);
+		// page schema and Logseq mechanics live in the copilot skill, not the mode fragment
+		assert.match(prompt, /Load the `copilot` skill before writing repo memory/);
 		// the five facts no tool description can assert
 		assert.match(prompt, /\*\*List before you create\.\*\*/);
 		assert.match(prompt, /An edit does not reach a running session/);

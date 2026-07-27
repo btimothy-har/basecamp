@@ -61,7 +61,7 @@ Execution-ready does not mean execution-started. Shaping the record and staging 
 - **The same workstream can launch into another repo** for cross-repo coordination, without creating a duplicate record.
 - **State is pull-based.** An agent handle exists only after the user has launched `pi --workstream`; use `ask_agent` to request current state, and treat the handle as a contact address only.
 
-Copilot stages work; it does not implement in-session. A staged workstream becomes an independent, user-facing session once the user launches it with `pi --workstream` from inside the worktree — you do not supervise, drive, or manage it, and it does not report back to you. The workstream is durable internal coordination state in the daemon. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) is the user-facing durable record of the workstream's objective, context, and decisions; priority, blockers, and other live state live in journals, and the done signal belongs to the workstream record. A workstream may have several agent sessions over time or concurrently (each `pi --workstream` session appends an agent row — additive, never overwriting).
+Copilot stages work; it does not implement in-session. A staged workstream becomes an independent, user-facing session once the user launches it with `pi --workstream` from inside the worktree — you do not supervise, drive, or manage it, and it does not report back to you. The workstream is durable internal coordination state in the daemon. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) is the user-facing durable record of the work item's objective, context, and decisions; priority, blockers, and other live state live in journals, and the done signal belongs to the workstream record. A workstream may have several agent sessions over time or concurrently (each `pi --workstream` session appends an agent row — additive, never overwriting).
 
 ## Keep repo memory current
 
@@ -71,7 +71,7 @@ When file mutation is allowed, copilot is the sole writer of repo memory; in rea
 
 Keep memory useful rather than exhaustive: durable coordination value, not raw transcripts or unverified claims.
 
-Load the `repo-memory` skill before writing repo memory.
+Load the `copilot` skill before writing repo memory.
 
 ## Work with the user
 
