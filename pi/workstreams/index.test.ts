@@ -69,6 +69,8 @@ describe("workstreams entrypoint", () => {
 	beforeEach(() => {
 		priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		process.env.BASECAMP_AGENT_DEPTH = "0";
+		// Every case states its own launch argv; never inherit the runner's.
+		process.argv = ["node", "pi"];
 	});
 
 	afterEach(() => {
@@ -81,7 +83,7 @@ describe("workstreams entrypoint", () => {
 	// launch signal has to come from argv — reading pi.getFlag here always yields
 	// undefined and silently withholds every tool.
 	it("registers the workstream tools for a copilot session", () => {
-		process.argv = [...originalArgv, "--copilot"];
+		process.argv = ["node", "pi", "--copilot"];
 		const pi = createMockPi();
 		registerWorkstreams(pi as unknown as ExtensionAPI);
 
@@ -94,7 +96,7 @@ describe("workstreams entrypoint", () => {
 	});
 
 	it("registers the workstream tools for --copilot=<value>", () => {
-		process.argv = [...originalArgv, "--copilot=false"];
+		process.argv = ["node", "pi", "--copilot=false"];
 		const pi = createMockPi();
 		registerWorkstreams(pi as unknown as ExtensionAPI);
 
@@ -118,7 +120,7 @@ describe("workstreams entrypoint", () => {
 	// but the gate must not depend on that.
 	it("registers nothing for a non-top-level (daemon-spawned) session", () => {
 		process.env.BASECAMP_AGENT_DEPTH = "1";
-		process.argv = [...originalArgv, "--copilot"];
+		process.argv = ["node", "pi", "--copilot"];
 		const pi = createMockPi();
 		registerWorkstreams(pi as unknown as ExtensionAPI);
 

@@ -34,4 +34,10 @@ describe("copilot launch predicate", () => {
 		launchWith("--copilots");
 		assert.equal(isCopilotLaunch(), false);
 	});
+
+	// argv[0] and argv[1] are the runtime and script path; Pi parses from slice(2).
+	it("ignores the executable and script-path positions", () => {
+		process.argv = ["--copilot", "--copilot"];
+		assert.equal(isCopilotLaunch(), false);
+	});
 });

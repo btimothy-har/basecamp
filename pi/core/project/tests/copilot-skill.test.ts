@@ -9,7 +9,7 @@ import { copilotSkillPath, registerCopilotSkill } from "#core/project/logseq.ts"
 const originalArgv = process.argv;
 
 function setCopilotLaunch(launched: boolean): void {
-	process.argv = launched ? [...originalArgv, "--copilot"] : originalArgv;
+	process.argv = launched ? ["node", "pi", "--copilot"] : ["node", "pi"];
 }
 
 interface ResourceContribution {

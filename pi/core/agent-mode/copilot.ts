@@ -11,8 +11,9 @@
  * applies CLI flag values only after every extension factory has run. Consumers
  * that gate *registration* on copilot (`pi/workstreams/index.ts`) have no flag
  * value to read that early, and argv is the only copilot signal that exists then.
- * registerSession still declares the flag — without it Pi rejects `--copilot` as
- * an unknown option — so the flag is declared there and read here.
+ * registerSession declares the flag off COPILOT_FLAG_NAME — without the
+ * declaration Pi rejects `--copilot` as an unknown option — so one name spans
+ * both the declaration and this read.
  *
  * Deliberately not a BASECAMP_* env var: subagents inherit the parent environment,
  * so a copilot var would make every dispatched agent a copilot. Copilot is a
@@ -24,7 +25,10 @@ import type { AgentMode } from "./index.ts";
 /** The Pi built-in plan() tool that copilot mode hides. */
 export const PLAN_TOOL_NAME = "plan";
 
-const COPILOT_FLAG = "--copilot";
+/** Registered by registerSession, read here — one name so the two cannot drift. */
+export const COPILOT_FLAG_NAME = "copilot";
+
+const COPILOT_FLAG = `--${COPILOT_FLAG_NAME}`;
 
 /** copilot is the locked, launch-only mode. */
 export function isCopilotMode(mode: AgentMode): boolean {
@@ -34,7 +38,13 @@ export function isCopilotMode(mode: AgentMode): boolean {
 /**
  * True when this process was launched with `--copilot`. Pi coerces a boolean flag
  * to true whatever value it parses, so `--copilot=false` is a copilot launch too.
+ *
+ * Coarser than Pi's parser in one case: Pi reads a built-in value-taking flag's
+ * value unconditionally, so `pi --model --copilot` binds the token as the model
+ * and is not a copilot launch, while this returns true. Recognising that would
+ * mean copying Pi's list of value-taking flags, and a stale copy of that list
+ * fails more quietly than this does — the invocation is already malformed.
  */
 export function isCopilotLaunch(): boolean {
-	return process.argv.some((arg) => arg === COPILOT_FLAG || arg.startsWith(`${COPILOT_FLAG}=`));
+	return process.argv.slice(2).some((arg) => arg === COPILOT_FLAG || arg.startsWith(`${COPILOT_FLAG}=`));
 }

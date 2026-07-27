@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "@earendil-works/pi-coding-agent";
 import { getAgentMode, resetAgentMode } from "#core/agent-mode/index.ts";
 import {
@@ -53,6 +53,11 @@ class FakePi {
 const originalArgv = process.argv;
 
 describe("registerWorkstreamStartup", () => {
+	beforeEach(() => {
+		// Every case states its own launch argv; never inherit the runner's.
+		process.argv = ["node", "pi"];
+	});
+
 	afterEach(() => {
 		process.argv = originalArgv;
 	});
@@ -77,7 +82,7 @@ describe("registerWorkstreamStartup", () => {
 
 		registerWorkstreamStartup(pi as unknown as ExtensionAPI, async () => null, harness.deps);
 		pi.setFlag("workstream", true);
-		process.argv = [...originalArgv, "--copilot"];
+		process.argv = ["node", "pi", "--copilot"];
 		await pi.emitSessionStart(ctx);
 
 		assert.equal(harness.enterExploreModeCalls.length, 0);

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { afterEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentMode, resetAgentMode } from "#core/agent-mode/index.ts";
 import { registerSession } from "#core/session/runtime/session.ts";
@@ -61,6 +61,11 @@ class FakePi {
 
 const originalArgv = process.argv;
 
+beforeEach(() => {
+	// Every case states its own launch argv; never inherit the runner's.
+	process.argv = ["node", "pi"];
+});
+
 afterEach(() => {
 	resetCurrentSessionState();
 	resetAgentMode();
@@ -85,7 +90,7 @@ describe("registerSession copilot mode startup", () => {
 		initializeCurrentSessionState(createContext("copilot-start"), dir);
 		const pi = new FakePi();
 		registerSession(pi as unknown as ExtensionAPI);
-		process.argv = [...originalArgv, "--copilot"];
+		process.argv = ["node", "pi", "--copilot"];
 
 		await pi.emitSessionStart();
 
