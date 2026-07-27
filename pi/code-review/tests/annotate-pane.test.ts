@@ -1,9 +1,21 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildReactions, findingSummaryLines, responseDisplayLines } from "#code-review/annotate-pane.ts";
+import { annotateFindings } from "#code-review/annotate/index.ts";
 import type { Finding } from "#code-review/findings.ts";
+import {
+	BACKSPACE,
+	bracketedPaste,
+	DOWN,
+	ENTER,
+	ESC,
+	paneHarness as harness,
+	LEFT,
+	RIGHT,
+	SPACE,
+	type,
+} from "./support/pane-driver.ts";
 
-function finding(overrides: Partial<Finding>): Finding {
+function finding(overrides: Partial<Finding> = {}): Finding {
 	return {
 		dimension: "general",
 		severity: "low",
@@ -17,82 +29,171 @@ function finding(overrides: Partial<Finding>): Finding {
 	};
 }
 
-describe("buildReactions", () => {
-	it("returns trimmed reactions aligned to findings by index", () => {
-		const findings = [
-			finding({ title: "first" }),
-			finding({ title: "second" }),
-			finding({ title: "third" }),
-			finding({ title: "fourth" }),
-		];
-		const drafts = new Map<number, string>([
-			[0, "  intentional  "],
-			[1, "   "],
-			[2, "question about this"],
+const twoFindings = [finding({ title: "first" }), finding({ title: "second" })];
+
+describe("annotateFindings", () => {
+	it("keeps a comment saved with Enter", async () => {
+		const ui = harness([
+			(send) => send(SPACE),
+			(send) => send(DOWN, ...type("looks intentional"), ENTER, ESC),
+			(send) => send("s"),
 		]);
 
-		const reactions = buildReactions(findings, drafts);
+		const result = await annotateFindings(ui, twoFindings);
 
-		assert.equal(reactions.length, findings.length);
-		assert.deepEqual(reactions, ["intentional", null, "question about this", null]);
-	});
-});
-
-describe("findingSummaryLines", () => {
-	it("summarizes fileless findings with unknown line and missing remediation", () => {
-		const lines = findingSummaryLines(
-			finding({
-				dimension: "security",
-				severity: "high",
-				file: null,
-				lineStart: null,
-				title: "Secret can leak",
-				detail: "Token is logged.",
-				remediation: null,
-			}),
-			0,
-			3,
-		);
-
-		assert.ok(lines.includes("Finding 1 of 3"));
-		assert.ok(lines.includes("[high] [security]  (no file):?"));
-		assert.ok(lines.includes("Secret can leak"));
-		assert.ok(lines.includes("Fix: —"));
+		assert.deepEqual(result, { cancelled: false, reactions: ["looks intentional", null] });
 	});
 
-	it("summarizes findings with file, line, and remediation text", () => {
-		const lines = findingSummaryLines(
-			finding({
-				dimension: "testing",
-				severity: "medium",
-				file: "src/app.ts",
-				lineStart: 42,
-				title: "Missing regression coverage",
-				detail: "The edge case is untested.",
-				remediation: "Add a regression test.",
-			}),
-			1,
-			2,
-		);
+	it("keeps a comment saved with Esc", async () => {
+		const ui = harness([
+			(send) => send(SPACE),
+			(send) => send(DOWN, ...type("escaped out"), ESC, ESC),
+			(send) => send("s"),
+		]);
 
-		assert.ok(lines.includes("Finding 2 of 2"));
-		assert.ok(lines.includes("[medium] [testing]  src/app.ts:42"));
-		assert.ok(lines.includes("Missing regression coverage"));
-		assert.ok(lines.includes("Fix: Add a regression test."));
-	});
-});
+		const result = await annotateFindings(ui, twoFindings);
 
-describe("responseDisplayLines", () => {
-	it("shows the author response body when present", () => {
-		const lines = responseDisplayLines(finding({ response: "I disagree — this is intentional." }));
-		assert.deepEqual(lines, ["Author response:", "I disagree — this is intentional."]);
+		assert.deepEqual(result, { cancelled: false, reactions: ["escaped out", null] });
 	});
 
-	it("shows a placeholder when the response is absent", () => {
-		assert.deepEqual(responseDisplayLines(finding({})), ["Author response:", "—"]);
+	it("redisplays a saved comment when the finding is revisited", async () => {
+		let idleView = "";
+		let reopenedEditor = "";
+		const ui = harness([
+			(send) => send(SPACE),
+			(send, render) => {
+				send(DOWN, ...type("first pass"), ENTER);
+				send(RIGHT, DOWN, ...type("other"), ENTER);
+				send(LEFT);
+				idleView = render();
+				send(DOWN);
+				reopenedEditor = render();
+				send(ESC, ESC);
+			},
+			(send) => send("s"),
+		]);
+
+		const result = await annotateFindings(ui, twoFindings);
+
+		assert.match(idleView, /first pass/);
+		assert.match(reopenedEditor, /first pass/);
+		assert.deepEqual(result.reactions, ["first pass", "other"]);
 	});
 
-	it("treats a whitespace-only response as absent", () => {
-		assert.deepEqual(responseDisplayLines(finding({ response: "   " })), ["Author response:", "—"]);
+	it("marks commented findings in the list", async () => {
+		let listView = "";
+		const ui = harness([
+			(send) => send(SPACE),
+			(send) => send(DOWN, ...type("noted"), ENTER, ESC),
+			(send, render) => {
+				listView = render();
+				send("s");
+			},
+		]);
+
+		await annotateFindings(ui, twoFindings);
+
+		assert.match(listView, /1 commented/);
+		assert.match(listView, /first {2}\(no file\):\? {2}📝/);
+	});
+
+	it("does not open the comment box on Enter from the card", async () => {
+		const ui = harness([
+			(send) => send(SPACE),
+			// Enter must be inert here; the characters that follow would otherwise become a comment.
+			(send) => send(ENTER, ...type("not a comment"), ESC),
+			(send) => send("s"),
+		]);
+
+		const result = await annotateFindings(ui, twoFindings);
+
+		assert.deepEqual(result.reactions, [null, null]);
+	});
+
+	it("clears a comment when the box is emptied", async () => {
+		const ui = harness([
+			(send) => send(SPACE),
+			(send) => send(DOWN, ...type("temporary"), ENTER, DOWN, ...Array(9).fill(BACKSPACE), ENTER, ESC),
+			(send) => send("s"),
+		]);
+
+		const result = await annotateFindings(ui, twoFindings);
+
+		assert.deepEqual(result.reactions, [null, null]);
+	});
+
+	it("saves the whole of a large paste on both the Enter and the Esc path", async () => {
+		const paste = bracketedPaste(12);
+		const ui = harness([
+			(send) => send(SPACE),
+			(send) => {
+				send(DOWN, paste.keys, ENTER);
+				send(RIGHT, DOWN, paste.keys, ESC);
+				send(ESC);
+			},
+			(send) => send("s"),
+		]);
+
+		const result = await annotateFindings(ui, twoFindings);
+
+		assert.deepEqual(result.reactions, [paste.text, paste.text]);
+	});
+
+	it("keeps a pasted comment intact when the finding is revisited", async () => {
+		const paste = bracketedPaste(12);
+		const ui = harness([
+			(send) => send(SPACE),
+			(send) => send(DOWN, paste.keys, ESC, DOWN, ESC, ESC),
+			(send) => send("s"),
+		]);
+
+		const result = await annotateFindings(ui, twoFindings);
+
+		// Re-entering the box reseeds it from the store, which clears the Editor's paste map — the
+		// stored text must already be the real content or it becomes an orphaned marker forever.
+		assert.deepEqual(result.reactions, [paste.text, null]);
+	});
+
+	it("places the comment box under the label even when a finding quotes it", async () => {
+		const quoting = finding({
+			title: "Stale doc comment",
+			detail: "Your comment on line 5 no longer matches the code.",
+		});
+		let editing = "";
+		const ui = harness([
+			(send) => send(SPACE),
+			(send, render) => {
+				send(DOWN, ...type("ZZMARKER"));
+				editing = render();
+				send(ESC, ESC);
+			},
+			(send) => send("s"),
+		]);
+
+		await annotateFindings(ui, [quoting, finding({ title: "second" })]);
+
+		const lines = editing.split("\n");
+		const lastLabel = lines.map((line) => line.includes("Your comment")).lastIndexOf(true);
+		const box = lines.findIndex((line) => line.includes("ZZMARKER"));
+		assert.ok(lastLabel >= 0 && box >= 0, "expected both the label and the comment box to render");
+		assert.ok(box > lastLabel, `comment box rendered at ${box}, above the label at ${lastLabel}`);
+	});
+
+	it("discards every comment when the list is cancelled", async () => {
+		const ui = harness([
+			(send) => send(SPACE),
+			(send) => send(DOWN, ...type("typed then abandoned"), ENTER, ESC),
+			(send) => send(ESC),
+		]);
+
+		const result = await annotateFindings(ui, twoFindings);
+
+		assert.deepEqual(result, { cancelled: true, reactions: [] });
+	});
+
+	it("returns immediately without opening a view when there are no findings", async () => {
+		const result = await annotateFindings(harness([]), []);
+
+		assert.deepEqual(result, { cancelled: false, reactions: [] });
 	});
 });

@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isSubagent } from "#core/host/env.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
-import { annotateFindings } from "./annotate-pane.ts";
+import { annotateFindings } from "./annotate/index.ts";
 import { persistReviewArtifact, type ReviewResult } from "./artifact.ts";
 import { ReportFindingsParams } from "./findings.ts";
 import { computeVerdict, mergeFindings, type Verdict, type VerdictDecision } from "./synthesis.ts";
