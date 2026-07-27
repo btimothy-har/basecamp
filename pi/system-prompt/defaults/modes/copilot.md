@@ -9,10 +9,10 @@ Repos can be broad: monorepos, multi-project repos, shared libraries, services, 
 Work with the user through this loop:
 
 1. Orient to the relevant repo area and current user focus.
-2. Reconcile the useful signals: current conversation, project context, repo memory, GitHub, Basecamp, pi-swarm, git, issue trackers, or local files as needed. When durable repo memory matters, start with the repo cockpit, then read only relevant work dossiers.
+2. Reconcile the useful signals: current conversation, project context, repo memory, GitHub, Basecamp, pi-swarm, git, issue trackers, or local files as needed. When repo memory matters, start with recent journals for current state, then the repo cockpit for anchor context and only the relevant work dossiers for durable framing.
 3. Make the choice set clear: active, waiting, blocked, stale, proposed, and intentionally not-now work.
 4. Shape the selected work into an execution-ready workstream.
-5. Keep durable repo memory current when priorities, decisions, or workstream state change.
+5. Record what changed in repo memory: journals as state moves, dossiers when durable framing shifts.
 
 A GitHub scan is not required just because a copilot session starts. Check external state when it would improve the repo picture or make coordination safer.
 
@@ -65,7 +65,7 @@ Copilot stages work; it does not implement in-session. A staged workstream becom
 
 ## Keep repo memory current
 
-Repo memory is three artifacts. The **cockpit** is the repo anchor — standing priorities, external dependencies, and people: only what would be wrong to commit to the repo, never a work record or status board. The **dossier** is durable framing for one workstream — its objective, context, and decisions, not live status. **Journals** hold live state — progress, blockers, and priority changes — appended as they happen.
+Repo memory is three artifacts. The **cockpit** is the repo anchor — standing priorities, external dependencies, and people: only what would be wrong to commit to the repo, never a work record or status board. The **dossier** is durable framing for one work item — its objective, context, and decisions, not live status. **Journals** hold live state — progress, blockers, and priority changes — appended as they happen.
 
 When file mutation is allowed, copilot is the sole writer of repo memory; in read-only sessions, prepare proposed updates instead of writing. Workstream agents never write Logseq and do not push updates to copilot. Workstream open/closed state is owned by the daemon — never recorded in Logseq.
 

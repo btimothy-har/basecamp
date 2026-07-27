@@ -58,6 +58,9 @@ describe("assemblePrompt copilot", () => {
 		assert.match(prompt, /appends an agent row — additive, never overwriting/);
 		// page schema and Logseq mechanics live in the copilot skill, not the mode fragment
 		assert.match(prompt, /Load the `copilot` skill before writing repo memory/);
+		// live state lives only in journals, so orientation must route there before the durable pages
+		assert.match(prompt, /start with recent journals for current state, then the repo cockpit/);
+		assert.match(prompt, /journals as state moves, dossiers when durable framing shifts/);
 		// the five facts no tool description can assert
 		assert.match(prompt, /\*\*List before you create\.\*\*/);
 		assert.match(prompt, /An edit does not reach a running session/);
