@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { deriveRepoIdentity, resolveGitInfo } from "#core/git/repo.ts";
+import { deriveRepoIdentity, resolveGitInfo, resolveReviewBase } from "#core/git/repo.ts";
 
 interface ExecCall {
 	command: string;
@@ -65,6 +65,60 @@ describe("deriveRepoIdentity", () => {
 
 	it("falls back for a single-segment unparseable path", () => {
 		assert.equal(deriveRepoIdentity("not-a-url", "fallback"), "fallback");
+	});
+});
+
+describe("resolveReviewBase", () => {
+	const repoRoot = path.resolve("/repos/repo");
+
+	it("returns the merge-base SHA on a feature branch", async () => {
+		const mergeBaseSha = "abc123mergebase";
+		const pi = createPi((call) => {
+			assert.equal(call.command, "git");
+			if (argsEqual(call.args, ["-C", repoRoot, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])) {
+				return { code: 0, stdout: "origin/main\n", stderr: "" };
+			}
+			if (argsEqual(call.args, ["-C", repoRoot, "merge-base", "main", "HEAD"])) {
+				return { code: 0, stdout: `${mergeBaseSha}\n`, stderr: "" };
+			}
+			throw new Error(`Unexpected exec call: ${call.command} ${JSON.stringify(call.args)}`);
+		});
+
+		assert.equal(await resolveReviewBase(pi, repoRoot), mergeBaseSha);
+	});
+
+	it("returns HEAD's SHA when already on the default branch", async () => {
+		const headSha = "def456headsha";
+		const pi = createPi((call) => {
+			assert.equal(call.command, "git");
+			if (argsEqual(call.args, ["-C", repoRoot, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])) {
+				return { code: 0, stdout: "origin/main\n", stderr: "" };
+			}
+			if (argsEqual(call.args, ["-C", repoRoot, "merge-base", "main", "HEAD"])) {
+				return { code: 0, stdout: `${headSha}\n`, stderr: "" };
+			}
+			throw new Error(`Unexpected exec call: ${call.command} ${JSON.stringify(call.args)}`);
+		});
+
+		assert.equal(await resolveReviewBase(pi, repoRoot), headSha);
+	});
+
+	it("surfaces the detectDefaultBranch error when the default branch is undetectable", async () => {
+		const pi = createPi((call) => {
+			assert.equal(call.command, "git");
+			if (argsEqual(call.args, ["-C", repoRoot, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])) {
+				return { code: 128, stdout: "", stderr: "fatal: not a git repository" };
+			}
+			if (argsEqual(call.args, ["-C", repoRoot, "rev-parse", "--verify", "main"])) {
+				return { code: 128, stdout: "", stderr: "" };
+			}
+			if (argsEqual(call.args, ["-C", repoRoot, "rev-parse", "--verify", "master"])) {
+				return { code: 128, stdout: "", stderr: "" };
+			}
+			throw new Error(`Unexpected exec call: ${call.command} ${JSON.stringify(call.args)}`);
+		});
+
+		await assert.rejects(resolveReviewBase(pi, repoRoot), /Could not determine default branch/);
 	});
 });
 
