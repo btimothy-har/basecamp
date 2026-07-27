@@ -10,6 +10,7 @@ import { formatAnnotations } from "./annotations.ts";
 import { detectHunk, type HunkSession, listHunkSessions, readUserNotes, type UserNote } from "./hunk.ts";
 import { attachSession, forgetTab, ownedReview, rememberTab } from "./session-state.ts";
 import { readSidecarBase, sidecarPath } from "./sidecar.ts";
+import { reviewWorktreeDir } from "./worktree.ts";
 
 // hunk's own update nag would render inside a tab Basecamp owns.
 const HUNK_TAB_ENV = { HUNK_DISABLE_UPDATE_NOTICE: "1" };
@@ -20,10 +21,6 @@ export interface LaunchPoll {
 	intervalMs: number;
 }
 const DEFAULT_LAUNCH_POLL: LaunchPoll = { attempts: 24, intervalMs: 250 };
-
-function worktreeDirFor(ctx: ExtensionContext): string {
-	return getBasecampEnv("BASECAMP_WORKTREE_DIR") ?? ctx.cwd;
-}
 
 function tabLabel(worktreeDir: string): string {
 	return `diff: ${getBasecampEnv("BASECAMP_WORKTREE_LABEL") ?? worktreeDir.split("/").pop() ?? "review"}`;
@@ -128,7 +125,7 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 		return;
 	}
 
-	const worktreeDir = worktreeDirFor(ctx);
+	const worktreeDir = reviewWorktreeDir();
 	let base: string;
 	try {
 		base = await resolveReviewBase(pi, worktreeDir);

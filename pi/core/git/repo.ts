@@ -41,7 +41,12 @@ export async function detectDefaultBranch(pi: ExtensionAPI, repoRoot: string): P
  */
 export async function resolveReviewBase(pi: ExtensionAPI, repoRoot: string): Promise<string> {
 	const defaultBranch = await detectDefaultBranch(pi, repoRoot);
-	return await gitOutput(pi, repoRoot, ["merge-base", defaultBranch, "HEAD"]);
+	// The remote-tracking ref when it exists: nothing here ever fetches, so a local
+	// default branch left behind by an earlier pull would place the base before the
+	// real branch point and silently pull upstream commits into the review.
+	const remote = `origin/${defaultBranch}`;
+	const ref = (await tryGitOutput(pi, repoRoot, ["rev-parse", "--verify", remote])) ? remote : defaultBranch;
+	return await gitOutput(pi, repoRoot, ["merge-base", ref, "HEAD"]);
 }
 
 export async function branchExists(pi: ExtensionAPI, repoRoot: string, branch: string): Promise<boolean> {

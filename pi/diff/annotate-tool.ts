@@ -2,8 +2,9 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { errorMessage } from "#core/errors.ts";
 import { resolveReviewBase } from "#core/git/repo.ts";
-import { getBasecampEnv, isSubagent } from "#core/host/env.ts";
+import { isSubagent } from "#core/host/env.ts";
 import { type AnnotatedFile, type WriteResult, writeSidecar } from "./sidecar.ts";
+import { reviewWorktreeDir } from "./worktree.ts";
 
 /**
  * Lines are two named integers rather than a tuple: hunk rejects a sidecar
@@ -96,7 +97,7 @@ export function registerAnnotateTool(pi: ExtensionAPI): void {
 				// Writing these would make hunk refuse to start on every later /diff.
 				throw new Error(`endLine must not precede startLine: ${inverted.join(", ")}`);
 			}
-			const worktreeDir = getBasecampEnv("BASECAMP_WORKTREE_DIR") ?? process.cwd();
+			const worktreeDir = reviewWorktreeDir();
 			// Stamped so /diff can tell rationale about this changeset from rationale
 			// left behind by whatever this worktree directory held previously.
 			let base: string;

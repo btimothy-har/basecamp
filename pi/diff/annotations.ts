@@ -2,10 +2,20 @@
 
 import type { UserNote } from "./hunk.ts";
 
+function span(range: [number, number]): string {
+	const [start, end] = range;
+	return start === end ? `${start}` : `${start}-${end}`;
+}
+
+/**
+ * Reviewing a deletion is ordinary, and such a note carries only an old-side
+ * range — reporting it as a bare filename would strand the agent's most
+ * specific feedback on the file rather than the lines it is about.
+ */
 function location(note: UserNote): string {
-	if (!note.newRange) return note.filePath;
-	const [start, end] = note.newRange;
-	return start === end ? `${note.filePath}:${start}` : `${note.filePath}:${start}-${end}`;
+	if (note.newRange) return `${note.filePath}:${span(note.newRange)}`;
+	if (note.oldRange) return `${note.filePath}:${span(note.oldRange)} (removed lines)`;
+	return note.filePath;
 }
 
 export function formatAnnotations(notes: UserNote[]): string {

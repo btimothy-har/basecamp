@@ -238,14 +238,15 @@ describe("readUserNotes", () => {
 		assert.deepEqual(await readUserNotes(pi, SESSION_ID), { ok: true, notes: [] });
 	});
 
-	it("returns only user notes, carrying newRange values, and drops ai notes", async () => {
+	it("keeps both anchor sides, drops ai notes, and never invents a range", async () => {
 		const pi = createMockPi(() => okJson(MULTI_NOTE_JSON));
 		const read = await readUserNotes(pi, SESSION_ID);
 		assert.equal(read.ok, true);
 		assert.deepEqual(read.ok ? read.notes : [], [
 			{ filePath: "pi/code-review/README.md", newRange: [45, 45], body: "hi" },
 			{ filePath: "pi/diff/hunk.ts", newRange: [12, 18], body: "check the timeout here" },
-			{ filePath: "README.md", body: "no newRange on this one" },
+			// An old-side range is the only anchor a note on a deleted line has.
+			{ filePath: "README.md", oldRange: [3, 3], body: "no newRange on this one" },
 		] satisfies UserNote[]);
 	});
 });

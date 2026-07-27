@@ -33,6 +33,8 @@ export interface HunkSession {
 export interface UserNote {
 	filePath: string;
 	newRange?: [number, number];
+	/** Set instead of newRange for a note left on a removed line. */
+	oldRange?: [number, number];
 	body: string;
 }
 
@@ -107,6 +109,8 @@ function toUserNote(raw: unknown): UserNote | null {
 	if (typeof filePath !== "string" || typeof body !== "string") return null;
 	const note: UserNote = { filePath, body };
 	if (isNumberPair(raw.newRange)) note.newRange = raw.newRange;
+	// A note on a deleted line carries only oldRange; without it the anchor is lost.
+	if (isNumberPair(raw.oldRange)) note.oldRange = raw.oldRange;
 	return note;
 }
 
