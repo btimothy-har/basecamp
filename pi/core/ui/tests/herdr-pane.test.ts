@@ -5,13 +5,13 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { shellQuote } from "#core/host/shell.ts";
 import {
 	checkHerdrEligibility,
 	closeHerdrTab,
 	type HerdrEnv,
 	openHerdrTab,
 	runInHerdrPane,
-	shellQuote,
 } from "#core/ui/herdr-pane.ts";
 
 interface ExecCall {
