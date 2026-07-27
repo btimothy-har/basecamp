@@ -8,7 +8,7 @@ import {
 	type HunkSession,
 	readUserNotes,
 	type UserNote,
-} from "../hunk.ts";
+} from "#diff/hunk.ts";
 
 interface ExecResult {
 	code: number;

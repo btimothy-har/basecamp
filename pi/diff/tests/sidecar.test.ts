@@ -13,7 +13,7 @@ import {
 	Sidecar,
 	sidecarPath,
 	writeSidecar,
-} from "../sidecar.ts";
+} from "#diff/sidecar.ts";
 
 function tmpScratch(t: TestContext): string {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "diff-sidecar-"));

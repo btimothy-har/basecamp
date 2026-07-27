@@ -4,7 +4,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerAnnotateTool } from "../annotate-tool.ts";
+import { registerAnnotateTool } from "#diff/annotate-tool.ts";
 
 interface RegisteredTool {
 	name: string;
