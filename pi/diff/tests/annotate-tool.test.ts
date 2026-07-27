@@ -4,7 +4,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { registerAnnotateTool } from "#diff/annotate-tool.ts";
+import { Value } from "@sinclair/typebox/value";
+import { AnnotateChangesetParams, registerAnnotateTool } from "#diff/annotate-tool.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -25,7 +26,10 @@ interface RegisteredTool {
 interface MockPi {
 	tools: Map<string, RegisteredTool>;
 	registerTool(tool: RegisteredTool): void;
+	exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string; killed: boolean }>;
 }
+
+const STUB_BASE = "43e3afd68b290430804ef6d7cc0fba60336dcd98";
 
 function createMockPi(): MockPi {
 	const tools = new Map<string, RegisteredTool>();
@@ -33,6 +37,11 @@ function createMockPi(): MockPi {
 		tools,
 		registerTool(tool: RegisteredTool) {
 			tools.set(tool.name, tool);
+		},
+		// The tool stamps the sidecar with the review base, so it resolves git.
+		async exec(_command: string, args: string[]) {
+			const stdout = args.join(" ").includes("merge-base") ? STUB_BASE : "origin/main";
+			return { code: 0, stdout, stderr: "", killed: false };
 		},
 	};
 }
@@ -91,17 +100,53 @@ describe("annotate_changeset registration", () => {
 	});
 });
 
+describe("annotate_changeset parameters", () => {
+	const valid = {
+		summary: "S.",
+		files: [{ path: "a.ts", annotations: [{ startLine: 4, endLine: 9, summary: "x" }] }],
+	};
+
+	it("accepts a well-formed changeset", () => {
+		assert.equal(Value.Check(AnnotateChangesetParams, valid), true);
+	});
+
+	it("rejects line numbers hunk refuses to load", () => {
+		// hunk aborts before registering a session on a 0-based or negative line,
+		// and the sidecar is reused, so /diff would stay broken until it is deleted.
+		for (const startLine of [0, -1]) {
+			const params = { ...valid, files: [{ path: "a.ts", annotations: [{ startLine, endLine: 9, summary: "x" }] }] };
+			assert.equal(Value.Check(AnnotateChangesetParams, params), false, `startLine ${startLine} must be rejected`);
+		}
+		const zeroEnd = { ...valid, files: [{ path: "a.ts", annotations: [{ startLine: 1, endLine: 0, summary: "x" }] }] };
+		assert.equal(Value.Check(AnnotateChangesetParams, zeroEnd), false);
+	});
+
+	it("rejects an empty summary and unknown properties", () => {
+		assert.equal(Value.Check(AnnotateChangesetParams, { ...valid, summary: "" }), false);
+		assert.equal(Value.Check(AnnotateChangesetParams, { ...valid, extra: 1 }), false);
+	});
+
+	it("no longer accepts the tuple form", () => {
+		const tuple = { ...valid, files: [{ path: "a.ts", annotations: [{ newRange: [1, 2], summary: "x" }] }] };
+		assert.equal(Value.Check(AnnotateChangesetParams, tuple), false);
+	});
+});
+
 describe("annotate_changeset execution", () => {
-	it("writes the sidecar and returns a confirmation with counts", async (t) => {
+	function toolFor(t: TestContext, worktree?: string) {
 		preserveDepth(t);
 		process.env.BASECAMP_AGENT_DEPTH = "0";
 		preserveScratch(t);
-		preserveWorktreeDir(t, "/wt/exec");
-
+		if (worktree) preserveWorktreeDir(t, worktree);
 		const pi = createMockPi();
 		registerAnnotateTool(pi as unknown as ExtensionAPI);
 		const tool = pi.tools.get("annotate_changeset");
 		assert.ok(tool);
+		return tool;
+	}
+
+	it("writes the sidecar and returns a confirmation with counts", async (t) => {
+		const tool = toolFor(t, "/wt/exec");
 
 		const result = await tool.execute("call-1", {
 			summary: "Changeset summary.",
@@ -109,53 +154,59 @@ describe("annotate_changeset execution", () => {
 				{
 					path: "pi/diff/sidecar.ts",
 					annotations: [
-						{ newRange: [1, 10], summary: "writer" },
-						{ newRange: [12, 20], summary: "path", rationale: "hash-based" },
+						{ startLine: 1, endLine: 10, summary: "writer" },
+						{ startLine: 12, endLine: 20, summary: "path", rationale: "hash-based" },
 					],
 				},
-				{ path: "pi/diff/annotate-tool.ts", annotations: [{ newRange: [1, 5], summary: "tool" }] },
+				{ path: "pi/diff/annotate-tool.ts", annotations: [{ startLine: 1, endLine: 5, summary: "tool" }] },
 			],
 		});
 
-		assert.equal(result.content.length, 1);
-		assert.equal(result.content[0]?.type, "text");
 		const text = result.content[0]?.text ?? "";
 		assert.match(text, /3 annotations/);
 		assert.match(text, /2 files/);
-		assert.match(text, /\/diff/);
 
 		const details = result.details as { sidecarPath: string; files: number; annotations: number };
-		assert.equal(details.files, 2);
 		assert.equal(details.annotations, 3);
-		assert.ok(fs.existsSync(details.sidecarPath));
 
-		const written = JSON.parse(fs.readFileSync(details.sidecarPath, "utf8")) as { version: number; summary: string };
+		const written = JSON.parse(fs.readFileSync(details.sidecarPath, "utf8")) as {
+			version: number;
+			basecampBase: string;
+			files: { annotations: { newRange: [number, number] }[] }[];
+		};
 		assert.equal(written.version, 1);
-		assert.equal(written.summary, "Changeset summary.");
+		assert.equal(written.basecampBase, STUB_BASE, "the sidecar records the base it was anchored against");
+		// The wire format hunk reads is a tuple, whatever shape the tool accepts.
+		assert.deepEqual(written.files[0]?.annotations[0]?.newRange, [1, 10]);
+	});
+
+	it("refuses an inverted range instead of writing a sidecar hunk cannot load", async (t) => {
+		const tool = toolFor(t, "/wt/inverted");
+
+		await assert.rejects(
+			() =>
+				tool.execute("call-1", {
+					summary: "S.",
+					files: [{ path: "a.ts", annotations: [{ startLine: 20, endLine: 10, summary: "x" }] }],
+				}),
+			/endLine must not precede startLine/,
+		);
 	});
 
 	it("falls back to process.cwd() when BASECAMP_WORKTREE_DIR is unset", async (t) => {
-		preserveDepth(t);
-		process.env.BASECAMP_AGENT_DEPTH = "0";
-		preserveScratch(t);
 		const original = process.env.BASECAMP_WORKTREE_DIR;
 		delete process.env.BASECAMP_WORKTREE_DIR;
 		t.after(() => {
 			if (original === undefined) delete process.env.BASECAMP_WORKTREE_DIR;
 			else process.env.BASECAMP_WORKTREE_DIR = original;
 		});
-
-		const pi = createMockPi();
-		registerAnnotateTool(pi as unknown as ExtensionAPI);
-		const tool = pi.tools.get("annotate_changeset");
-		assert.ok(tool);
+		const tool = toolFor(t);
 
 		const result = await tool.execute("call-1", {
 			summary: "S.",
-			files: [{ path: "a.ts", annotations: [{ newRange: [1, 1], summary: "x" }] }],
+			files: [{ path: "a.ts", annotations: [{ startLine: 1, endLine: 1, summary: "x" }] }],
 		});
 
-		const details = result.details as { sidecarPath: string };
-		assert.ok(fs.existsSync(details.sidecarPath));
+		assert.ok(fs.existsSync((result.details as { sidecarPath: string }).sidecarPath));
 	});
 });

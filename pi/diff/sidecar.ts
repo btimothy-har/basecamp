@@ -30,6 +30,12 @@ export type AnnotatedFile = Static<typeof AnnotatedFile>;
 export const Sidecar = Type.Object(
 	{
 		version: Type.Literal(1),
+		/**
+		 * The review base these annotations were anchored against. hunk ignores
+		 * keys it does not know, so the stamp rides along in the file it reads
+		 * rather than in a second file that could drift away from it.
+		 */
+		basecampBase: Type.String({ minLength: 1 }),
 		summary: Type.String({ minLength: 1 }),
 		files: Type.Array(AnnotatedFile),
 	},
@@ -60,9 +66,10 @@ export interface WriteResult {
 	annotations: number;
 }
 
-export function writeSidecar(worktreeDir: string, summary: string, files: AnnotatedFile[]): WriteResult {
+export function writeSidecar(worktreeDir: string, base: string, summary: string, files: AnnotatedFile[]): WriteResult {
 	const sidecar: Sidecar = {
 		version: SIDECAR_VERSION,
+		basecampBase: base,
 		summary,
 		files,
 	};
@@ -70,12 +77,14 @@ export function writeSidecar(worktreeDir: string, summary: string, files: Annota
 	const filePath = sidecarPath(worktreeDir);
 	const dir = path.dirname(filePath);
 	fs.mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
+	// mkdirSync only applies mode on creation; re-enforce so a reused dir cannot stay looser.
 	fs.chmodSync(dir, PRIVATE_DIR_MODE);
 
-	// O_TRUNC ensures overwrite semantics — a prior sidecar for this worktree
-	// is replaced rather than appended to.
+	// Written aside and renamed so an interrupted write cannot leave torn JSON at
+	// a path every later /diff would keep handing to hunk.
+	const tempPath = `${filePath}.${process.pid}.tmp`;
 	const fd = fs.openSync(
-		filePath,
+		tempPath,
 		fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_TRUNC,
 		PRIVATE_FILE_MODE,
 	);
@@ -85,7 +94,24 @@ export function writeSidecar(worktreeDir: string, summary: string, files: Annota
 	} finally {
 		fs.closeSync(fd);
 	}
+	fs.renameSync(tempPath, filePath);
 
 	const annotationCount = files.reduce((acc, f) => acc + f.annotations.length, 0);
 	return { path: filePath, files: files.length, annotations: annotationCount };
+}
+
+/**
+ * The base a stored sidecar was written against, or null when there is none,
+ * it cannot be read, or it predates stamping. A sidecar outlives the changeset
+ * that produced it — worktree directories are deliberately reused across
+ * branches — so the caller compares this before rendering stale rationale.
+ */
+export function readSidecarBase(worktreeDir: string): string | null {
+	try {
+		const parsed: unknown = JSON.parse(fs.readFileSync(sidecarPath(worktreeDir), "utf8"));
+		const base = (parsed as { basecampBase?: unknown }).basecampBase;
+		return typeof base === "string" && base !== "" ? base : null;
+	} catch {
+		return null;
+	}
 }

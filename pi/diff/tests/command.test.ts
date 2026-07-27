@@ -12,6 +12,13 @@ function argsFor(calls: { command: string; args: string[] }[], command: string, 
 	return calls.find((c) => c.command === command && c.args.join(" ").startsWith(prefix))?.args;
 }
 
+function writeStubSidecar(base: string): string {
+	const target = sidecarPath(WORKTREE);
+	fs.mkdirSync(path.dirname(target), { recursive: true });
+	fs.writeFileSync(target, JSON.stringify({ version: 1, basecampBase: base, summary: "s", files: [] }));
+	return target;
+}
+
 function order(calls: { command: string; args: string[] }[]): string[] {
 	return calls.map((c) => `${c.command} ${c.args.join(" ")}`);
 }
@@ -70,11 +77,9 @@ describe("/diff", () => {
 		assert.deepEqual(read, ["session", "comment", "list", NEW_SESSION, "--type", "user", "--json"]);
 	});
 
-	it("passes the sidecar when one exists for this worktree", async (t) => {
+	it("passes the sidecar when it was stamped against this base", async (t) => {
 		herdrEnv(t);
-		const target = sidecarPath(WORKTREE);
-		fs.mkdirSync(path.dirname(target), { recursive: true });
-		fs.writeFileSync(target, "{}");
+		const target = writeStubSidecar(BASE);
 		const h = harness();
 
 		await h.run();
@@ -85,6 +90,18 @@ describe("/diff", () => {
 			"'--agent-context'",
 			`'${target}'`,
 		]);
+	});
+
+	it("ignores a sidecar left behind for a different base", async (t) => {
+		// Worktree directories are reused across branches, so an unstamped match
+		// would render one branch's rationale against another branch's lines.
+		herdrEnv(t);
+		writeStubSidecar("some-older-base");
+		const h = harness();
+
+		await h.run();
+
+		assert.deepEqual(argsFor(h.calls, "herdr", "pane run")?.slice(4), ["'diff'", `'${BASE}'`]);
 	});
 
 	it("sends line-anchored annotations back into the session", async (t) => {

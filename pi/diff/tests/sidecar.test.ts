@@ -10,6 +10,7 @@ import {
 	Annotation,
 	PRIVATE_DIR_MODE,
 	PRIVATE_FILE_MODE,
+	readSidecarBase,
 	Sidecar,
 	sidecarPath,
 	writeSidecar,
@@ -24,6 +25,7 @@ function tmpScratch(t: TestContext): string {
 function validSidecar(): Static<typeof Sidecar> {
 	return {
 		version: 1,
+		basecampBase: "abc1234",
 		summary: "Changeset summary.",
 		files: [
 			{
@@ -127,7 +129,7 @@ describe("writeSidecar", () => {
 		process.env.BASECAMP_SCRATCH_DIR = scratch;
 		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
 
-		const result = writeSidecar("/wt/test", "Summary.", [
+		const result = writeSidecar("/wt/test", "abc1234", "Summary.", [
 			{ path: "a.ts", annotations: [{ newRange: [1, 5], summary: "head" }] },
 		]);
 
@@ -147,7 +149,7 @@ describe("writeSidecar", () => {
 		process.env.BASECAMP_SCRATCH_DIR = scratch;
 		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
 
-		const first = writeSidecar("/wt/ow", "First.", [
+		const first = writeSidecar("/wt/ow", "abc1234", "First.", [
 			{
 				path: "a.ts",
 				annotations: [
@@ -156,7 +158,7 @@ describe("writeSidecar", () => {
 				],
 			},
 		]);
-		const second = writeSidecar("/wt/ow", "Second.", [
+		const second = writeSidecar("/wt/ow", "abc1234", "Second.", [
 			{ path: "b.ts", annotations: [{ newRange: [1, 2], summary: "only" }] },
 		]);
 
@@ -173,7 +175,7 @@ describe("writeSidecar", () => {
 		process.env.BASECAMP_SCRATCH_DIR = scratch;
 		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
 
-		const result = writeSidecar("/wt/count", "S.", [
+		const result = writeSidecar("/wt/count", "abc1234", "S.", [
 			{
 				path: "a.ts",
 				annotations: [
@@ -193,7 +195,7 @@ describe("writeSidecar", () => {
 		process.env.BASECAMP_SCRATCH_DIR = scratch;
 		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
 
-		writeSidecar("/wt/dir", "S.", [{ path: "a.ts", annotations: [{ newRange: [1, 1], summary: "x" }] }]);
+		writeSidecar("/wt/dir", "abc1234", "S.", [{ path: "a.ts", annotations: [{ newRange: [1, 1], summary: "x" }] }]);
 
 		const dir = path.join(scratch, "diff");
 		const mode = fs.statSync(dir).mode & 0o777;
@@ -205,11 +207,53 @@ describe("writeSidecar", () => {
 		process.env.BASECAMP_SCRATCH_DIR = scratch;
 		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
 
-		const a = writeSidecar("/wt/alpha", "A.", [{ path: "a.ts", annotations: [{ newRange: [1, 1], summary: "x" }] }]);
-		const b = writeSidecar("/wt/beta", "B.", [{ path: "b.ts", annotations: [{ newRange: [1, 1], summary: "y" }] }]);
+		const a = writeSidecar("/wt/alpha", "abc1234", "A.", [
+			{ path: "a.ts", annotations: [{ newRange: [1, 1], summary: "x" }] },
+		]);
+		const b = writeSidecar("/wt/beta", "abc1234", "B.", [
+			{ path: "b.ts", annotations: [{ newRange: [1, 1], summary: "y" }] },
+		]);
 
 		assert.notEqual(a.path, b.path);
 		assert.ok(fs.existsSync(a.path));
 		assert.ok(fs.existsSync(b.path));
+	});
+});
+
+describe("readSidecarBase", () => {
+	it("returns null when no sidecar has been written", (t) => {
+		const dir = tmpScratch(t);
+		process.env.BASECAMP_SCRATCH_DIR = dir;
+		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
+		assert.equal(readSidecarBase("/wt/none"), null);
+	});
+
+	it("round-trips the base a sidecar was written against", (t) => {
+		const dir = tmpScratch(t);
+		process.env.BASECAMP_SCRATCH_DIR = dir;
+		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
+		writeSidecar("/wt/stamp", "deadbeef", "S.", [{ path: "a.ts", annotations: [{ newRange: [1, 1], summary: "x" }] }]);
+		assert.equal(readSidecarBase("/wt/stamp"), "deadbeef");
+	});
+
+	it("returns null for a torn or unparsable sidecar rather than throwing", (t) => {
+		const dir = tmpScratch(t);
+		process.env.BASECAMP_SCRATCH_DIR = dir;
+		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
+		const target = sidecarPath("/wt/torn");
+		fs.mkdirSync(path.dirname(target), { recursive: true });
+		fs.writeFileSync(target, '{"version":1,"basecampBase":"dead');
+		assert.equal(readSidecarBase("/wt/torn"), null);
+	});
+
+	it("leaves no temp file behind, so a rename-based write is invisible to callers", (t) => {
+		const dir = tmpScratch(t);
+		process.env.BASECAMP_SCRATCH_DIR = dir;
+		t.after(() => delete process.env.BASECAMP_SCRATCH_DIR);
+		const result = writeSidecar("/wt/atomic", "abc1234", "S.", [
+			{ path: "a.ts", annotations: [{ newRange: [1, 1], summary: "x" }] },
+		]);
+		const siblings = fs.readdirSync(path.dirname(result.path));
+		assert.deepEqual(siblings, [path.basename(result.path)]);
 	});
 });

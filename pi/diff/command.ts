@@ -1,6 +1,5 @@
 /** `/diff` — review this branch's changes in hunk and bring the annotations back. */
 
-import * as fs from "node:fs";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "#core/errors.ts";
 import { resolveReviewBase } from "#core/git/repo.ts";
@@ -10,7 +9,7 @@ import { checkHerdrEligibility, closeHerdrTab, openHerdrTab, runInHerdrPane } fr
 import { formatAnnotations } from "./annotations.ts";
 import { detectHunk, type HunkSession, listHunkSessions, readUserNotes, type UserNote } from "./hunk.ts";
 import { attachSession, forgetTab, ownedReview, rememberTab } from "./session-state.ts";
-import { sidecarPath } from "./sidecar.ts";
+import { readSidecarBase, sidecarPath } from "./sidecar.ts";
 
 // hunk's own update nag would render inside a tab Basecamp owns.
 const HUNK_TAB_ENV = { HUNK_DISABLE_UPDATE_NOTICE: "1" };
@@ -88,10 +87,14 @@ async function awaitLaunchedSession(
 	return null;
 }
 
+/**
+ * The sidecar is attached only while it still describes this base. Worktree
+ * directories are reused across branches, so an unstamped match would render
+ * one branch's rationale against another branch's line numbers.
+ */
 function hunkArgv(base: string, worktreeDir: string): string[] {
 	const argv = ["hunk", "diff", base];
-	const sidecar = sidecarPath(worktreeDir);
-	if (fs.existsSync(sidecar)) argv.push("--agent-context", sidecar);
+	if (readSidecarBase(worktreeDir) === base) argv.push("--agent-context", sidecarPath(worktreeDir));
 	return argv;
 }
 
