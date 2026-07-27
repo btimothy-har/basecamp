@@ -80,6 +80,10 @@ All TypeScript ships as **one** Pi extension (`pi/extension.ts`; manifest = the 
 
 Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `pull-request` owns the primary-only PR lifecycle skill, while `code-review` and `workstreams` consume `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
 
+### Diff Surface
+
+`/diff` is Basecamp's diff/review surface, restoring what Companion's retirement removed. It is primary-only and depends hard on both Herdr and an installed `hunk`: it opens hunk in a Herdr tab on `merge-base(defaultBranch, HEAD)` — a single `git diff` target, so committed and uncommitted work show together — blocks the session while you review, then reads your inline notes back as line-anchored feedback. The blocking confirm is load-bearing: hunk holds notes in memory and deregisters when its window closes, so the read must beat the quit. `annotate_changeset` lets the working agent seed its own rationale via hunk's `--agent-context` sidecar, which unlike the live comment API needs no open pane and preserves line ranges. Two non-obvious constraints shape the rest: `herdr pane run` is unescaped send-keys (every argument is single-quoted, and git refs legally contain `;` and `$`), and sidecars are accepted only at launch, never on reload. See `pi/diff/README.md`.
+
 ### Code Review
 
 `/skill:code-review` is a primary-only, user-invoked independent review of the current branch: it dispatches fixed and adaptive report-only reviewers, the primary synthesizes and semantically deduplicates their reports, and `report_findings` computes a deterministic verdict over that final set. Manual only. See `pi/code-review/README.md` for the review method, flow, result handling, and verdict rules.
