@@ -29,6 +29,20 @@ The primary may rewrite and regroup findings based on verified root cause and im
 
 The annotation pane collects optional user reactions. The private packet stores the primary summary, synthesized findings, responses, and reactions under session scratch with mode `0600`; its directory is `0700`. Raw reviewer reports and provenance mappings are not retained.
 
+## Annotation pane
+
+A finding list drills into a card carrying one optional comment, mirroring the plan-review shape in `pi/tasks/workflows/review/`.
+
+| View | Keys |
+|------|------|
+| List | `↑`/`↓` move · `Space`/`Enter` open · `s` submit · `Esc`/`ctrl+c` discard every comment |
+| Card | `←`/`→` prev/next finding · `↓` or `Tab` open the comment box · `Esc` back to the list |
+| Comment box | `Enter` save · `Esc` save and close · `↑`/`Backspace` on empty close · `shift+Enter` newline |
+
+Enter deliberately does **not** open the comment box, and every exit from the box commits, so the list-level discard is the only key that destroys a comment.
+
+**`ReactionStore` is the single source of truth; the `Editor` is a buffer, never an authority.** `Editor.submitValue()` empties itself *before* invoking `onSubmit`, so reading `getText()` anywhere on a submit path reads an empty editor and erases the comment — the defect this layout exists to prevent. The store is therefore seeded into the editor on focus-in and written back only from values carried on `CardEvent`s, and `reduceCard` drops a `blurEditor` that arrives after a submit has already left editing mode. The same hazard is called out in `pi/core/escalate/dialog/index.ts`.
+
 ## Layout
 
 - `index.ts` — registers `report_findings` and exposes the skill primary-only.
@@ -37,7 +51,10 @@ The annotation pane collects optional user reactions. The private packet stores 
 - `tools.ts` — result tool and review-chair handoff.
 - `findings.ts` — dimensions, severities, scope, and tool schemas.
 - `synthesis.ts` — stable finding order and deterministic verdict.
-- `annotate-pane.ts` — finding reactions.
+- `annotate/model.ts` — comment store, card state, and the pure `reduceCard` transitions.
+- `annotate/keys.ts` — keystroke-to-intent mapping for the list, card, and comment box.
+- `annotate/render.ts` — list and card text.
+- `annotate/index.ts` — the two `ui.custom` views and the list/card loop.
 - `artifact.ts` — private review packet.
 
 The feature reviews the current branch only. PR-number and arbitrary-branch targets are out of scope.
