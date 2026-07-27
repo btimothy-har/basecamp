@@ -8,7 +8,7 @@ import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import { checkHerdrEligibility, closeHerdrTab, openHerdrTab, runInHerdrPane } from "#core/ui/herdr-pane.ts";
 import { formatAnnotations } from "./annotations.ts";
 import { detectHunk, type HunkSession, listHunkSessions, readUserNotes, type UserNote } from "./hunk.ts";
-import { attachSession, forgetTab, ownedReview, rememberTab } from "./session-state.ts";
+import { attachSession, forgetSession, forgetTab, ownedReview, rememberTab } from "./session-state.ts";
 import { readSidecarBase, sidecarPath } from "./sidecar.ts";
 import { reviewWorktreeDir } from "./worktree.ts";
 
@@ -28,7 +28,10 @@ function tabLabel(worktreeDir: string): string {
 
 interface Drained {
 	notes: UserNote[];
+	/** A live review we could not safely replace; stop rather than destroy it. */
 	blocked?: string;
+	/** A review whose window is already gone, so its notes are unrecoverable. */
+	lost?: boolean;
 }
 
 /**
@@ -37,14 +40,25 @@ interface Drained {
  *
  * Only a review this process opened is drained; a hunk the user launched
  * themselves is left alone rather than reported as if it were this review.
- * If the read fails the tab stays open, because a failed read is the one case
- * where closing would destroy notes we could not recover.
+ *
+ * A read that fails against a *live* session blocks, because closing would
+ * destroy notes we could not recover. A session that is no longer registered
+ * is the opposite case: quitting hunk without confirming already lost those
+ * notes, so the id is cleared and the caller carries on. Retaining it would
+ * fail identically on every future call, and the state survives /reload.
  */
-async function drainOwnedReview(pi: ExtensionAPI, worktreeDir: string): Promise<Drained> {
+async function drainOwnedReview(pi: ExtensionAPI, worktreeDir: string, live: HunkSession[]): Promise<Drained> {
 	const owned = ownedReview(worktreeDir);
 	if (!owned) return { notes: [] };
 
-	if (owned.sessionId) {
+	const sessionAlive = owned.sessionId !== undefined && live.some((s) => s.sessionId === owned.sessionId);
+
+	if (owned.sessionId !== undefined && !sessionAlive) {
+		if (!(await closeAndForget(pi, worktreeDir, owned.tabId))) forgetSession(worktreeDir);
+		return { notes: [], lost: true };
+	}
+
+	if (sessionAlive && owned.sessionId !== undefined) {
 		const read = await readUserNotes(pi, owned.sessionId);
 		if (!read.ok) {
 			return { notes: [], blocked: `could not read the previous review's notes (${read.reason})` };
@@ -134,14 +148,18 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 		return;
 	}
 
-	const drained = await drainOwnedReview(pi, worktreeDir);
+	const live = await listHunkSessions(pi, worktreeDir);
+	const drained = await drainOwnedReview(pi, worktreeDir, live);
 	if (drained.blocked) {
 		deliver(pi, ctx, drained.notes);
 		ctx.ui.notify(`/diff stopped: ${drained.blocked}. The hunk window is still open.`, "error");
 		return;
 	}
+	if (drained.lost) {
+		ctx.ui.notify("The previous review's notes were lost — hunk was closed before confirming here.", "warning");
+	}
 
-	const before = new Set((await listHunkSessions(pi, worktreeDir)).map((s) => s.sessionId));
+	const before = new Set(live.map((s) => s.sessionId));
 
 	const tab = await openHerdrTab(pi, {
 		workspaceId,

@@ -36,3 +36,9 @@ export function ownedReview(worktreeDir: string): OwnedReview | undefined {
 export function forgetTab(worktreeDir: string): void {
 	getOwnedReviews().byWorktree.delete(worktreeDir);
 }
+
+/** Drops a dead session while keeping a tab id that still needs closing. */
+export function forgetSession(worktreeDir: string): void {
+	const owned = getOwnedReviews().byWorktree.get(worktreeDir);
+	if (owned) delete owned.sessionId;
+}

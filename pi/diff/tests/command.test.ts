@@ -203,6 +203,21 @@ describe("/diff", () => {
 		assert.match(h.sent[0]?.content ?? "", /from this review/);
 	});
 
+	it("recovers when the remembered session died with its window", async (t) => {
+		// Quitting hunk without confirming loses that review; the id left behind must
+		// not then fail every future /diff for the lifetime of the process.
+		herdrEnv(t);
+		rememberTab(WORKTREE, "w9:tDead");
+		attachSession(WORKTREE, STALE_SESSION);
+		const h = harness({ preexisting: [], noteReads: [{ fail: "No active session matches sessionId" }, []] });
+
+		await h.run();
+
+		assert.deepEqual(argsFor(h.calls, "herdr", "tab create")?.slice(0, 2), ["tab", "create"], "must still open a diff");
+		assert.match(h.notices[0]?.message ?? "", /previous review/);
+		assert.equal(ownedReview(WORKTREE)?.sessionId, NEW_SESSION, "the dead id must be replaced, not retained");
+	});
+
 	it("leaves a foreign hunk session alone", async (t) => {
 		herdrEnv(t);
 		const h = harness({ preexisting: ["not-ours"], noteReads: [[]] });
