@@ -3,14 +3,21 @@
  *
  * copilot is the locked, launch-only agent mode: entered solely via `pi --copilot`,
  * immutable once set, and it hides the plan() tool. This module gathers what is
- * peculiar to copilot — the launch-flag reader, the mode predicate, and the name
- * of the built-in tool it disables — so the generic state machine in index.ts
- * stays free of copilot special-casing.
+ * peculiar to copilot — the launch predicate, the mode predicate, and the name of
+ * the built-in tool it disables — so the generic state machine in index.ts stays
+ * free of copilot special-casing.
  *
- * Launch seam: `--copilot` is registered by exactly one extension (registerSession).
- * getFlag is per-extension, so other packages cannot read the flag directly without
- * re-registering it (which would trip the loader's flag-conflict diagnostic). Core
- * exposes the launch value through this reader; consumers call isCopilotLaunch().
+ * The launch predicate reads argv rather than `pi.getFlag("copilot")` because Pi
+ * applies CLI flag values only after every extension factory has run. Consumers
+ * that gate *registration* on copilot (`pi/workstreams/index.ts`) have no flag
+ * value to read that early, and argv is the only copilot signal that exists then.
+ * registerSession declares the flag off COPILOT_FLAG_NAME — without the
+ * declaration Pi rejects `--copilot` as an unknown option — so one name spans
+ * both the declaration and this read.
+ *
+ * Deliberately not a BASECAMP_* env var: subagents inherit the parent environment,
+ * so a copilot var would make every dispatched agent a copilot. Copilot is a
+ * property of this process's launch and must not propagate.
  */
 
 import type { AgentMode } from "./index.ts";
@@ -18,28 +25,26 @@ import type { AgentMode } from "./index.ts";
 /** The Pi built-in plan() tool that copilot mode hides. */
 export const PLAN_TOOL_NAME = "plan";
 
+/** Registered by registerSession, read here — one name so the two cannot drift. */
+export const COPILOT_FLAG_NAME = "copilot";
+
+const COPILOT_FLAG = `--${COPILOT_FLAG_NAME}`;
+
 /** copilot is the locked, launch-only mode. */
 export function isCopilotMode(mode: AgentMode): boolean {
 	return mode === "copilot";
 }
 
-type CopilotLaunchReader = () => boolean;
-
-// Wiring, not surviving state: core re-registers the reader on every load.
-let copilotLaunchReader: CopilotLaunchReader | null = null;
-
-export function setCopilotLaunchReader(reader: CopilotLaunchReader): void {
-	copilotLaunchReader = reader;
-}
-
+/**
+ * True when this process was launched with `--copilot`. Pi coerces a boolean flag
+ * to true whatever value it parses, so `--copilot=false` is a copilot launch too.
+ *
+ * Coarser than Pi's parser in one case: Pi reads a built-in value-taking flag's
+ * value unconditionally, so `pi --model --copilot` binds the token as the model
+ * and is not a copilot launch, while this returns true. Recognising that would
+ * mean copying Pi's list of value-taking flags, and a stale copy of that list
+ * fails more quietly than this does — the invocation is already malformed.
+ */
 export function isCopilotLaunch(): boolean {
-	try {
-		return copilotLaunchReader?.() ?? false;
-	} catch {
-		return false;
-	}
-}
-
-export function resetCopilotLaunchForTesting(): void {
-	copilotLaunchReader = null;
+	return process.argv.slice(2).some((arg) => arg === COPILOT_FLAG || arg.startsWith(`${COPILOT_FLAG}=`));
 }

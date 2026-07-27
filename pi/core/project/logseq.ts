@@ -10,9 +10,9 @@ const projectDir = path.dirname(fileURLToPath(import.meta.url));
 export const copilotSkillPath = path.join(projectDir, "skills", "copilot", "SKILL.md");
 
 /**
- * Offer the copilot memory skill only to copilot sessions. The launch value is fixed
- * for a session but its reader is installed by core's session module, so the handler
- * reads it on discovery rather than gating registration on core's internal ordering.
+ * Offer the copilot memory skill only to copilot sessions. The gate is evaluated
+ * inside the handler, so every discovery re-reads the launch value rather than
+ * capturing it once at registration.
  */
 export function registerCopilotSkill(pi: ExtensionAPI): void {
 	pi.on("resources_discover", () => (isCopilotLaunch() ? { skillPaths: [copilotSkillPath] } : {}));

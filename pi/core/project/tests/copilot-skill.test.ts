@@ -4,8 +4,13 @@ import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
-import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/agent-mode/copilot.ts";
 import { copilotSkillPath, registerCopilotSkill } from "#core/project/logseq.ts";
+
+const originalArgv = process.argv;
+
+function setCopilotLaunch(launched: boolean): void {
+	process.argv = launched ? ["node", "pi", "--copilot"] : ["node", "pi"];
+}
 
 interface ResourceContribution {
 	skillPaths?: string[];
@@ -23,9 +28,9 @@ function createMockPi(): { pi: ExtensionAPI; resourceHandlers: ResourceHandler[]
 }
 
 function withCopilotLaunch(t: TestContext, launched: boolean): void {
-	setCopilotLaunchReader(() => launched);
+	setCopilotLaunch(launched);
 	t.after(() => {
-		resetCopilotLaunchForTesting();
+		process.argv = originalArgv;
 	});
 }
 
@@ -51,17 +56,13 @@ describe("copilot skill registration", () => {
 	});
 
 	it("re-reads the launch value on every discovery", (t) => {
-		let launched = false;
-		setCopilotLaunchReader(() => launched);
-		t.after(() => {
-			resetCopilotLaunchForTesting();
-		});
+		withCopilotLaunch(t, false);
 		const { pi, resourceHandlers } = createMockPi();
 
 		registerCopilotSkill(pi);
 		assert.deepEqual(resourceHandlers[0]?.(), {});
 
-		launched = true;
+		setCopilotLaunch(true);
 		assert.deepEqual(resourceHandlers[0]?.(), { skillPaths: [copilotSkillPath] });
 	});
 });

@@ -83,7 +83,7 @@ The context block sanctions reading the last **14 days** of journals plus a doss
 
 ### Guidance placement
 
-The page schema and write mechanics live in a copilot-only skill named `copilot` at `pi/core/project/skills/copilot/SKILL.md`, registered through a `resources_discover` handler gated on `isCopilotLaunch()`. The predicate is read inside the handler rather than around `pi.on`, so the registration does not depend on core's internal ordering. It is not in the manifest `pi.skills` array because that route is unconditional. `pi/system-prompt/defaults/modes/copilot.md` keeps only the charter plus a pointer to the skill.
+The page schema and write mechanics live in a copilot-only skill named `copilot` at `pi/core/project/skills/copilot/SKILL.md`, registered through a `resources_discover` handler gated on `isCopilotLaunch()`. The predicate is read inside the handler, so each discovery re-evaluates it rather than capturing it at registration. It is not in the manifest `pi.skills` array because that route is unconditional. `pi/system-prompt/defaults/modes/copilot.md` keeps only the charter plus a pointer to the skill.
 
 A write rule is duplicated into the mode when a page would be actively wrong without it, because the skill is model-invoked rather than auto-loaded and a session can reach a write without loading it. Two qualify: memory is written for the user rather than as the agent's research notes, and nothing unverified reaches the page. Everything else — the page schema, the operational write rules, and the before/after contrast — lives only in the skill.
 

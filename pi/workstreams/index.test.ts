@@ -1,8 +1,15 @@
 import assert from "node:assert/strict";
 import { afterEach, beforeEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { resetCopilotLaunchForTesting, setCopilotLaunchReader } from "#core/agent-mode/copilot.ts";
 import registerWorkstreams from "./index.ts";
+
+const WORKSTREAM_TOOLS = [
+	"create_workstream",
+	"edit_workstream",
+	"launch_workstream",
+	"list_workstreams",
+	"set_workstream_status",
+];
 
 type ToolSpec = { name: string };
 
@@ -56,35 +63,51 @@ function createMockPi(): MockPi {
 }
 
 describe("workstreams entrypoint", () => {
+	const originalArgv = process.argv;
 	let priorDepth: string | undefined;
 
 	beforeEach(() => {
 		priorDepth = process.env.BASECAMP_AGENT_DEPTH;
 		process.env.BASECAMP_AGENT_DEPTH = "0";
+		// Every case states its own launch argv; never inherit the runner's.
+		process.argv = ["node", "pi"];
 	});
 
 	afterEach(() => {
 		if (priorDepth === undefined) delete process.env.BASECAMP_AGENT_DEPTH;
 		else process.env.BASECAMP_AGENT_DEPTH = priorDepth;
-		resetCopilotLaunchForTesting();
+		process.argv = originalArgv;
 	});
 
+	// The gate runs at registration, before Pi has applied any CLI flag value, so the
+	// launch signal has to come from argv — reading pi.getFlag here always yields
+	// undefined and silently withholds every tool.
 	it("registers the workstream tools for a copilot session", () => {
-		setCopilotLaunchReader(() => true);
+		process.argv = ["node", "pi", "--copilot"];
 		const pi = createMockPi();
 		registerWorkstreams(pi as unknown as ExtensionAPI);
 
 		const toolNames = new Set(pi.tools.map((tool) => tool.name));
-		assert.equal(toolNames.has("create_workstream"), true);
-		assert.equal(toolNames.has("edit_workstream"), true);
-		assert.equal(toolNames.has("launch_workstream"), true);
-		assert.equal(toolNames.has("list_workstreams"), true);
-		assert.equal(toolNames.has("set_workstream_status"), true);
+		assert.deepEqual(
+			WORKSTREAM_TOOLS.filter((name) => !toolNames.has(name)),
+			[],
+		);
 		assert.equal(pi.flags.has("workstream"), true);
 	});
 
+	it("registers the workstream tools for --copilot=<value>", () => {
+		process.argv = ["node", "pi", "--copilot=false"];
+		const pi = createMockPi();
+		registerWorkstreams(pi as unknown as ExtensionAPI);
+
+		const toolNames = new Set(pi.tools.map((tool) => tool.name));
+		assert.deepEqual(
+			WORKSTREAM_TOOLS.filter((name) => !toolNames.has(name)),
+			[],
+		);
+	});
+
 	it("withholds the tools from a non-copilot top-level session but keeps --workstream", () => {
-		setCopilotLaunchReader(() => false);
 		const pi = createMockPi();
 		registerWorkstreams(pi as unknown as ExtensionAPI);
 
@@ -93,8 +116,11 @@ describe("workstreams entrypoint", () => {
 		assert.equal(pi.flags.has("workstream"), true);
 	});
 
+	// Depth wins over the launch flag: --copilot never reaches a spawned agent's argv,
+	// but the gate must not depend on that.
 	it("registers nothing for a non-top-level (daemon-spawned) session", () => {
 		process.env.BASECAMP_AGENT_DEPTH = "1";
+		process.argv = ["node", "pi", "--copilot"];
 		const pi = createMockPi();
 		registerWorkstreams(pi as unknown as ExtensionAPI);
 

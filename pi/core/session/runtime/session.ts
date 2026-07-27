@@ -1,17 +1,17 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { setCopilotLaunchReader } from "#core/agent-mode/copilot.ts";
+import { COPILOT_FLAG_NAME, isCopilotLaunch } from "#core/agent-mode/copilot.ts";
 import { restoreAgentModeFromSessionState, setAgentMode } from "#core/agent-mode/index.ts";
 
 export function registerSession(pi: ExtensionAPI): void {
-	pi.registerFlag("copilot", {
+	// Declared here so Pi's parser accepts --copilot; the value is read from argv by
+	// isCopilotLaunch(), because Pi applies flag values only after extensions load.
+	pi.registerFlag(COPILOT_FLAG_NAME, {
 		description: "Start a locked repo-copilot session (immutable mode; cannot be changed via shift+tab).",
 		type: "boolean",
 	});
-	// Sole owner of --copilot; other packages read the launch value via isCopilotLaunch().
-	setCopilotLaunchReader(() => pi.getFlag("copilot") !== undefined);
 
 	pi.on("session_start", async () => {
-		if (pi.getFlag("copilot") !== undefined) {
+		if (isCopilotLaunch()) {
 			setAgentMode("copilot");
 			return;
 		}
