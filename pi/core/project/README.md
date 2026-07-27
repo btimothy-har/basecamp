@@ -85,6 +85,8 @@ The context block sanctions reading the last **14 days** of journals plus a doss
 
 The page schema and write mechanics live in a copilot-only skill named `copilot` at `pi/core/project/skills/copilot/SKILL.md`, registered through a `resources_discover` handler gated on `isCopilotLaunch()`. The predicate is read inside the handler rather than around `pi.on`, so the registration does not depend on core's internal ordering. It is not in the manifest `pi.skills` array because that route is unconditional. `pi/system-prompt/defaults/modes/copilot.md` keeps only the charter plus a pointer to the skill.
 
+The audience rule — memory is written for the user, not as the agent's research notes — is the one write rule that also sits in the mode, because the skill is model-invoked rather than auto-loaded and a session can reach a write without it. The mode carries the one-sentence charter; the skill carries the operational rules and the before/after contrast.
+
 ### Workstream interaction
 
 Logseq is the durable memory; workstreams are the user-facing execution surfaces. When copilot stages a workstream (via `launch_workstream`, owned by the swarm context) it provisions a `copilot/<slug>` worktree + Herdr pane and creates the workstream in the daemon; the user runs `pi --workstream` in that pane (bare form infers the slug from the worktree). Workstream agents never write Logseq and do not push updates to copilot.
