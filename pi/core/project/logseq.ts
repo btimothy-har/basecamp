@@ -1,17 +1,37 @@
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isCopilotLaunch } from "#core/agent-mode/copilot.ts";
 import { readLogseqGraphDir } from "#core/host/config.ts";
 import type { WorkspaceState } from "./workspace/state.ts";
+
+const projectDir = path.dirname(fileURLToPath(import.meta.url));
+
+export const copilotSkillPath = path.join(projectDir, "skills", "copilot", "SKILL.md");
+
+/**
+ * Offer the copilot memory skill only to copilot sessions. The launch value is fixed
+ * for a session but its reader is installed by core's session module, so the handler
+ * reads it on discovery rather than gating registration on core's internal ordering.
+ */
+export function registerCopilotSkill(pi: ExtensionAPI): void {
+	pi.on("resources_discover", () => (isCopilotLaunch() ? { skillPaths: [copilotSkillPath] } : {}));
+}
 
 export interface BuildRepoLogseqContextOptions {
 	workspace: WorkspaceState | null;
 	homeDir?: string;
 }
 
+/** How far back copilot may read journals before it counts as scanning the graph. */
+const JOURNAL_READ_WINDOW_DAYS = 14;
+
 interface RepoLogseqPaths {
 	repoPageName: string;
 	repoPagePath: string;
 	workPagePrefix: string;
 	workPageGlob: string;
+	journalsDir: string;
 }
 
 function safeRepoIdentity(repoIdentity: string): string {
@@ -32,6 +52,7 @@ function buildPaths(graphDir: string, repoIdentity: string): RepoLogseqPaths {
 		repoPagePath: path.join(pagesDir, `${repoPageName}.md`),
 		workPagePrefix,
 		workPageGlob: `${path.join(pagesDir, workPagePrefix)}*.md`,
+		journalsDir: path.join(graphDir, "journals"),
 	};
 }
 
@@ -71,8 +92,15 @@ export function buildRepoLogseqContext(options: BuildRepoLogseqContextOptions): 
 		"",
 		`Durable repo memory is available for ${repoIdentity} in the configured Logseq graph at \`${graphDir}\`.`,
 		"Use this memory when repo history, prior decisions, durable project facts, or active-work continuity would help answer the user well.",
-		`The repo cockpit is \`[[${paths.repoPageName}]]\` at \`${paths.repoPagePath}\`; read it first when durable repo context matters.`,
-		`Work dossiers are task-specific pages named like \`[[${paths.workPagePrefix}<slug>]]\` with files matching \`${paths.workPageGlob}\`.`,
-		"Do not scan the whole graph. Do not read unrelated Logseq pages. Open only the repo cockpit or a specifically relevant work dossier when the task calls for durable memory.",
+		"",
+		"Repo memory is three artifacts:",
+		`- Journals under \`${paths.journalsDir}\` hold live state — what happened, day by day.`,
+		`- Work dossiers are named like \`[[${paths.workPagePrefix}<slug>]]\` with files matching \`${paths.workPageGlob}\`; each holds durable context for one work item, never its status.`,
+		`- The repo cockpit \`[[${paths.repoPageName}]]\` at \`${paths.repoPagePath}\` is a sparse repo anchor, not a work record.`,
+		"",
+		`Reconstruct current state from the last ${JOURNAL_READ_WINDOW_DAYS} days of journals. To trace one item further back, search the journals directory for its dossier page name.`,
+		"Do not scan the whole graph. Do not read unrelated Logseq pages. Open only the repo cockpit, a specifically relevant work dossier, or journals within that window.",
+		"",
+		"Load the `copilot` skill before writing repo memory; it owns the page schema and the write rules.",
 	].join("\n");
 }

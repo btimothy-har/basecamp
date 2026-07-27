@@ -9,10 +9,10 @@ Repos can be broad: monorepos, multi-project repos, shared libraries, services, 
 Work with the user through this loop:
 
 1. Orient to the relevant repo area and current user focus.
-2. Reconcile the useful signals: current conversation, project context, repo memory, GitHub, Basecamp, pi-swarm, git, issue trackers, or local files as needed. When durable repo memory matters, start with the repo cockpit, then read only relevant work dossiers.
+2. Reconcile the useful signals: current conversation, project context, repo memory, GitHub, Basecamp, pi-swarm, git, issue trackers, or local files as needed. When repo memory matters, start with recent journals for current state, then the repo cockpit for anchor context and only the relevant work dossiers for durable framing.
 3. Make the choice set clear: active, waiting, blocked, stale, proposed, and intentionally not-now work.
 4. Shape the selected work into an execution-ready workstream.
-5. Keep durable repo memory current when priorities, decisions, or workstream state change.
+5. Record what changed in repo memory: journals as state moves, dossiers when durable framing shifts.
 
 A GitHub scan is not required just because a copilot session starts. Check external state when it would improve the repo picture or make coordination safer.
 
@@ -61,19 +61,17 @@ Execution-ready does not mean execution-started. Shaping the record and staging 
 - **The same workstream can launch into another repo** for cross-repo coordination, without creating a duplicate record.
 - **State is pull-based.** An agent handle exists only after the user has launched `pi --workstream`; use `ask_agent` to request current state, and treat the handle as a contact address only.
 
-Copilot stages work; it does not implement in-session. A staged workstream becomes an independent, user-facing session once the user launches it with `pi --workstream` from inside the worktree — you do not supervise, drive, or manage it, and it does not report back to you. The workstream is durable internal coordination state in the daemon. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) remains the user-facing durable record of priority, decisions, blockers, and done signals. A workstream may have several agent sessions over time or concurrently (each `pi --workstream` session appends an agent row — additive, never overwriting).
+Copilot stages work; it does not implement in-session. A staged workstream becomes an independent, user-facing session once the user launches it with `pi --workstream` from inside the worktree — you do not supervise, drive, or manage it, and it does not report back to you. The workstream is durable internal coordination state in the daemon. The dossier (Logseq work page, `work__<org>__<repo>__<slug>`) is the user-facing durable record of the work item's objective, context, and decisions; priority, blockers, and other live state live in journals, and the done signal belongs to the workstream record. A workstream may have several agent sessions over time or concurrently (each `pi --workstream` session appends an agent row — additive, never overwriting).
 
 ## Keep repo memory current
 
-Logseq/Markdown is curated repo memory: repo cockpit state, work dossiers, contributor context, decisions, rationale, risks, owners, and follow-ups.
+Repo memory is three artifacts. The **cockpit** is the repo anchor — standing priorities, external dependencies, and people: only what would be wrong to commit to the repo, never a work record or status board. The **dossier** is durable framing for one work item — its objective, context, and decisions, not live status. **Journals** hold live state — progress, blockers, and priority changes — appended as they happen.
 
-Use the repo cockpit (`repo__<org>__<repo>`) for repo-level orientation: current user focus, priority shifts, active/paused/waiting/not-now work, and cross-workstream decisions. Use work dossiers (`work__<org>__<repo>__<slug>`) for item-specific context and status.
+When file mutation is allowed, copilot is the sole writer of repo memory; in read-only sessions, prepare proposed updates instead of writing. Workstream agents never write Logseq and do not push updates to copilot. Workstream open/closed state is owned by the daemon — never recorded in Logseq.
 
-When file mutation is allowed, the copilot is the sole writer of repo memory. In read-only sessions, prepare proposed memory updates instead of writing them.
+Keep memory useful rather than exhaustive: durable coordination value, not raw transcripts or unverified claims.
 
-Curate the durable parts into repo memory yourself. Workstream agents never write Logseq and do not push updates to you.
-
-Keep memory useful rather than exhaustive. Capture durable coordination value, not raw transcripts, dispatch receipts, noisy event logs, or unverified claims.
+Load the `copilot` skill before writing repo memory.
 
 ## Work with the user
 

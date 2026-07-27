@@ -20,13 +20,17 @@ async function writeRootConfig(homeDir: string, config: unknown): Promise<void> 
 	await fs.writeFile(configPath, JSON.stringify(config), "utf8");
 }
 
-async function createGraph(t: TestContext): Promise<{ homeDir: string; graphDir: string; pagesDir: string }> {
+async function createGraph(
+	t: TestContext,
+): Promise<{ homeDir: string; graphDir: string; pagesDir: string; journalsDir: string }> {
 	const homeDir = await createTempHome(t);
 	const graphDir = path.join(homeDir, "logseq-graph");
 	const pagesDir = path.join(graphDir, "pages");
+	const journalsDir = path.join(graphDir, "journals");
 	await fs.mkdir(pagesDir, { recursive: true });
+	await fs.mkdir(journalsDir, { recursive: true });
 	await writeRootConfig(homeDir, { logseq: { graph_dir: "~/logseq-graph" } });
-	return { homeDir, graphDir, pagesDir };
+	return { homeDir, graphDir, pagesDir, journalsDir };
 }
 
 function workspace(repoName = "btimothy-har/basecamp", overrides: Partial<WorkspaceState> = {}): WorkspaceState {
@@ -48,8 +52,8 @@ function workspace(repoName = "btimothy-har/basecamp", overrides: Partial<Worksp
 }
 
 describe("buildRepoLogseqContext", () => {
-	it("emits prose guidance with exact repo and work page paths", async (t) => {
-		const { homeDir, graphDir, pagesDir } = await createGraph(t);
+	it("emits prose guidance with exact repo, work page and journal paths", async (t) => {
+		const { homeDir, graphDir, pagesDir, journalsDir } = await createGraph(t);
 		const context = buildRepoLogseqContext({ workspace: workspace("org/repo"), homeDir });
 		const repoPagePath = path.join(pagesDir, "repo__org__repo.md");
 		const workPageGlob = `${path.join(pagesDir, "work__org__repo__")}*.md`;
@@ -61,21 +65,24 @@ describe("buildRepoLogseqContext", () => {
 			),
 		);
 		assert.ok(context.includes("Use this memory when repo history, prior decisions, durable project facts"));
+		assert.ok(context.includes(`- Journals under \`${journalsDir}\` hold live state`));
 		assert.ok(
 			context.includes(
-				`The repo cockpit is \`[[repo__org__repo]]\` at \`${repoPagePath}\`; read it first when durable repo context matters.`,
+				`- Work dossiers are named like \`[[work__org__repo__<slug>]]\` with files matching \`${workPageGlob}\`;`,
 			),
 		);
 		assert.ok(
 			context.includes(
-				`Work dossiers are task-specific pages named like \`[[work__org__repo__<slug>]]\` with files matching \`${workPageGlob}\`.`,
+				`- The repo cockpit \`[[repo__org__repo]]\` at \`${repoPagePath}\` is a sparse repo anchor, not a work record.`,
 			),
 		);
+		assert.ok(context.includes("Reconstruct current state from the last 14 days of journals."));
 		assert.ok(context.includes("Do not scan the whole graph. Do not read unrelated Logseq pages."));
+		assert.ok(context.includes("Load the `copilot` skill before writing repo memory"));
 	});
 
-	it("does not read repo page contents or scan/list work dossier files", async (t) => {
-		const { homeDir, pagesDir } = await createGraph(t);
+	it("does not read page or journal contents, or scan/list their files", async (t) => {
+		const { homeDir, pagesDir, journalsDir } = await createGraph(t);
 		await fs.writeFile(
 			path.join(pagesDir, "repo__btimothy-har__basecamp.md"),
 			"UNIQUE_REPO_PAGE_CONTENT_SHOULD_NOT_APPEAR",
@@ -86,12 +93,15 @@ describe("buildRepoLogseqContext", () => {
 			"UNIQUE_WORK_PAGE_CONTENT_SHOULD_NOT_APPEAR",
 			"utf8",
 		);
+		await fs.writeFile(path.join(journalsDir, "2026_07_27.md"), "UNIQUE_JOURNAL_CONTENT_SHOULD_NOT_APPEAR", "utf8");
 
 		const context = buildRepoLogseqContext({ workspace: workspace(), homeDir });
 
 		assert.equal(context.includes("UNIQUE_REPO_PAGE_CONTENT_SHOULD_NOT_APPEAR"), false);
 		assert.equal(context.includes("UNIQUE_WORK_PAGE_CONTENT_SHOULD_NOT_APPEAR"), false);
+		assert.equal(context.includes("UNIQUE_JOURNAL_CONTENT_SHOULD_NOT_APPEAR"), false);
 		assert.equal(context.includes("work__btimothy-har__basecamp__001"), false);
+		assert.equal(context.includes("2026_07_27"), false);
 		assert.equal(context.includes("Excerpt"), false);
 		assert.ok(context.includes(`${path.join(pagesDir, "work__btimothy-har__basecamp__")}*.md`));
 	});

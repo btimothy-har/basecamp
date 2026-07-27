@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerProjectSession } from "./config.ts";
 import { registerContextInjection } from "./injection.ts";
+import { registerCopilotSkill } from "./logseq.ts";
 import { registerWorkspace } from "./workspace/index.ts";
 
 /**
@@ -12,4 +13,5 @@ export default function registerProject(pi: ExtensionAPI): void {
 	registerWorkspace(pi);
 	registerProjectSession(pi);
 	registerContextInjection(pi);
+	registerCopilotSkill(pi);
 }

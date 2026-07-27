@@ -54,8 +54,13 @@ describe("assemblePrompt copilot", () => {
 		assert.match(prompt, /Copilot stages work; it does not implement in-session/);
 		assert.match(prompt, /do not supervise, drive, or manage it/);
 		assert.match(prompt, /Workstream agents never write Logseq/);
-		assert.match(prompt, /remains the user-facing durable record/);
+		assert.match(prompt, /user-facing durable record of the work item's objective, context, and decisions/);
 		assert.match(prompt, /appends an agent row — additive, never overwriting/);
+		// page schema and Logseq mechanics live in the copilot skill, not the mode fragment
+		assert.match(prompt, /Load the `copilot` skill before writing repo memory/);
+		// live state lives only in journals, so orientation must route there before the durable pages
+		assert.match(prompt, /start with recent journals for current state, then the repo cockpit/);
+		assert.match(prompt, /journals as state moves, dossiers when durable framing shifts/);
 		// the five facts no tool description can assert
 		assert.match(prompt, /\*\*List before you create\.\*\*/);
 		assert.match(prompt, /An edit does not reach a running session/);
