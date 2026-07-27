@@ -1,6 +1,22 @@
 import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { isCopilotLaunch } from "#core/agent-mode/copilot.ts";
 import { readLogseqGraphDir } from "#core/host/config.ts";
 import type { WorkspaceState } from "./workspace/state.ts";
+
+const projectDir = path.dirname(fileURLToPath(import.meta.url));
+
+export const copilotSkillPath = path.join(projectDir, "skills", "copilot", "SKILL.md");
+
+/**
+ * Offer the copilot memory skill only to copilot sessions. The launch value is fixed
+ * for a session but its reader is installed by core's session module, so the handler
+ * reads it on discovery rather than gating registration on core's internal ordering.
+ */
+export function registerCopilotSkill(pi: ExtensionAPI): void {
+	pi.on("resources_discover", () => (isCopilotLaunch() ? { skillPaths: [copilotSkillPath] } : {}));
+}
 
 export interface BuildRepoLogseqContextOptions {
 	workspace: WorkspaceState | null;
