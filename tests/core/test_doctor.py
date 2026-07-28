@@ -11,10 +11,13 @@ import pytest
 
 from basecamp.core.doctor import run_doctor
 from basecamp.core.doctor.checks import gather
+from basecamp.core.doctor.checks import references as references_check
 from basecamp.core.doctor.checks import runtime as runtime_check
 from basecamp.core.doctor.finding import Finding, Remedy, Severity
 from basecamp.core.doctor.locations import Locations
 from basecamp.core.settings import CONFIG_VERSION, Settings
+
+_REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _DAY = 86400
 
@@ -172,6 +175,59 @@ def test_absolute_repo_root_relativized_by_fix(
     assert any(finding.remedy is Remedy.FIX and "relativize" in (finding.action or "") for finding in refs)
     run_doctor(fix=True, settings=settings, locations=locations)
     assert _read(settings)["projects"]["demo"]["repo_root"] == "work/demo"
+
+
+def test_bundled_styles_exclude_always_loaded_fragments(env: tuple[Settings, Locations]) -> None:
+    # craft.md and voice.md sit at the defaults/ top level precisely so the styles/ glob
+    # never validates an always-loaded fragment as a project's working_style
+    settings, locations = env
+    settings.install_dir = str(_REPO_ROOT)
+    styles = references_check._available_styles(settings, locations)
+    assert styles == {"advisor", "engineering", "logseq"}
+
+
+def _project_with_style(env: tuple[Settings, Locations], style: str) -> tuple[Settings, Locations]:
+    settings, locations = env
+    _scaffold(locations)
+    repo = locations.home / "work" / "demo"
+    (repo / ".git").mkdir(parents=True)
+    _write(
+        settings,
+        {"version": CONFIG_VERSION, "projects": {"demo": {"repo_root": "work/demo", "working_style": style}}},
+    )
+    settings.install_dir = str(_REPO_ROOT)
+    return settings, locations
+
+
+def test_craft_working_style_warns(env: tuple[Settings, Locations], monkeypatch: pytest.MonkeyPatch) -> None:
+    settings, locations = _project_with_style(env, "craft")
+    _all_available(monkeypatch)
+    refs = _in("References", gather(settings, locations, stale_days=30))
+    assert len(refs) == 1
+    assert refs[0].severity is Severity.WARNING
+    assert "working_style 'craft' not found" in refs[0].summary
+
+
+def test_voice_working_style_warns(env: tuple[Settings, Locations], monkeypatch: pytest.MonkeyPatch) -> None:
+    settings, locations = _project_with_style(env, "voice")
+    _all_available(monkeypatch)
+    refs = _in("References", gather(settings, locations, stale_days=30))
+    assert len(refs) == 1
+    assert refs[0].severity is Severity.WARNING
+    assert "working_style 'voice' not found" in refs[0].summary
+
+
+def test_engineering_working_style_passes(env: tuple[Settings, Locations], monkeypatch: pytest.MonkeyPatch) -> None:
+    settings, locations = _project_with_style(env, "engineering")
+    _all_available(monkeypatch)
+    assert not _in("References", gather(settings, locations, stale_days=30))
+
+
+def test_user_supplied_working_style_passes(env: tuple[Settings, Locations], monkeypatch: pytest.MonkeyPatch) -> None:
+    settings, locations = _project_with_style(env, "custom")
+    (locations.styles_dir / "custom.md").write_text("custom style")
+    _all_available(monkeypatch)
+    assert not _in("References", gather(settings, locations, stale_days=30))
 
 
 # --- unused config ------------------------------------------------------------
