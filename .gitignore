@@ -215,4 +215,5 @@ __marimo__/
 # Overmind
 overmind.sock
 
-uv.lock
+uv.lockpnpm-lock.yaml
+pnpm-workspace.yaml
