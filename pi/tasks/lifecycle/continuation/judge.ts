@@ -1,3 +1,11 @@
+/**
+ * Continuation guard — the fast-model call that judges a stop.
+ *
+ * The rubric itself lives in `rubric.ts`; this module is the plumbing around it
+ * and mirrors `#bash-reviewer/llm.ts`. Every failure path returns null, because
+ * the caller treats null as "do not nudge".
+ */
+
 import type { Api, AssistantMessage, Context, Model, ModelThinkingLevel, Tool } from "@earendil-works/pi-ai";
 import { complete as defaultComplete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -9,7 +17,6 @@ import {
 	resolvePortableReasoningEffort,
 } from "#core/model/resolution.ts";
 import { buildRubric, offeredCategories } from "./rubric.ts";
-
 import { type ContinuationVerdict, type JudgeInput, RUBRIC_CATEGORIES, type RubricCategory } from "./types.ts";
 
 function categorySchema(categories: readonly RubricCategory[]) {
