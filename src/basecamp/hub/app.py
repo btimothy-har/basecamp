@@ -19,6 +19,8 @@ from .frames import (
     MessageStatusFrame,
     PeerMessageDeliveryAckFrame,
     PeerMessageFrame,
+    PingFrame,
+    PongFrame,
     RegisteredFrame,
     RegisterFrame,
     ResultReportFrame,
@@ -70,6 +72,7 @@ def create_app(
     daemon_socket_path = daemon_uds or ""
     reapers: set[asyncio.Task[None]] = set()
     delivery_tasks: set[asyncio.Task[None]] = set()
+    wait_tasks: set[asyncio.Task[None]] = set()
 
     register_http_routes(app, store=store, registry=registry, dashboard_access=dashboard_access)
 
@@ -214,14 +217,26 @@ def create_app(
                         registry=registry,
                     )
                     continue
+                if isinstance(inbound, PingFrame):
+                    await websocket.send_json(serialize_frame(PongFrame(type="pong", nonce=inbound.nonce)))
+                    continue
+                if isinstance(inbound, PongFrame):
+                    # Unsolicited pongs carry no correlation state; keepalive answers are inert.
+                    continue
                 if isinstance(inbound, WaitFrame):
-                    await handle_wait(
-                        frame=inbound,
-                        websocket=websocket,
-                        store=store,
-                        registry=registry,
-                        requester_node_id=parsed.node_id,
+                    # Runs as a task so a long wait never blocks the read loop
+                    # (telemetry, dispatch, peer messages, ping answers).
+                    wait_task = asyncio.create_task(
+                        handle_wait(
+                            frame=inbound,
+                            websocket=websocket,
+                            store=store,
+                            registry=registry,
+                            requester_node_id=parsed.node_id,
+                        )
                     )
+                    wait_tasks.add(wait_task)
+                    wait_task.add_done_callback(wait_tasks.discard)
                     continue
                 if isinstance(inbound, ListAgentsFrame):
                     await handle_list_agents(
@@ -251,13 +266,18 @@ def create_app(
                     )
                     continue
                 if isinstance(inbound, MessageStatusFrame):
-                    await handle_message_status(
-                        frame=inbound,
-                        websocket=websocket,
-                        store=store,
-                        registry=registry,
-                        requester_node_id=parsed.node_id,
+                    # wait_until_delivery can block as long as a run wait; same task treatment.
+                    status_task = asyncio.create_task(
+                        handle_message_status(
+                            frame=inbound,
+                            websocket=websocket,
+                            store=store,
+                            registry=registry,
+                            requester_node_id=parsed.node_id,
+                        )
                     )
+                    wait_tasks.add(status_task)
+                    status_task.add_done_callback(wait_tasks.discard)
                     continue
                 if isinstance(inbound, CancelFrame):
                     await handle_cancel(

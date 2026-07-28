@@ -90,7 +90,9 @@ async def handle_wait(
         registry=registry,
         requester_node_id=requester_node_id,
     )
-    await websocket.send_json(serialize_frame(WaitResultFrame(type="wait_result", results=results)))
+    await websocket.send_json(
+        serialize_frame(WaitResultFrame(type="wait_result", request_id=frame.request_id, results=results))
+    )
 
 
 async def handle_list_agents(

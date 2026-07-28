@@ -51,7 +51,6 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
     }
 
 
-
 def test_ws_disconnect_schedules_disconnect_reaper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
 
@@ -397,11 +396,11 @@ def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
     assert "registered" in reply["message"]
 
 
-def test_health_returns_protocol_27(tmp_path: Path) -> None:
+def test_health_returns_current_protocol(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
 
     with TestClient(app) as client:
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["protocol"] == 27
+    assert response.json()["protocol"] == PROTOCOL_VERSION

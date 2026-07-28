@@ -41,6 +41,7 @@ describe("wait_for_agent and list_agents", () => {
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
+			request_id: "some-other-wait",
 			results: [
 				{ agent_handle: "amber-fox-a1b2c3", status: "completed", result: "duplicate", error: null },
 				{ agent_handle: "amber-fox-a1b2c3", status: "completed", result: "duplicate", error: null },
@@ -49,6 +50,7 @@ describe("wait_for_agent and list_agents", () => {
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
 			results: [
 				{ agent_handle: "amber-fox-a1b2c3", status: "completed", result: "done", error: null },
 				{
@@ -94,6 +96,7 @@ describe("wait_for_agent and list_agents", () => {
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
 			results: [
 				{ agent_handle: "scout-running", status: "running", result: null, error: null },
 				{ agent_handle: "scout-missing", status: "unknown", result: null, error: null },

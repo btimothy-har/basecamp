@@ -45,6 +45,7 @@ def test_wait_empty_both_attempts_returns_runner_retry_failure(tmp_path: Path) -
                 json.dumps(
                     {
                         "type": "wait",
+                        "request_id": f"wait-{uuid.uuid4()}",
                         "v": PROTOCOL_VERSION,
                         "agent_ids": [agent_id],
                         "mode": "all",
@@ -113,6 +114,7 @@ def test_wait_all_happy_path_two_runs(tmp_path: Path) -> None:
                 json.dumps(
                     {
                         "type": "wait",
+                        "request_id": f"wait-{uuid.uuid4()}",
                         "v": PROTOCOL_VERSION,
                         "agent_ids": [agent_id_1, agent_id_2],
                         "mode": "all",
@@ -159,6 +161,7 @@ def test_wait_timeout_returns_running_status(tmp_path: Path) -> None:
                 json.dumps(
                     {
                         "type": "wait",
+                        "request_id": f"wait-{uuid.uuid4()}",
                         "v": PROTOCOL_VERSION,
                         "agent_ids": [agent_id],
                         "mode": "all",
@@ -209,6 +212,7 @@ def test_wait_by_agent_handle_known_unknown_and_unauthorized(tmp_path: Path) -> 
                 json.dumps(
                     {
                         "type": "wait",
+                        "request_id": f"wait-{uuid.uuid4()}",
                         "v": PROTOCOL_VERSION,
                         "agent_ids": [],
                         "agent_handles": ["readable-owned", "missing-handle"],
@@ -235,6 +239,7 @@ def test_wait_by_agent_handle_known_unknown_and_unauthorized(tmp_path: Path) -> 
                 json.dumps(
                     {
                         "type": "wait",
+                        "request_id": f"wait-{uuid.uuid4()}",
                         "v": PROTOCOL_VERSION,
                         "agent_ids": [],
                         "agent_handles": ["readable-owned"],
@@ -273,6 +278,7 @@ def test_wait_unknown_handles_return_unknown_immediately(tmp_path: Path) -> None
                 json.dumps(
                     {
                         "type": "wait",
+                        "request_id": f"wait-{uuid.uuid4()}",
                         "v": PROTOCOL_VERSION,
                         "agent_ids": [unknown_agent_id],
                         "mode": "all",
@@ -319,6 +325,7 @@ def test_wait_by_non_dispatcher_returns_unknown_immediately(tmp_path: Path) -> N
                 json.dumps(
                     {
                         "type": "wait",
+                        "request_id": f"wait-{uuid.uuid4()}",
                         "v": PROTOCOL_VERSION,
                         "agent_ids": [agent_id],
                         "mode": "all",
@@ -372,6 +379,7 @@ def test_wait_mixed_unknown_and_completed_returns_all_handles(tmp_path: Path) ->
                 json.dumps(
                     {
                         "type": "wait",
+                        "request_id": f"wait-{uuid.uuid4()}",
                         "v": PROTOCOL_VERSION,
                         "agent_ids": [agent_id, unknown_agent_id],
                         "mode": "all",

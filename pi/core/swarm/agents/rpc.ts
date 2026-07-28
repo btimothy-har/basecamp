@@ -116,12 +116,6 @@ function hasAgentHandle(result: WaitResultItem): result is WaitResultItem & { ag
 	return typeof result.agent_handle === "string";
 }
 
-function sameAsRequested(resultAgentHandles: string[], requestedSet: Set<string>): boolean {
-	const resultSet = new Set(resultAgentHandles);
-	if (resultSet.size !== requestedSet.size) return false;
-	return [...requestedSet].every((agentHandle) => resultSet.has(agentHandle));
-}
-
 function dedupeRequestedResults(
 	results: WaitResultFrame["results"],
 	requested: Set<string>,
@@ -204,8 +198,12 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 		},
 		waitForAgents: async (input) => {
 			const requested = new Set(input.agentHandles);
+			// v28: the daemon echoes request_id, so concurrent waits on one socket
+			// correlate exactly — no result-set matching across in-flight waits.
+			const requestId = randomUUID();
 			connection.send({
 				type: "wait",
+				request_id: requestId,
 				agent_ids: [],
 				agent_handles: input.agentHandles,
 				mode: "all",
@@ -214,11 +212,7 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const frame = await waitForFrame(
 				connection,
 				"wait_result",
-				(candidate) =>
-					sameAsRequested(
-						candidate.results.filter(hasAgentHandle).map((result) => result.agent_handle),
-						requested,
-					),
+				(candidate) => candidate.request_id === requestId,
 				input.signal,
 			);
 			return dedupeRequestedResults(frame.results, requested);

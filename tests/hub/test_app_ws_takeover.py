@@ -93,6 +93,60 @@ def test_ws_takeover_stale_cleanup_does_not_reap_new_entry(tmp_path: Path, monke
     assert reaped == ["node-1", "node-1"]
 
 
+def test_ws_ping_answered_with_pong_and_pong_ignored(tmp_path: Path) -> None:
+    # Keepalive contract: ping gets a pong with the same nonce; an unsolicited
+    # pong is inert (the connection simply continues).
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            _register_ws(ws, node_id="node-1", role="agent", parent_id=None, sibling_group="sg-main")
+            ws.send_json({"type": "pong", "v": PROTOCOL_VERSION, "nonce": "unsolicited"})
+            ws.send_json({"type": "ping", "v": PROTOCOL_VERSION, "nonce": "nonce-42"})
+            reply = ws.receive_json()
+            assert reply == {"type": "pong", "v": PROTOCOL_VERSION, "nonce": "nonce-42"}
+            ws.send_json(
+                {
+                    "type": "list_agents",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "req-after-ping",
+                    "awaitable": False,
+                }
+            )
+            assert ws.receive_json()["type"] == "list_agents_result"
+
+
+def test_ws_wait_does_not_block_connection_read_loop(tmp_path: Path) -> None:
+    # v28: a wait in flight runs as a daemon-side task — the same socket keeps
+    # answering pings and processing other frames instead of freezing for the
+    # wait's full timeout.
+    app = _build_app(tmp_path)
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            _register_ws(ws, node_id="node-1", role="agent", parent_id=None, sibling_group="sg-main")
+            ws.send_json(
+                {
+                    "type": "wait",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "wait-block-1",
+                    "agent_handles": ["nonexistent-agent"],
+                    "mode": "all",
+                    "timeout_s": 30,
+                }
+            )
+            # With an unknown handle the wait resolves immediately; assert the
+            # echo and that the loop is already responsive right after it.
+            ws.send_json({"type": "ping", "v": PROTOCOL_VERSION, "nonce": "during-wait"})
+            replies = sorted(
+                (ws.receive_json(), ws.receive_json()),
+                key=lambda frame: frame["type"],
+            )
+            assert replies[0]["type"] == "pong"
+            assert replies[1]["type"] == "wait_result"
+            assert replies[1]["request_id"] == "wait-block-1"
+
+
 def test_registry_remove_connection_generation_guard() -> None:
     registry = Registry()
     first_gen = registry.set_connection("node-1", object())

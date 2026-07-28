@@ -1,6 +1,6 @@
 {
   "type": "session_metadata",
-  "v": 27,
+  "v": 28,
   "session_name": "dashboard build [9f3c]",
   "model": "claude-sonnet-4-5",
   "agent_mode": "work",

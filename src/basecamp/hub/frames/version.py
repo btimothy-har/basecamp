@@ -22,7 +22,9 @@ from pydantic import BaseModel
 # v26: removes /runs/messages and narrows /runs/summary to compact-widget fields.
 # v27: adds owned_branch/branch_base/branch_created to dispatch specs for unconditional
 #      workspace teardown (force-remove worktree; delete run-minted empty branches).
-PROTOCOL_VERSION = 27
+# v28: adds ping/pong keepalive frames; wait frame gains request_id; waits execute as
+#      daemon-side tasks so a slow wait no longer blocks the connection read loop.
+PROTOCOL_VERSION = 28
 
 
 class ProtocolFrame(BaseModel):

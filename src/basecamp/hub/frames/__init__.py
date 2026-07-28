@@ -94,6 +94,25 @@ class ErrorFrame(ProtocolFrame):
     message: str
 
 
+class PingFrame(ProtocolFrame):
+    """Application-level keepalive probe (either direction).
+
+    The daemon also uses it as the incumbent-liveness probe before a duplicate
+    registration: the payload must stay inert on every receiver — a pong with
+    the same nonce is the only correct answer.
+    """
+
+    type: Literal["ping"]
+    nonce: str
+
+
+class PongFrame(ProtocolFrame):
+    """Answer to a ping keepalive probe; ignored when unsolicited."""
+
+    type: Literal["pong"]
+    nonce: str
+
+
 Frame = Annotated[
     RegisterFrame
     | RegisteredFrame
@@ -122,7 +141,9 @@ Frame = Annotated[
     | UpdateWorkstreamFrame
     | UpdateWorkstreamAckFrame
     | ReviseWorkstreamFrame
-    | ReviseWorkstreamAckFrame,
+    | ReviseWorkstreamAckFrame
+    | PingFrame
+    | PongFrame,
     Field(discriminator="type"),
 ]
 
@@ -172,6 +193,8 @@ __all__ = [
     "PeerMessageDeliveryFrame",
     "PeerMessageFrame",
     "PeerMessageRelation",
+    "PingFrame",
+    "PongFrame",
     "RegisterFrame",
     "RegisteredFrame",
     "ResultReportFrame",

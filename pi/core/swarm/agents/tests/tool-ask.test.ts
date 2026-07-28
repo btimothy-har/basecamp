@@ -77,6 +77,7 @@ describe("ask_agent", () => {
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
+			request_id: wait.request_id,
 			results: [
 				{ agent_handle: dispatch.agent_handle, status: "completed", result: "Here is the answer.", error: null },
 			],

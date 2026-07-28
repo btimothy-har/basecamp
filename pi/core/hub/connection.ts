@@ -115,6 +115,15 @@ export async function connect(identity: DaemonIdentity, options: ConnectOptions 
 				return;
 			}
 
+			// Keepalive probes never reach domain handlers: pings are answered inline
+			// (also the daemon's incumbent-liveness probe before duplicate-register
+			// takeover), and pongs are inert.
+			if (frame.type === "ping") {
+				ws.send(encodeFrame({ type: "pong", nonce: frame.nonce }));
+				return;
+			}
+			if (frame.type === "pong") return;
+
 			if (!registered) {
 				if (frame.type === "registered") {
 					const registeredFrame = frame as RegisteredFrame;
