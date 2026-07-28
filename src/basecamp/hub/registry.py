@@ -31,6 +31,7 @@ class Registry:
     def __init__(self) -> None:
         self._connections: MutableMapping[str, tuple[object, int]] = {}
         self._next_generation = 0
+        self._pending_probes: MutableMapping[str, asyncio.Future[None]] = {}
         self._runs: MutableMapping[str, str] = {}
         self._processes: MutableMapping[str, asyncio.subprocess.Process] = {}
         self._disconnect_reapers: MutableMapping[str, asyncio.Task[None]] = {}
@@ -50,17 +51,30 @@ class Registry:
         self._connections[node_id] = (websocket, self._next_generation)
         return self._next_generation
 
-    def remove_connection(self, node_id: str, *, generation: int | None = None) -> bool:
-        """Remove a node connection, optionally generation-guarded.
+    def claim_connection(self, node_id: str, websocket: object, *, replacing: int | None) -> int | None:
+        """Atomically claim a node id, returning the new generation or None.
 
-        With a generation, the removal only lands when the registered entry is
-        still that exact connection (returns True); a newer entry is left alone
-        (returns False). Without one, removes unconditionally (legacy caller).
+        ``replacing`` is the generation observed before the caller awaited its
+        liveness probe: the claim lands only if that entry is still registered
+        (or, for ``None``, if the id is still unheld). Probing suspends, so a
+        second registration can settle in between — without this compare-and-set
+        both would call ``set_connection`` and the loser would keep serving
+        frames while invisible to routing and to its own cleanup guard.
         """
 
-        if generation is None:
-            self._connections.pop(node_id, None)
-            return True
+        entry = self._connections.get(node_id)
+        current = entry[1] if entry is not None else None
+        if current != replacing:
+            return None
+        return self.set_connection(node_id, websocket)
+
+    def remove_connection(self, node_id: str, *, generation: int) -> bool:
+        """Remove a node connection if the registered entry is still this one.
+
+        Returns True when the removal landed; a newer entry is left alone and
+        returns False, so a stale handler cannot clear its successor.
+        """
+
         entry = self._connections.get(node_id)
         if entry is None or entry[1] != generation:
             return False
@@ -84,6 +98,28 @@ class Registry:
 
         entry = self._connections.get(node_id)
         return entry is not None and entry[1] == generation
+
+    def open_probe(self, node_id: str) -> asyncio.Future[None]:
+        """Arm a liveness probe for a node, replacing any probe already pending."""
+
+        self.close_probe(node_id)
+        future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+        self._pending_probes[node_id] = future
+        return future
+
+    def resolve_probe(self, node_id: str) -> None:
+        """Answer a node's pending liveness probe, if one is armed."""
+
+        future = self._pending_probes.get(node_id)
+        if future is not None and not future.done():
+            future.set_result(None)
+
+    def close_probe(self, node_id: str) -> None:
+        """Drop a node's pending probe, cancelling it if still unanswered."""
+
+        future = self._pending_probes.pop(node_id, None)
+        if future is not None and not future.done():
+            future.cancel()
 
     def has_connection(self, node_id: str) -> bool:
         """Return whether a node id has an active websocket connection."""

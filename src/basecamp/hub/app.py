@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
@@ -115,11 +116,12 @@ def create_app(
                 return
 
             incumbent = registry.get_connection(parsed.node_id)
+            incumbent_generation = registry.get_connection_generation(parsed.node_id)
             if incumbent is not None:
                 # Never blind-replace: a live incumbent keeps its session (an
                 # accidental resume elsewhere gets a clean rejection); only a
-                # provably unresponsive socket yields its node id.
-                if await _incumbent_is_live(incumbent):
+                # peer that fails to answer its probe yields its node id.
+                if await _incumbent_is_live(incumbent, parsed.node_id, registry):
                     await _send_error_and_close(
                         websocket,
                         code="duplicate_node_connection",
@@ -128,8 +130,19 @@ def create_app(
                     return
                 await _close_websocket_quietly(incumbent)
 
+            # Probing suspends, so re-establish the claim atomically: another
+            # registration for this node id may have settled while we waited.
+            claimed = registry.claim_connection(parsed.node_id, websocket, replacing=incumbent_generation)
+            if claimed is None:
+                await _send_error_and_close(
+                    websocket,
+                    code="duplicate_node_connection",
+                    message="Node is already connected.",
+                )
+                return
+
             node_id = parsed.node_id
-            connection_generation = registry.set_connection(parsed.node_id, websocket)
+            connection_generation = claimed
             try:
                 await asyncio.to_thread(
                     store.upsert_agent,
@@ -225,7 +238,8 @@ def create_app(
                     await websocket.send_json(serialize_frame(PongFrame(type="pong", nonce=inbound.nonce)))
                     continue
                 if isinstance(inbound, PongFrame):
-                    # Unsolicited pongs carry no correlation state; keepalive answers are inert.
+                    # Answers this node's liveness probe; unsolicited pongs are inert.
+                    registry.resolve_probe(parsed.node_id)
                     continue
                 if isinstance(inbound, WaitFrame):
                     # Runs as a task so a long wait never blocks the read loop
@@ -341,25 +355,33 @@ def create_app(
     return app
 
 
-async def _incumbent_is_live(incumbent: WebSocket) -> bool:
-    """Classify an incumbent connection: any outbound frame settles liveness.
+async def _incumbent_is_live(incumbent: WebSocket, node_id: str, registry: Registry) -> bool:
+    """Classify an incumbent connection by round-tripping a liveness probe.
 
-    Starlette's WebSocket cannot send a protocol-level ping, so this uses the
-    send path as the probe: a dead peer (half-open UDS after kill/sleep) fails
-    the write, while a live one — including one merely busy in a long wait,
-    whose buffer drains fine — accepts it. A failed classification must close
-    the incumbent (via takeover), so the payload must be valid yet inert on
-    every receiver: a v28 peer answers the ping with a pong (harmless), and a
-    pre-v28 peer error-closes on the unknown type — which a failed probe was
-    going to do anyway.
+    A completed write proves nothing: the selected websocket implementation
+    buffers into the transport without suspending, so a frozen or half-open
+    peer accepts the bytes exactly like a healthy one. Liveness therefore
+    requires evidence *from* the peer — a pong echoing this probe's nonce,
+    which the client already sends. A send failure means dead outright; a
+    silent peer means dead once the timeout elapses.
     """
 
-    probe = PingFrame(type="ping", nonce="liveness-probe")
+    probe = PingFrame(type="ping", nonce=uuid4().hex)
+    answered = registry.open_probe(node_id)
     try:
         async with asyncio.timeout(_INCUMBENT_PROBE_TIMEOUT_S):
             await incumbent.send_json(serialize_frame(probe))
-    except Exception:  # noqa: BLE001 — any send failure reads as a dead incumbent
+            await answered
+    except asyncio.CancelledError:
+        # A concurrent register superseded this probe; that is not a cancellation
+        # of this handler, so classify as unproven rather than propagating.
+        if answered.cancelled():
+            return False
+        raise
+    except Exception:  # noqa: BLE001 — send failure or unanswered probe reads as dead
         return False
+    finally:
+        registry.close_probe(node_id)
     return True
 
 

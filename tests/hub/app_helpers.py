@@ -48,6 +48,19 @@ def _register_ws(
     assert websocket.receive_json()["type"] == "registered"
 
 
+def _answer_liveness_probe(websocket) -> str:
+    """Answer the daemon's incumbent-liveness ping, as a real client does.
+
+    A duplicate registration blocks until the incumbent proves itself, so a test
+    holding an incumbent socket must service the probe or be classified dead.
+    Returns the probe nonce.
+    """
+    probe = websocket.receive_json()
+    assert probe["type"] == "ping", probe
+    websocket.send_json({"type": "pong", "v": PROTOCOL_VERSION, "nonce": probe["nonce"]})
+    return str(probe["nonce"])
+
+
 def _peer_message(
     request_id: str,
     *,

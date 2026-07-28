@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 import pytest
-from app_helpers import _build_app, _register_ws
+from app_helpers import _answer_liveness_probe, _build_app, _register_ws
 from fastapi.testclient import TestClient
 
 from basecamp.hub.frames import PROTOCOL_VERSION
@@ -36,9 +37,10 @@ def test_ws_duplicate_register_live_incumbent_rejected(tmp_path: Path) -> None:
                         "cwd": "/tmp/project",
                     }
                 )
-                probe = first.receive_json()
-                assert probe["type"] == "ping"
-                assert probe["nonce"] == "liveness-probe"
+                # Answering the probe is what proves the incumbent live; a nonce
+                # is generated per probe, so the answer must echo it.
+                nonce = _answer_liveness_probe(first)
+                assert nonce
                 reply = second.receive_json()
                 assert reply["type"] == "error"
                 assert reply["code"] == "duplicate_node_connection"
@@ -52,6 +54,36 @@ def test_ws_duplicate_register_live_incumbent_rejected(tmp_path: Path) -> None:
                 }
             )
             assert first.receive_json()["type"] == "list_agents_result"
+
+
+def test_ws_duplicate_register_unresponsive_incumbent_is_taken_over(tmp_path: Path) -> None:
+    # The case the write-only probe could never detect: the incumbent's socket
+    # still accepts writes (so a send-success check reads it as live) but the
+    # peer never answers. Liveness now requires the pong, so the probe times out
+    # and the node id is released. A short timeout keeps the test quick.
+    monkey_timeout = 0.3
+    app = _build_app(tmp_path)
+
+    with mock.patch("basecamp.hub.app._INCUMBENT_PROBE_TIMEOUT_S", monkey_timeout):
+        with TestClient(app) as client:
+            with client.websocket_connect("/ws") as first:
+                _register_ws(first, node_id="node-1", role="agent", parent_id=None, sibling_group="sg-main")
+                with client.websocket_connect("/ws") as second:
+                    second.send_json(
+                        {
+                            "type": "register",
+                            "v": PROTOCOL_VERSION,
+                            "role": "agent",
+                            "node_id": "node-1",
+                            "parent_id": None,
+                            "sibling_group": "sg-main",
+                            "depth": 0,
+                            "session_name": "resume-session",
+                            "cwd": "/tmp/project",
+                        }
+                    )
+                    # `first` deliberately never answers the probe.
+                    assert second.receive_json()["type"] == "registered"
 
 
 def test_ws_duplicate_register_dead_incumbent_takeover(tmp_path: Path) -> None:

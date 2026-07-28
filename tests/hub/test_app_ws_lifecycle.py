@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from app_helpers import _build_app, _build_app_with_store, _register_ws
+from app_helpers import _answer_liveness_probe, _build_app, _build_app_with_store, _register_ws
 from fastapi.testclient import TestClient
 
 from basecamp.hub.frames import PROTOCOL_VERSION
@@ -329,6 +329,8 @@ def test_ws_duplicate_active_registration_is_rejected(tmp_path: Path) -> None:
                         "cwd": "/tmp/other",
                     }
                 )
+                # The incumbent answers the liveness probe, so it keeps the node id.
+                _answer_liveness_probe(first)
                 reply = second.receive_json()
 
     assert reply["type"] == "error"
