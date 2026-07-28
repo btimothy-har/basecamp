@@ -1,10 +1,8 @@
 import assert from "node:assert/strict";
 import { describe, it, type TestContext } from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	forgetCheckpoint,
 	getCheckpoint,
-	lastCheckpointOrHead,
 	recordCheckpoint,
 	validateCheckpoint,
 } from "#diff/checkpoints.ts";
@@ -12,7 +10,7 @@ import {
 /**
  * The checkpoint store is process-global: every test pins its own worktree dir
  * and forgets it afterwards, or a leaked checkpoint would bleed into the next
- * test (and into lastCheckpointOrHead's no-exec assertions).
+ * test.
  */
 function worktree(t: TestContext, name: string): string {
 	const dir = `/wt/checkpoints-${name}`;
@@ -20,20 +18,7 @@ function worktree(t: TestContext, name: string): string {
 	return dir;
 }
 
-function recordingPi(stdout: string, calls: string[][]): ExtensionAPI {
-	return {
-		exec: async (_command: string, args: string[]) => {
-			calls.push(args);
-			return { code: 0, stdout, stderr: "", killed: false };
-		},
-	} as unknown as ExtensionAPI;
-}
 
-const THROWING_PI = {
-	exec: async () => {
-		throw new Error("exec must not be called when a checkpoint is recorded");
-	},
-} as unknown as ExtensionAPI;
 
 describe("checkpoints", () => {
 	it("record + get round-trips {base, last}", (t) => {
@@ -77,19 +62,6 @@ describe("checkpoints", () => {
 		assert.equal(getCheckpoint(dir), undefined);
 	});
 
-	it("lastCheckpointOrHead returns checkpoint.last without execing", async (t) => {
-		const dir = worktree(t, "head-recorded");
-		recordCheckpoint(dir, { base: "base1234", last: "head5678" });
-		assert.equal(await lastCheckpointOrHead(THROWING_PI, dir), "head5678");
-	});
-
-	it("lastCheckpointOrHead execs `git -C <dir> rev-parse HEAD` when no checkpoint", async (t) => {
-		const dir = worktree(t, "head-exec");
-		const calls: string[][] = [];
-		const pi = recordingPi("  deadbeefcafe\n", calls);
-		assert.equal(await lastCheckpointOrHead(pi, dir), "deadbeefcafe");
-		assert.deepEqual(calls, [["-C", dir, "rev-parse", "HEAD"]]);
-	});
 
 	it("two worktree dirs hold independent checkpoints", (t) => {
 		const a = worktree(t, "isolation-a");

@@ -2,15 +2,14 @@
  * User-initiated review checkpoints, keyed by review worktree.
  *
  * Checkpoints mark where the user's last `/diff` review ended: `/diff` records
- * one, `/diff last` anchors its diff to it, and `annotate_changeset` stamps it
- * on the sidecar it writes. Surviving state, not wiring: like basecamp.diffTabs
- * a checkpoint outlives the pi session that recorded it. Deliberately in-memory
- * only — a checkpoint older than the process is useless because the hunk
- * sessions behind those reviews die with the process too.
+ * one and `/diff last` anchors its diff to it. They are review *targets* only —
+ * agent annotations are anchored to the review base instead, because that
+ * identifies the span they describe. Surviving state, not wiring: like
+ * basecamp.diffTabs a checkpoint outlives the pi session that recorded it.
+ * Deliberately in-memory only — a checkpoint older than the process is useless
+ * because the hunk sessions behind those reviews die with the process too.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { gitOutput } from "#core/git/repo.ts";
 import { processScoped } from "#core/global-registry.ts";
 
 export interface Checkpoint {
@@ -44,7 +43,9 @@ export function forgetCheckpoint(worktreeDir: string): void {
 /**
  * Drop the checkpoint when the base it was recorded against no longer matches
  * the worktree's current merge-base (worktree dirs are reused across branches).
- * Returns the surviving checkpoint, or undefined.
+ * Returns the surviving checkpoint, or undefined. Base equality is necessary
+ * but not sufficient — sibling branches share a merge-base — so callers that
+ * diff against `last` must also confirm it is an ancestor of HEAD.
  */
 export function validateCheckpoint(worktreeDir: string, currentBase: string): Checkpoint | undefined {
 	const checkpoint = getCheckpoint(worktreeDir);
@@ -56,11 +57,3 @@ export function validateCheckpoint(worktreeDir: string, currentBase: string): Ch
 	return checkpoint;
 }
 
-/**
- * The SHA to anchor annotations to: the recorded checkpoint's last, or HEAD
- * when none was recorded — under the clean-tree assumption HEAD IS the last
- * diff point, so the store self-initializes without extra bookkeeping.
- */
-export async function lastCheckpointOrHead(pi: ExtensionAPI, worktreeDir: string): Promise<string> {
-	return getCheckpoint(worktreeDir)?.last ?? (await gitOutput(pi, worktreeDir, ["rev-parse", "HEAD"]));
-}

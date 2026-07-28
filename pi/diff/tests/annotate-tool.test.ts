@@ -30,7 +30,7 @@ interface MockPi {
 	exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string; killed: boolean }>;
 }
 
-const STUB_HEAD = "55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa";
+const STUB_BASE = "43e3afd68b290430804ef6d7cc0fba60336dcd98";
 
 function createMockPi(): MockPi {
 	const tools = new Map<string, RegisteredTool>();
@@ -39,9 +39,9 @@ function createMockPi(): MockPi {
 		registerTool(tool: RegisteredTool) {
 			tools.set(tool.name, tool);
 		},
-		// With no checkpoint recorded the tool anchors annotations to HEAD.
+		// Annotations are anchored to the review base — the span they describe.
 		async exec(_command: string, args: string[]) {
-			const stdout = args.join(" ").includes("rev-parse") ? STUB_HEAD : "origin/main";
+			const stdout = args.join(" ").includes("merge-base") ? STUB_BASE : "origin/main";
 			return { code: 0, stdout, stderr: "", killed: false };
 		},
 	};
@@ -180,7 +180,7 @@ describe("annotate_changeset execution", () => {
 			files: { annotations: { newRange: [number, number] }[] }[];
 		};
 		assert.equal(written.version, 1);
-		assert.equal(written.basecampBase, STUB_HEAD, "with no checkpoint the sidecar anchors to HEAD");
+		assert.equal(written.basecampBase, STUB_BASE, "the sidecar anchors to the review base");
 		// The wire format hunk reads is a tuple, whatever shape the tool accepts.
 		assert.deepEqual(written.files[0]?.annotations[0]?.newRange, [1, 10]);
 	});
@@ -215,10 +215,13 @@ describe("annotate_changeset execution", () => {
 		assert.ok(fs.existsSync((result.details as { sidecarPath: string }).sidecarPath));
 	});
 
-	it("anchors to the recorded checkpoint instead of HEAD when one exists", async (t) => {
+	it("anchors to the review base, not the recorded checkpoint", async (t) => {
+		// The stamp identifies the span; /diff matches it against the current base
+		// so a full review renders the rationale. Anchoring to the checkpoint made
+		// that comparison fail on every feature branch.
 		const worktree = "/wt/checkpointed";
 		const tool = toolFor(t, worktree);
-		recordCheckpoint(worktree, { base: "abc1234", last: "c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ff" });
+		recordCheckpoint(worktree, { base: STUB_BASE, last: "c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ff" });
 		t.after(() => forgetCheckpoint(worktree));
 
 		const result = await tool.execute("call-1", {
@@ -229,7 +232,30 @@ describe("annotate_changeset execution", () => {
 		const written = JSON.parse(fs.readFileSync((result.details as { sidecarPath: string }).sidecarPath, "utf8")) as {
 			basecampBase: string;
 		};
-		assert.equal(written.basecampBase, "c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ff");
+		assert.equal(written.basecampBase, STUB_BASE);
+	});
+
+	it("keeps accumulating across a commit, because the base does not move", async (t) => {
+		// Anchoring to HEAD made every commit start a new span, silently replacing
+		// everything annotated before it.
+		const tool = toolFor(t, "/wt/across-commit");
+
+		await tool.execute("call-1", {
+			summary: "Before.",
+			files: [{ path: "a.ts", annotations: [{ startLine: 1, endLine: 5, summary: "one" }] }],
+		});
+		const result = await tool.execute("call-2", {
+			summary: "After.",
+			files: [{ path: "b.ts", annotations: [{ startLine: 1, endLine: 3, summary: "two" }] }],
+		});
+
+		const written = JSON.parse(fs.readFileSync((result.details as { sidecarPath: string }).sidecarPath, "utf8")) as {
+			files: { path: string }[];
+		};
+		assert.deepEqual(
+			written.files.map((f) => f.path),
+			["a.ts", "b.ts"],
+		);
 	});
 
 	it("accumulates across calls within a review span", async (t) => {

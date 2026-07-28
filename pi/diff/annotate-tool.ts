@@ -1,8 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { errorMessage } from "#core/errors.ts";
+import { resolveReviewBase } from "#core/git/repo.ts";
 import { isSubagent } from "#core/host/env.ts";
-import { lastCheckpointOrHead } from "./checkpoints.ts";
 import { type AnnotatedFile, annotationId, type WriteResult, writeSidecar } from "./sidecar.ts";
 import { reviewWorktreeDir } from "./worktree.ts";
 
@@ -115,12 +115,14 @@ export function registerAnnotateTool(pi: ExtensionAPI): void {
 				throw new Error(`endLine must not precede startLine: ${inverted.join(", ")}`);
 			}
 			const worktreeDir = reviewWorktreeDir();
-			// Anchored to the last review checkpoint — the same coordinates the
-			// user's next /diff last reviews — so rationale and review share line
-			// numbers by construction. HEAD is the self-initializing fallback.
+			// Anchored to the review base, which identifies the *span* these
+			// annotations describe rather than any one diff target: ranges are on
+			// the new side (the working tree), so they render in a full or an
+			// incremental review alike. The base is also stable as commits land,
+			// which is what lets calls accumulate instead of replacing each other.
 			let base: string;
 			try {
-				base = await lastCheckpointOrHead(pi, worktreeDir);
+				base = await resolveReviewBase(pi, worktreeDir);
 			} catch (err) {
 				throw new Error(`Cannot anchor annotations: ${errorMessage(err)}`);
 			}

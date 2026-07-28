@@ -55,6 +55,8 @@ export interface HarnessOptions {
 	args?: string;
 	/** Checkpoint recorded before the run, as if an earlier /diff completed. */
 	checkpoint?: { base: string; last: string };
+	/** False when the recorded checkpoint is not an ancestor of HEAD (rebase, sibling branch). */
+	checkpointIsAncestor?: boolean;
 }
 
 export function harness(options: HarnessOptions = {}): Harness {
@@ -70,6 +72,9 @@ export function harness(options: HarnessOptions = {}): Harness {
 		calls.push({ command, args });
 		const joined = args.join(" ");
 		if (command === "git" && joined.includes("symbolic-ref")) return ok("origin/main");
+		if (command === "git" && joined.includes("merge-base --is-ancestor")) {
+			return options.checkpointIsAncestor === false ? { ...ok(), code: 1 } : ok();
+		}
 		if (command === "git" && joined.includes("merge-base")) return ok(BASE);
 		if (command === "git" && joined.includes("rev-parse") && joined.includes("HEAD")) return ok(HEAD_SHA);
 		if (command === "hunk" && joined === "--version") {

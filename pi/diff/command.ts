@@ -2,12 +2,12 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "#core/errors.ts";
-import { gitOutput, resolveReviewBase } from "#core/git/repo.ts";
+import { gitOutput, isMergedInto, resolveReviewBase } from "#core/git/repo.ts";
 import { getBasecampEnv, isSubagent } from "#core/host/env.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import { checkHerdrEligibility, closeHerdrTab, openHerdrTab, runInHerdrPane } from "#core/ui/herdr-pane.ts";
 import { formatAnnotations } from "./annotations.ts";
-import { type Checkpoint, recordCheckpoint, validateCheckpoint } from "./checkpoints.ts";
+import { type Checkpoint, forgetCheckpoint, recordCheckpoint, validateCheckpoint } from "./checkpoints.ts";
 import { detectHunk, type HunkSession, listHunkSessions, readUserNotes, type UserNote } from "./hunk.ts";
 import { parseDiffArgs } from "./mode.ts";
 import { attachSession, forgetSession, forgetTab, ownedReview, rememberTab } from "./session-state.ts";
@@ -104,15 +104,29 @@ async function awaitLaunchedSession(
 	return null;
 }
 
+interface HunkLaunch {
+	argv: string[];
+	/** Whether this launch actually renders the stored rationale. */
+	sidecarAttached: boolean;
+}
+
 /**
- * The sidecar is attached only while it still describes this base. Worktree
- * directories are reused across branches, so an unstamped match would render
- * one branch's rationale against another branch's line numbers.
+ * The sidecar is attached by **span identity**, not by diff target: annotation
+ * ranges are recorded against the *new* side of the diff, which is the working
+ * tree in every mode, so rationale written for this branch state is valid in a
+ * full review and an incremental one alike. What must match is the review base
+ * — worktree directories are reused across branches, and a stamp from another
+ * branch would render its rationale against these line numbers.
+ *
+ * Comparing against the launch target instead would silently never match on a
+ * feature branch, because the annotate-time base and a `/diff last` target are
+ * different quantities.
  */
-function hunkArgv(base: string, worktreeDir: string): string[] {
-	const argv = ["hunk", "diff", base];
-	if (readSidecarBase(worktreeDir) === base) argv.push("--agent-context", sidecarPath(worktreeDir));
-	return argv;
+function hunkLaunch(target: string, base: string, worktreeDir: string): HunkLaunch {
+	const argv = ["hunk", "diff", target];
+	const sidecarAttached = readSidecarBase(worktreeDir) === base;
+	if (sidecarAttached) argv.push("--agent-context", sidecarPath(worktreeDir));
+	return { argv, sidecarAttached };
 }
 
 function deliver(pi: ExtensionAPI, ctx: ExtensionContext, notes: UserNote[]): void {
@@ -123,7 +137,11 @@ function deliver(pi: ExtensionAPI, ctx: ExtensionContext, notes: UserNote[]): vo
 	// A user prompt, not a custom injection: these are the user's own review
 	// comments, so they arrive as if the user typed them — the agent weighs
 	// them like any other instruction from the user, not like extension output.
-	void pi.sendUserMessage(formatAnnotations(notes), { deliverAs: "followUp" });
+	// Only annotations the user actually wrote reach here, which is what makes
+	// speaking as the user honest; an empty review returns above without a turn.
+	void Promise.resolve(pi.sendUserMessage(formatAnnotations(notes), { deliverAs: "followUp" })).catch(() => {
+		ctx.ui.notify("/diff could not deliver your annotations to the agent.", "error");
+	});
 }
 
 interface DiffTarget {
@@ -167,25 +185,31 @@ async function resolveDiffTarget(
 	}
 
 	const checkpoint = validateCheckpoint(worktreeDir, base);
-	if (mode === "last" && checkpoint) {
+	// Base equality alone would let a checkpoint from a sibling branch survive:
+	// branches cut from the same default-branch tip share a merge-base. Requiring
+	// ancestry also covers amend/rebase, where the recorded commit is orphaned and
+	// `git diff <orphan>` would present the rewritten work as reversals.
+	if (mode === "last" && checkpoint && (await isMergedInto(pi, worktreeDir, checkpoint.last, "HEAD"))) {
 		return { target: checkpoint.last, base, head, advances: false };
 	}
 	if (mode === "last") {
-		ctx.ui.notify("/diff last: no checkpoint recorded yet — showing the full diff.", "info");
+		if (checkpoint) forgetCheckpoint(worktreeDir);
+		const reason = checkpoint ? "its checkpoint is no longer in this branch's history" : "no checkpoint recorded yet";
+		ctx.ui.notify(`/diff last: ${reason} — showing the full diff.`, "info");
 	}
 	return { target: base, base, head, advances: true };
 }
 
 /**
- * The review ended with its notes safely read: the agent's rationale for this
- * span has been shown, so the sidecar is consumed, and a base review moves
- * the checkpoint up to HEAD. Ordering matters — the checkpoint advance is
- * what guarantees cleared rationale is never re-rendered against the same
- * span. On any earlier failure the sidecar and checkpoint are both left
- * alone, so a retry sees the same span with its rationale intact.
+ * The review ended with its notes safely read, so a base review moves the
+ * checkpoint up to HEAD. The sidecar is consumed **only when this review
+ * actually rendered it** — clearing rationale the launch never attached would
+ * destroy it unread, so an unattached sidecar is left for the review that can
+ * show it. On any earlier failure neither happens, and a retry sees the same
+ * span with its rationale intact.
  */
-function consumeReview(worktreeDir: string, resolved: DiffTarget): void {
-	clearSidecar(worktreeDir);
+function consumeReview(worktreeDir: string, resolved: DiffTarget, sidecarAttached: boolean): void {
+	if (sidecarAttached) clearSidecar(worktreeDir);
 	if (resolved.advances) {
 		const checkpoint: Checkpoint = { base: resolved.base, last: resolved.head };
 		recordCheckpoint(worktreeDir, checkpoint);
@@ -246,7 +270,8 @@ async function runDiff(
 	}
 	rememberTab(worktreeDir, tab.value.tabId);
 
-	const launched = await runInHerdrPane(pi, tab.value.paneId, hunkArgv(resolved.target, worktreeDir));
+	const launch = hunkLaunch(resolved.target, resolved.base, worktreeDir);
+	const launched = await runInHerdrPane(pi, tab.value.paneId, launch.argv);
 	if (launched.status !== "ok") {
 		await closeAndForget(pi, worktreeDir, tab.value.tabId);
 		deliver(pi, ctx, drained.notes);
@@ -280,8 +305,10 @@ async function runDiff(
 	}
 
 	await closeAndForget(pi, worktreeDir, tab.value.tabId);
-	consumeReview(worktreeDir, resolved);
+	// Deliver before consuming: the notes exist only in memory until they are
+	// sent, so a failure while clearing state must not be able to lose them.
 	deliver(pi, ctx, [...drained.notes, ...read.notes]);
+	consumeReview(worktreeDir, resolved, launch.sidecarAttached);
 }
 
 export function registerDiffCommand(pi: ExtensionAPI, poll: LaunchPoll = DEFAULT_LAUNCH_POLL): void {
