@@ -239,8 +239,8 @@ def create_app(
                     await websocket.send_json(serialize_frame(PongFrame(type="pong", nonce=inbound.nonce)))
                     continue
                 if isinstance(inbound, PongFrame):
-                    # Answers this node's liveness probe; unsolicited pongs are inert.
-                    registry.resolve_probe(parsed.node_id)
+                    # Answers the probe carrying this nonce; any other pong is inert.
+                    registry.resolve_probe(parsed.node_id, inbound.nonce)
                     continue
                 if isinstance(inbound, WaitFrame):
                     # Runs as a task so a long wait never blocks the read loop
@@ -371,22 +371,17 @@ async def _incumbent_is_live(incumbent: WebSocket, node_id: str, registry: Regis
     silent peer means dead once the timeout elapses.
     """
 
-    probe = PingFrame(type="ping", nonce=uuid4().hex)
-    answered = registry.open_probe(node_id)
+    nonce = uuid4().hex
+    probe = PingFrame(type="ping", nonce=nonce)
+    answered = registry.open_probe(node_id, nonce)
     try:
         async with asyncio.timeout(_INCUMBENT_PROBE_TIMEOUT_S):
             await incumbent.send_json(serialize_frame(probe))
             await answered
-    except asyncio.CancelledError:
-        # A concurrent register superseded this probe; that is not a cancellation
-        # of this handler, so classify as unproven rather than propagating.
-        if answered.cancelled():
-            return False
-        raise
     except Exception:  # noqa: BLE001 — send failure or unanswered probe reads as dead
         return False
     finally:
-        registry.close_probe(node_id)
+        registry.close_probe(node_id, nonce)
     return True
 
 

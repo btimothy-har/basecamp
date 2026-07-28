@@ -337,6 +337,40 @@ def test_ws_wait_store_failure_still_answers_the_requester(tmp_path: Path) -> No
     assert [item["status"] for item in reply["results"]] == ["unknown"]
 
 
+@pytest.mark.asyncio
+async def test_registry_probes_are_isolated_by_nonce() -> None:
+    # Two registrations can probe one node id concurrently. Keyed by node alone,
+    # the second probe cancelled the first's future, which _incumbent_is_live
+    # reads as "dead" — evicting a LIVE incumbent purely because someone else
+    # probed at the same time. Each probe must own its own future, and a pong
+    # must only answer the ping that carries its nonce.
+    registry = Registry()
+
+    first = registry.open_probe("node-1", "nonce-a")
+    second = registry.open_probe("node-1", "nonce-b")
+
+    # Arming the second must not disturb the first.
+    assert not first.cancelled()
+    assert not first.done()
+
+    # A pong resolves only its own probe.
+    registry.resolve_probe("node-1", "nonce-b")
+    assert second.done()
+    assert not first.done()
+
+    # An unrelated nonce answers nothing.
+    registry.resolve_probe("node-1", "nonce-unknown")
+    assert not first.done()
+
+    # Closing one probe leaves the other intact.
+    registry.close_probe("node-1", "nonce-b")
+    assert not first.done()
+
+    registry.resolve_probe("node-1", "nonce-a")
+    assert first.done()
+    registry.close_probe("node-1", "nonce-a")
+
+
 def test_registry_claim_connection_is_compare_and_set() -> None:
     # Probing suspends, so two registrations can reach the claim for one node id.
     # The claim must be conditional on the entry the caller observed before it

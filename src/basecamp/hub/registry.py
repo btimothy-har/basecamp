@@ -31,7 +31,7 @@ class Registry:
     def __init__(self) -> None:
         self._connections: MutableMapping[str, tuple[object, int]] = {}
         self._next_generation = 0
-        self._pending_probes: MutableMapping[str, asyncio.Future[None]] = {}
+        self._pending_probes: MutableMapping[tuple[str, str], asyncio.Future[None]] = {}
         self._runs: MutableMapping[str, str] = {}
         self._processes: MutableMapping[str, asyncio.subprocess.Process] = {}
         self._disconnect_reapers: MutableMapping[str, asyncio.Task[None]] = {}
@@ -93,25 +93,31 @@ class Registry:
         entry = self._connections.get(node_id)
         return entry[1] if entry is not None else None
 
-    def open_probe(self, node_id: str) -> asyncio.Future[None]:
-        """Arm a liveness probe for a node, replacing any probe already pending."""
+    def open_probe(self, node_id: str, nonce: str) -> asyncio.Future[None]:
+        """Arm a liveness probe identified by its nonce.
 
-        self.close_probe(node_id)
+        Probes are keyed by ``(node_id, nonce)`` rather than by node alone so
+        concurrent registrations for one node id cannot disturb each other: a
+        second probe must not cancel the first's future (which would read as a
+        dead incumbent and evict a live session) nor be resolved by a pong
+        answering an earlier ping.
+        """
+
         future: asyncio.Future[None] = asyncio.get_running_loop().create_future()
-        self._pending_probes[node_id] = future
+        self._pending_probes[(node_id, nonce)] = future
         return future
 
-    def resolve_probe(self, node_id: str) -> None:
-        """Answer a node's pending liveness probe, if one is armed."""
+    def resolve_probe(self, node_id: str, nonce: str) -> None:
+        """Answer the probe this nonce belongs to; ignore any other pong."""
 
-        future = self._pending_probes.get(node_id)
+        future = self._pending_probes.get((node_id, nonce))
         if future is not None and not future.done():
             future.set_result(None)
 
-    def close_probe(self, node_id: str) -> None:
-        """Drop a node's pending probe, cancelling it if still unanswered."""
+    def close_probe(self, node_id: str, nonce: str) -> None:
+        """Drop this probe, cancelling it if it was never answered."""
 
-        future = self._pending_probes.pop(node_id, None)
+        future = self._pending_probes.pop((node_id, nonce), None)
         if future is not None and not future.done():
             future.cancel()
 
