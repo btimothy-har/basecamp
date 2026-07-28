@@ -78,11 +78,15 @@ export interface HerdrTabTarget {
 	tabId: string;
 }
 
-export interface OpenHerdrTabInput {
-	workspaceId: string;
+export interface SplitHerdrPaneInput {
+	/** The pane to split from (HERDR_PANE_ID). */
+	paneId: string;
 	cwd: string;
-	label: string;
 	env?: Record<string, string>;
+	/** Default "right". */
+	direction?: "right" | "down";
+	/** Default 0.5. */
+	ratio?: number;
 }
 
 type HerdrExec = Pick<ExtensionAPI, "exec">;
@@ -111,42 +115,43 @@ export async function runHerdr<T>(
 	}
 }
 
-function parseTabTarget(stdout: string): HerdrTabTarget {
+function parsePaneTarget(stdout: string): HerdrTabTarget {
 	const parsed: unknown = JSON.parse(stdout);
 	const result = (parsed as { result?: unknown }).result as
-		| { root_pane?: { pane_id?: unknown }; tab?: { tab_id?: unknown } }
+		| { pane?: { pane_id?: unknown; tab_id?: unknown } }
 		| undefined;
-	const paneId = result?.root_pane?.pane_id;
-	const tabId = result?.tab?.tab_id;
+	const paneId = result?.pane?.pane_id;
+	const tabId = result?.pane?.tab_id;
 	if (typeof paneId !== "string" || typeof tabId !== "string") {
-		throw new Error("Herdr tab create returned no pane id or tab id.");
+		throw new Error("Herdr pane split returned no pane id or tab id.");
 	}
 	return { paneId, tabId };
 }
 
 /**
- * Without an explicit --workspace the tab is created in whichever workspace currently has focus,
- * which is not necessarily this session's.
+ * Splits the current session's pane rightward at 50% so hunk appears side-by-side with the
+ * session. `pane split` has no `--label` flag, so the new pane's terminal title comes from hunk.
  */
-export async function openHerdrTab(
+export async function splitHerdrPane(
 	pi: HerdrExec,
-	input: OpenHerdrTabInput,
+	input: SplitHerdrPaneInput,
 ): Promise<HerdrCommandResult<HerdrTabTarget>> {
 	const args = [
-		"tab",
-		"create",
-		"--workspace",
-		input.workspaceId,
+		"pane",
+		"split",
+		input.paneId,
+		"--direction",
+		input.direction ?? "right",
+		"--ratio",
+		String(input.ratio ?? 0.5),
 		"--cwd",
 		input.cwd,
-		"--label",
-		input.label,
 		"--no-focus",
 	];
 	for (const [key, value] of Object.entries(input.env ?? {})) {
 		args.push("--env", `${key}=${value}`);
 	}
-	return await runHerdr(pi, args, "tab create", parseTabTarget);
+	return await runHerdr(pi, args, "pane split", parsePaneTarget);
 }
 
 /**
@@ -159,6 +164,10 @@ export async function runInHerdrPane(pi: HerdrExec, paneId: string, argv: string
 	return await runHerdr(pi, args, "pane run", () => null);
 }
 
-export async function closeHerdrTab(pi: HerdrExec, tabId: string): Promise<HerdrCommandResult<null>> {
-	return await runHerdr(pi, ["tab", "close", tabId], "tab close", () => null);
+/**
+ * `pane close` on an already-gone pane returns `pane_not_found` (exit 1), the same pattern as the
+ * old `tab close` on a gone tab.
+ */
+export async function closeHerdrPane(pi: HerdrExec, paneId: string): Promise<HerdrCommandResult<null>> {
+	return await runHerdr(pi, ["pane", "close", paneId], "pane close", () => null);
 }
