@@ -184,7 +184,7 @@ The only correct answer is a `pong` carrying the same `nonce`:
 {"type":"pong","v":28,"nonce":"ping-01"}
 ```
 
-An unsolicited `pong` is inert and must not close the connection. The daemon also sends `ping` as its **incumbent-liveness probe**: when a second connection registers an already-connected `node_id`, the daemon writes a probe ping to the incumbent. A live incumbent keeps its session and the newcomer is rejected with `duplicate_node_connection`; only a socket that fails the write is closed so the newcomer can take the node id. Blind takeover is never performed.
+An unsolicited `pong` is inert and must not close the connection. The daemon also sends `ping` as its **incumbent-liveness probe**: when a second connection registers an already-connected `node_id`, the daemon pings the incumbent and waits for a `pong` echoing that nonce. A pong keeps the incumbent's session and the newcomer is rejected with `duplicate_node_connection`; only an unanswered probe releases the node id. A completed write is not sufficient evidence — a frozen peer's transport still accepts bytes — which is why the answer is required. Blind takeover is never performed.
 
 ### `list_agents` client → daemon
 
@@ -442,4 +442,4 @@ A minimal client flow is:
 2. Send `register` with `v: 28`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` (carrying a `request_id` the result echoes) or discover agents through `list_agents`.
-5. Answer every daemon `ping` with a same-nonce `pong`: an unanswered probe reads as a dead connection and can cost the node id to a reconnecting session.
+5. Answer every daemon `ping` with a same-nonce `pong`. The daemon probes an incumbent connection this way before admitting a duplicate registration for the same `node_id`, and an unanswered probe is what releases the id to the newcomer — so a client that stops answering loses its registration to the next session that resumes.

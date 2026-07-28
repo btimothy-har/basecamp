@@ -93,12 +93,6 @@ class Registry:
         entry = self._connections.get(node_id)
         return entry[1] if entry is not None else None
 
-    def is_connection_current(self, node_id: str, generation: int) -> bool:
-        """True when the registered entry for node id is exactly this generation."""
-
-        entry = self._connections.get(node_id)
-        return entry is not None and entry[1] == generation
-
     def open_probe(self, node_id: str) -> asyncio.Future[None]:
         """Arm a liveness probe for a node, replacing any probe already pending."""
 

@@ -146,7 +146,7 @@ async def handle_peer_message(
         return
 
     task = asyncio.create_task(
-        push_peer_message_delivery(
+        _push_peer_message_delivery(
             delivery=accepted.delivery,
             target_agent_id=accepted.target_agent_id,
             registry=registry,
@@ -158,7 +158,7 @@ async def handle_peer_message(
     await websocket.send_json(serialize_frame(accepted.ack))
 
 
-async def push_peer_message_delivery(
+async def _push_peer_message_delivery(
     *,
     delivery: PeerMessageDeliveryFrame,
     target_agent_id: str,

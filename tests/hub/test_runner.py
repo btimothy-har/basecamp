@@ -245,6 +245,7 @@ def test_attempt_proxy_forwards_wait_result_from_daemon(tmp_path: Path) -> None:
     proxy = AttemptDaemonProxy(_context(tmp_path))
     wait_result = WaitResultFrame(
         type="wait_result",
+        request_id="wait-proxy-1",
         v=PROTOCOL_VERSION,
         results=[
             WaitResultItem(

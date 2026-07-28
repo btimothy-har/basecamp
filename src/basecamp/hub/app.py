@@ -58,6 +58,7 @@ from .swarm.service import (
 # Starlette's WebSocket cannot send a protocol-level ping; this is the timeout
 # for the send-based incumbent probe (see _incumbent_is_live).
 _INCUMBENT_PROBE_TIMEOUT_S = 10.0
+_TAKEOVER_CLOSE_TIMEOUT_S = 2.0
 
 
 def create_app(
@@ -350,7 +351,11 @@ def create_app(
                     # Reaping must still proceed when a best-effort recency write loses a shutdown race.
                     pass
                 finally:
-                    schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
+                    # The touch above suspends, so re-check: a reconnect that landed
+                    # in that window already cancelled its predecessor's reaper, and
+                    # scheduling one here would target a live connection.
+                    if not registry.has_connection(node_id):
+                        schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
 
     return app
 
@@ -391,16 +396,14 @@ async def _cancel_reply_tasks(tasks: set[asyncio.Task[None]]) -> None:
     pending = [task for task in tasks if not task.done()]
     for task in pending:
         task.cancel()
-    for task in pending:
-        try:
-            await task
-        except BaseException:  # noqa: BLE001 — teardown swallows cancellation and send failures alike
-            continue
+    # gather collects each task's cancellation as a result, while still letting a
+    # cancellation aimed at *this* handler propagate rather than being swallowed.
+    await asyncio.gather(*pending, return_exceptions=True)
 
 
 async def _close_websocket_quietly(websocket: WebSocket) -> None:
     try:
-        async with asyncio.timeout(2.0):
+        async with asyncio.timeout(_TAKEOVER_CLOSE_TIMEOUT_S):
             await websocket.close(code=1000)
     except Exception:  # noqa: BLE001 — close is best effort; takeover proceeds
         return

@@ -334,8 +334,6 @@ def test_registry_remove_connection_generation_guard() -> None:
 
     assert registry.remove_connection("node-1", generation=first_gen) is False
     assert registry.get_connection_generation("node-1") == second_gen
-    assert registry.is_connection_current("node-1", second_gen) is True
-    assert registry.is_connection_current("node-1", first_gen) is False
 
     assert registry.remove_connection("node-1", generation=second_gen) is True
     assert registry.get_connection("node-1") is None
