@@ -107,7 +107,7 @@ You work in your own detached scratch workspace — a disposable copy of the par
 	}
 	return `## Workspace contract
 
-You are an implementation worker in your own transient git workspace on branch \`${workspace.branch}\`. The workspace is discarded when this run ends — **only commits on your branch survive**. The main agent integrates your branch by merge, and uncommitted changes do not survive your run.
+You work in your own transient git workspace on branch \`${workspace.branch}\`. The workspace is discarded when this run ends — **only commits on your branch survive**. The main agent integrates your branch by merge, and uncommitted changes do not survive your run.
 
 ### Approach
 
