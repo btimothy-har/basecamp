@@ -7,6 +7,11 @@
  * macrotask and possibly a whole compaction pass. A peer `agent_end` handler
  * reading that field would conclude no handoff was happening and could fire a
  * competing restart, so the latch stays armed until the prompt is actually sent.
+ *
+ * Because the latch suppresses that peer for as long as it is armed, a handoff
+ * that never completes would disable it for the rest of the session. Compaction
+ * awaits an unbounded summarization call, so the compaction path carries a
+ * watchdog: a wedged compaction loses its summary, not the handoff.
  */
 
 import {
@@ -42,12 +47,22 @@ export interface CompactRequest {
 	onError: () => void;
 }
 
+/** A compaction that never reports must strand neither the handoff nor the latch. */
+export const COMPACTION_WATCHDOG_MS = 120_000;
+
+function scheduleDefault(fn: () => void, ms: number): () => void {
+	const timer = setTimeout(fn, ms);
+	return () => clearTimeout(timer);
+}
+
 export interface HandoffDispatch {
 	handoff: PendingImplementationHandoff;
 	/** Nullable because Pi reports unknown context usage as both `null` and `undefined`. */
 	contextUsagePercent: number | null | undefined;
 	send: () => void;
 	compact: (request: CompactRequest) => void;
+	/** Returns a cancel function; injectable so tests can fire the watchdog without waiting. */
+	schedule?: (fn: () => void, ms: number) => () => void;
 }
 
 /**
@@ -70,13 +85,20 @@ export function dispatchImplementationHandoff(dispatch: HandoffDispatch): void {
 		return;
 	}
 
+	let cancelWatchdog = (): void => {};
+	const finish = (): void => {
+		cancelWatchdog();
+		sendOnce();
+	};
+
 	try {
+		cancelWatchdog = (dispatch.schedule ?? scheduleDefault)(finish, COMPACTION_WATCHDOG_MS);
 		dispatch.compact({
 			customInstructions: buildHandoffCompactionInstructions(dispatch.handoff),
-			onComplete: sendOnce,
-			onError: sendOnce,
+			onComplete: finish,
+			onError: finish,
 		});
 	} catch {
-		sendOnce();
+		finish();
 	}
 }

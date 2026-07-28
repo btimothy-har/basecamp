@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+	COMPACTION_WATCHDOG_MS,
 	type CompactRequest,
 	createHandoffLatch,
 	dispatchImplementationHandoff,
@@ -36,17 +37,33 @@ const UNDER_THRESHOLD = HANDOFF_COMPACTION_THRESHOLD_PERCENT - 1;
 function harness(contextUsagePercent: number | undefined) {
 	const requests: CompactRequest[] = [];
 	let sends = 0;
+	let watchdog: (() => void) | null = null;
+	let cancelled = 0;
 	const latch = createHandoffLatch();
 	latch.arm();
 	return {
 		latch,
 		requests,
 		sends: () => sends,
+		cancelled: () => cancelled,
+		scheduledDelay: null as number | null,
+		/** Fires the watchdog the dispatcher armed, standing in for the elapsed bound. */
+		fireWatchdog(): void {
+			assert.ok(watchdog, "no watchdog was scheduled");
+			watchdog();
+		},
 		run(compact: (request: CompactRequest) => void = (request) => void requests.push(request)) {
 			dispatchImplementationHandoff({
 				handoff,
 				contextUsagePercent,
 				compact,
+				schedule: (fn, ms) => {
+					watchdog = fn;
+					this.scheduledDelay = ms;
+					return () => {
+						cancelled += 1;
+					};
+				},
 				send: () => {
 					sends += 1;
 					latch.disarm();
@@ -131,6 +148,39 @@ describe("dispatchImplementationHandoff", () => {
 		h.requests[0]?.onComplete();
 		h.requests[0]?.onError();
 		h.requests[0]?.onComplete();
+		assert.equal(h.sends(), 1);
+	});
+
+	// The latch suppresses the continuation guard while armed, so a compaction that
+	// never reports would take a second feature down with it for the whole session.
+	it("hands off and releases the latch when compaction never reports", () => {
+		const h = harness(OVER_THRESHOLD);
+		h.run();
+
+		assert.equal(h.scheduledDelay, COMPACTION_WATCHDOG_MS);
+		assert.equal(h.sends(), 0);
+		assert.equal(h.latch.active, true);
+
+		h.fireWatchdog();
+
+		assert.equal(h.sends(), 1, "the handoff still goes out");
+		assert.equal(h.latch.active, false, "and the guard is no longer suppressed");
+	});
+
+	it("cancels the watchdog once compaction reports, and still sends only once", () => {
+		const h = harness(OVER_THRESHOLD);
+		h.run();
+		h.requests[0]?.onComplete();
+
+		assert.equal(h.cancelled(), 1);
+		h.fireWatchdog();
+		assert.equal(h.sends(), 1, "a late watchdog cannot double-send");
+	});
+
+	it("does not schedule a watchdog when no compaction is needed", () => {
+		const h = harness(UNDER_THRESHOLD);
+		h.run();
+		assert.equal(h.scheduledDelay, null);
 		assert.equal(h.sends(), 1);
 	});
 });
