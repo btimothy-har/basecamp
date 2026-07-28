@@ -51,6 +51,7 @@ def test_ws_register_returns_registered(tmp_path: Path) -> None:
     }
 
 
+
 def test_ws_disconnect_schedules_disconnect_reaper(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[str] = []
 

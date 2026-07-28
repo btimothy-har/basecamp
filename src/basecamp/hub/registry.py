@@ -29,27 +29,61 @@ class Registry:
     """Tracks runtime connections, run ownership/processes, and waiters."""
 
     def __init__(self) -> None:
-        self._connections: MutableMapping[str, object] = {}
+        self._connections: MutableMapping[str, tuple[object, int]] = {}
+        self._next_generation = 0
         self._runs: MutableMapping[str, str] = {}
         self._processes: MutableMapping[str, asyncio.subprocess.Process] = {}
         self._disconnect_reapers: MutableMapping[str, asyncio.Task[None]] = {}
         self._waiters: MutableMapping[str, Waiter] = {}
         self._message_waiters: MutableMapping[str, MessageWaiter] = {}
 
-    def set_connection(self, node_id: str, websocket: object) -> None:
-        """Register or replace an active node connection."""
+    def set_connection(self, node_id: str, websocket: object) -> int:
+        """Register or replace an active node connection; returns its generation.
 
-        self._connections[node_id] = websocket
+        The generation is a monotonic per-registry stamp that lets a handler
+        prove the registered entry is still its own before mutating it — a
+        stale handler (replaced by a same-node re-registration) must never
+        remove or reap the newer connection.
+        """
 
-    def remove_connection(self, node_id: str) -> None:
-        """Remove a node connection if present."""
+        self._next_generation += 1
+        self._connections[node_id] = (websocket, self._next_generation)
+        return self._next_generation
 
-        self._connections.pop(node_id, None)
+    def remove_connection(self, node_id: str, *, generation: int | None = None) -> bool:
+        """Remove a node connection, optionally generation-guarded.
+
+        With a generation, the removal only lands when the registered entry is
+        still that exact connection (returns True); a newer entry is left alone
+        (returns False). Without one, removes unconditionally (legacy caller).
+        """
+
+        if generation is None:
+            self._connections.pop(node_id, None)
+            return True
+        entry = self._connections.get(node_id)
+        if entry is None or entry[1] != generation:
+            return False
+        del self._connections[node_id]
+        return True
 
     def get_connection(self, node_id: str) -> object | None:
         """Look up an active connection by node id."""
 
-        return self._connections.get(node_id)
+        entry = self._connections.get(node_id)
+        return entry[0] if entry is not None else None
+
+    def get_connection_generation(self, node_id: str) -> int | None:
+        """Look up the generation of the active connection, if any."""
+
+        entry = self._connections.get(node_id)
+        return entry[1] if entry is not None else None
+
+    def is_connection_current(self, node_id: str, generation: int) -> bool:
+        """True when the registered entry for node id is exactly this generation."""
+
+        entry = self._connections.get(node_id)
+        return entry is not None and entry[1] == generation
 
     def has_connection(self, node_id: str) -> bool:
         """Return whether a node id has an active websocket connection."""
