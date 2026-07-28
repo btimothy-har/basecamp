@@ -120,10 +120,10 @@ function deliver(pi: ExtensionAPI, ctx: ExtensionContext, notes: UserNote[]): vo
 		ctx.ui.notify("No annotations were left on the diff.", "info");
 		return;
 	}
-	pi.sendMessage(
-		{ customType: "diff-annotations", content: formatAnnotations(notes), display: true },
-		{ deliverAs: "followUp" },
-	);
+	// A user prompt, not a custom injection: these are the user's own review
+	// comments, so they arrive as if the user typed them — the agent weighs
+	// them like any other instruction from the user, not like extension output.
+	void pi.sendUserMessage(formatAnnotations(notes), { deliverAs: "followUp" });
 }
 
 interface DiffTarget {

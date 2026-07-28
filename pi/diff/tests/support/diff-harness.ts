@@ -104,7 +104,10 @@ export function harness(options: HarnessOptions = {}): Harness {
 	const pi = {
 		exec,
 		events: { emit: () => {} },
-		sendMessage: (message: { content: string }) => sent.push(message),
+		sendUserMessage: (content: string) => {
+			sent.push({ content });
+			return Promise.resolve();
+		},
 		registerCommand: (_name: string, spec: { handler: CommandHandler }) => {
 			handler = spec.handler;
 		},

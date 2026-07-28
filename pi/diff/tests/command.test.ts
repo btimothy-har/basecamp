@@ -104,7 +104,7 @@ describe("/diff", () => {
 		assert.deepEqual(argsFor(h.calls, "herdr", "pane run")?.slice(4), ["'diff'", `'${BASE}'`]);
 	});
 
-	it("sends line-anchored annotations back into the session", async (t) => {
+	it("sends line-anchored annotations back as a user prompt", async (t) => {
 		herdrEnv(t);
 		const h = harness({
 			noteReads: [
