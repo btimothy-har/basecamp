@@ -4,7 +4,7 @@ The context/prompt layer — assembles the replacement system prompt on every ag
 
 Basecamp fully *replaces* pi's default system prompt rather than appending to it, so this domain must provide everything: environment, working style, project context, and the tool/skill/agent index. It binds `before_agent_start`, builds the prompt, and returns it.
 
-## Architecture: 6 categories, 8 blocks
+## Architecture: 6 categories, 9 blocks
 
 The prompt is assembled from blocks grouped into categories, in this order:
 
@@ -13,11 +13,12 @@ The prompt is assembled from blocks grouped into categories, in this order:
 | 1 | Constraints | read-only | `defaults/modes/read-only.md` | `--read-only` |
 | 2 | Posture | mode | `defaults/modes/{analysis,planning,work,copilot}.md` | primary session |
 | 3 | | persona | `#core/swarm` `builtin/*.md` (via `agentPrompt`) | dispatched agent |
-| 4 | Style | style | `defaults/styles/{engineering,advisor,logseq}.md` | user-facing, non-copilot |
-| 5 | | craft | `defaults/styles/craft.md` | **always** |
-| 6 | Capabilities | index | `buildCapabilitiesIndex` | always |
-| 7 | Project | repo context · repo memory | `buildProjectContext` · `buildRepoLogseqContext` | always · copilot |
-| 8 | Environment | session facts · runtime | `defaults/environment.md` · `buildEnvBlock` | always |
+| 4 | Style | role style | `defaults/styles/{engineering,advisor,logseq}.md` | user-facing, non-copilot |
+| 5 | | voice | `defaults/voice.md` | **always** |
+| 6 | | craft | `defaults/craft.md` | **always** |
+| 7 | Capabilities | index | `buildCapabilitiesIndex` | always |
+| 8 | Project | repo context · repo memory | `buildProjectContext` · `buildRepoLogseqContext` | always · copilot |
+| 9 | Environment | session facts · runtime | `defaults/environment.md` · `buildEnvBlock` | always |
 
 Two structural rules keep it from re-accreting.
 
@@ -31,11 +32,13 @@ Each layer answers exactly one question. When guidance appears in the wrong laye
 | `buildEnvBlock` | What is true right now? (cwd, repo, worktree, date) |
 | tool description | How do I call this? |
 | `modes/*` | **What are we doing?** |
-| `styles/*` | **How are things achieved?** |
+| `styles/*` | **How are things achieved?** — who you are and how you work (selectable role) |
+| `voice.md` | **How is output shaped?** (unconditional) |
+| `craft.md` | **How is code written?** (unconditional) |
 | skills | How do I do this well, in depth? |
 | project context | What's non-obvious about this repo? |
 
-Mode and style are the *what* and the *how* of a session. Test a fragment by asking which it is: "you implement and integrate" is a what (mode); "you are a partner, not a follower" is a how (style).
+Mode and style are the *what* and the *how* of a session. Test a fragment by asking which it is: "you implement and integrate" is a what (mode); "you are a partner, not a follower" is a how (style). Where a rule belongs to voice's question — how output is shaped — voice owns it and the role styles do not repeat it: the no-estimates rule was stated in both `engineering.md` and `logseq.md` until `voice.md` claimed it, and each rule is now asserted exactly once.
 
 Consequences worth stating, because each was a live duplication:
 
@@ -48,9 +51,13 @@ Consequences worth stating, because each was a live duplication:
 
 A block boundary is only worth having if two consumers actually disagree about it. If every consumer takes two blocks together, they are one block. The real consumer list is: primary × mode, `worker`, report personas, and read-only variants.
 
-This test is what keeps the block count at 8 rather than ~69. An earlier semantic decomposition (every topic shift becoming a block with an id, condition, and predicate) was rejected: it converts authored prose into config, which is harder to read and makes the assembled prompt harder to reason about.
+This test is what keeps the block count at 9 rather than ~69. An earlier semantic decomposition (every topic shift becoming a block with an id, condition, and predicate) was rejected: it converts authored prose into config, which is harder to read and makes the assembled prompt harder to reason about.
 
-Applying the test today yields exactly one non-obvious seam: **craft**. It is the only content where a persona and a primary agree while other consumers diverge — `worker` needs the code rubric, report personas and analysis sessions arguably do not. Craft is nonetheless included **unconditionally**, because a gap in coverage is worse than the tokens and it removes every remaining conditional from the matrix.
+Applying the test today yields two non-obvious seams where a persona and a primary agree while other consumers diverge: **craft** and **voice**. `worker` needs the code rubric, report personas and analysis sessions arguably do not; report personas and analysis sessions write text a reader must act on, copilot arguably diverges. Both are nonetheless included **unconditionally**, because a gap in coverage is worse than the tokens and it removes every remaining conditional from the matrix. For voice specifically: report personas write reports the primary must act on, where "lead with the finding, name the next step, matter-of-fact on failure" applies as well as it does in chat, and copilot loads no role style, so without voice its manner guidance was one sentence.
+
+Voice earned the unconditional tier over the alternatives. A **toggleable skill** (basecamp supports `disable-model-invocation: true` + `/skill:` invocation; `code-review` uses it) was rejected because always-on is the point, and output shape is style content, not skill content. A **peer `working_style`** was rejected because `working_style` is single-select, so choosing it would discard the engineer role, task tracking, and git workflow. A **`defaults/rubrics/` directory** grouping craft + voice was rejected because "rubric" is a content genre these two do not share (craft is a standard code is measured against; voice is how output is shaped) — their only shared property is being loaded unconditionally, which is what the top-level tier already names. **Promoting the always-on fragments to a 7th category** was rejected: categories are a reading aid over blocks, and the divergence test governs blocks, so categories stay at 6.
+
+`voice.md` is an adaptation, not a copy, of [ayghri/i-have-adhd](https://github.com/ayghri/i-have-adhd) (MIT). Upstream's time-estimate rule was deliberately dropped because it contradicts basecamp's no-estimates stance.
 
 ### Generator vs. authored
 
@@ -62,13 +69,13 @@ Prompt-block ordering is chosen for coherence rather than positional emphasis: t
 
 - **`prompt.ts`** — the `before_agent_start` hook + `assemblePrompt`, plus the file loaders and their user-override fallback.
 - **`context-builders.ts`** — pure fragment builders: worktree warning, unsafe-edit guidance, project-context block, capabilities index.
-- **`defaults/`** — the shipped fragments: `environment.md`, `modes/<mode>.md`, `styles/<style>.md`.
+- **`defaults/`** — the shipped fragments: the always-loaded top-level files (`environment.md`, `voice.md`, `craft.md`) and the selectable sets `modes/<mode>.md`, `styles/<style>.md`.
 
 ### Copilot is a mode that carries its own manner
 
-Copilot is a distinct *activity* — orient the repo, make the choice set clear, shape and stage workstreams, curate repo memory — so it is a mode, not a style. It is also the one mode that loads **no** style file: it carries its short "Work with the user" section inline instead.
+Copilot is a distinct *activity* — orient the repo, make the choice set clear, shape and stage workstreams, curate repo memory — so it is a mode, not a style. It is also the one mode that loads **no** style file, because no selectable style fits: `engineering` asserts "you implement directly" and copilot does not implement; `advisor` drags prose-over-bullets and a research section; `logseq` assumes cwd is the graph root. The one style it does load is the unconditional one — voice reaches every consumer — so its output shape needs no inline repetition.
 
-That looks like an ownership-rule violation (a *how* inside a *what*), and it is a deliberate one. No existing style fits: `engineering` asserts "you implement directly" and copilot does not implement; `advisor` drags prose-over-bullets and a research section; `logseq` assumes cwd is the graph root. A single-purpose `styles/copilot.md` would hold ~50 words that only copilot ever loads, so the **consumer-divergence test rejects it** — the boundary would add no composition, only taxonomy. When ownership and divergence conflict, divergence wins: it is about composition value, ownership only about tidiness. Not every mode needs a style.
+What remains inline is a short "Work with the user" section that names which artifact to lead with — the repo picture, the choice set, or the recommended workstream. That reads as mode content (a *what*, not a *how*), but the residue is small enough that the line is honestly arguable: it sits inside the mode because a single-purpose `styles/copilot.md` would hold ~50 words that only copilot ever loads, so the **consumer-divergence test rejects it** — the boundary would add no composition, only taxonomy. When ownership and divergence conflict, divergence wins: it is about composition value, ownership only about tidiness. Not every mode needs a style.
 
 The `copilot` mode is load-bearing beyond prose: `isCopilotMode` suppresses the style, hides `plan` from the capabilities index, hard-blocks the `plan` tool call in `#tasks`, and locks shift+tab. Do not remove it.
 
@@ -87,7 +94,9 @@ The `skill` tool description owns the reuse/reload policy. Shipped fragments sho
 
 ## Defaults ↔ user override
 
-`loadPromptFile` / `loadWorkingStyle` read the user dir first (`~/.pi/basecamp/prompts` · `.../styles`), then fall back to `defaults/`. Because craft is a style file, `~/.pi/basecamp/styles/craft.md` overrides the shipped rubric.
+Under `defaults/`, a subdirectory is a set you select from; a top-level file is always loaded. `environment.md` was the precedent; `voice.md` and `craft.md` now follow it. The rule is load-bearing, not cosmetic: Python resolves available working styles by globbing `defaults/styles/*.md` (in `src/basecamp/config_cli/project.py` and `src/basecamp/core/doctor/checks/references.py`), so while `craft.md` sat in `styles/` it was wrongly offered as a selectable `working_style` and wrongly validated by `basecamp doctor`. The move fixed that with no code change and no exclusion list, and left `loadWorkingStyle()` with exactly one caller — the role style.
+
+`loadPromptFile` / `loadWorkingStyle` read the user dir first (`~/.pi/basecamp/prompts` · `.../styles`), then fall back to `defaults/`. Override paths follow the same tier: `~/.pi/basecamp/prompts/voice.md` and `~/.pi/basecamp/prompts/craft.md` override the always-on fragments; `~/.pi/basecamp/styles/{name}.md` overrides or adds a working style. No migration moved a craft override from `styles/` to `prompts/` — the styles dir was scaffolded empty by `basecamp setup`, so nothing broke.
 
 ## Registration
 

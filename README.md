@@ -222,6 +222,8 @@ mode prompt, plus read-only constraints when applicable
          ↓
 working style prompt, or subagent prompt for dispatched agents
          ↓
+voice.md and craft.md (always-on output-shape and code-quality guidance)
+         ↓
 environment.md (CLI usage, Python/uv)
          ↓
 capabilities index (tools, skills, and parent-session agents)
@@ -243,7 +245,7 @@ The session mode sets the agent's posture and is shown in the footer. Cycle betw
 
 | Style | Description |
 |-------|-------------|
-| `engineering` | Partner role, collaborative work, code quality and file-focus guidance, frequent check-ins |
+| `engineering` | Partner role, collaborative work, code quality and file-focus guidance, task tracking and git workflow |
 | `advisor` | Advisor role, efficient discovery, direct communication, decision support |
 | `logseq` | Knowledge graph curation, structured entries, user-driven content approval |
 
