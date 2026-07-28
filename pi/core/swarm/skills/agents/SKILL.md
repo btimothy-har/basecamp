@@ -8,7 +8,7 @@ description: "Agent delegation guidance for bounded work, active-run tracking, a
 Apply this skill to delegate bounded work to agents while you keep working.
 
 Use these tools for agent delegation and collaboration; if agents are unavailable, they return a tool error:
-- `dispatch_agent({ agent?, task, name?, agent_handle? })` — start or retask a dispatchable async worker and return a public `agent_handle`.
+- `dispatch_agent({ agent?, task, name?, agent_handle? })` — start or retask a dispatchable async agent and return a public `agent_handle`. Omit `agent` for an ad-hoc deliverable run (the default worker); name a report persona (`scout`, a review specialist) for a branchless investigation/review run.
 - `wait_for_agent({ handles: string | string[], timeout_s? })` — wait for one or more awaitable dispatch handles. `timeout_s` defaults to 600.
 - `cancel_agent({ agent_handle })` — cancel a running agent you dispatched, stopping it and its entire dispatched subtree. Subtree-only: you can only cancel agents within your own dispatch tree.
 - `list_agents({ awaitable?: true })` — list visible dispatchable agents in your current scope. `awaitable` filters to agents with a current run you dispatched. Sessions are intentionally excluded.
@@ -21,8 +21,8 @@ Use these tools for agent delegation and collaboration; if agents are unavailabl
 Default to the narrowest agent that fits:
 Every dispatched agent runs in its **own transient workspace** with full write tools. The posture is anchored on the deliverable, not the tools:
 
-- **worker** is the only deliverable persona: it mints an `agent/<handle>` branch from your **clean** HEAD (a dirty tree fails the dispatch with "commit your WIP first"), commits its change, and you `git merge` the branch. Run several in parallel for file-disjoint tasks. Want a specialist to implement? Dispatch a worker with a specialist-flavored brief.
-- **Report personas** (`scout`, `devils-advocate`, `code-clarity-specialist`, `conventions-specialist`, `docs-specialist`, `general-reviewer`, `integration-specialist`, `security-specialist`, `testing-specialist`) and **ad-hoc agents** get branchless detached workspaces based on your current state — uncommitted WIP included, via snapshot. They see your live work, write freely for scratch exploration, and everything vanishes at run end; their report is the only deliverable.
+- **Ad-hoc dispatch** (no `agent`) is the default worker — it mints an `agent/<handle>` branch from your **clean** HEAD (a dirty tree fails the dispatch with "commit your WIP first"), commits its change, and you `git merge` the branch. Run several in parallel for file-disjoint tasks. Want a specialist to implement? Dispatch an ad-hoc worker with a specialist-flavored brief.
+- **Report personas** (`scout`, `devils-advocate`, `code-clarity-specialist`, `conventions-specialist`, `docs-specialist`, `general-reviewer`, `integration-specialist`, `security-specialist`, `testing-specialist`) get branchless detached workspaces based on your current state — uncommitted WIP included, via snapshot. They see your live work, write freely for scratch exploration, and everything vanishes at run end; their report is the only deliverable.
 
 Do not dispatch agents for trivial one-step work you can do directly.
 
@@ -33,7 +33,7 @@ Do not dispatch agents for trivial one-step work you can do directly.
 - Capability is separate from identity:
   - **messageable**: agents and sessions can receive `message_agent` when reachable by relationship or addressed by their known public handle.
   - **askable**: agents and sessions can be asked when reachable by relationship or addressed by their known public handle, and the daemon has a forkable session file.
-  - **dispatchable/retaskable**: only worker agents returned by `list_agents`; sessions and ask answerers are not dispatch targets.
+  - **dispatchable/retaskable**: only agents returned by `list_agents`; sessions and ask answerers are not dispatch targets.
   - **awaitable**: only current primary runs dispatched by this caller; sessions are not awaitable.
 - Relationship words such as `parent`, `child`, and `peer` are display labels only. They are not routable target handles. Do not send to `parent`; send to the canonical handle.
 - `list_agents` is a dispatch/wait directory, not a message-target directory. It intentionally excludes sessions, even though sessions can be messageable/askable when their handle is known.
@@ -84,10 +84,10 @@ Review subagent output critically — you validate evidence, make decisions, and
 
 Agents return findings and/or branches; you validate evidence, make decisions, and integrate.
 
-A worker's only durable output is what it commits to its branch (`agent/<handle>`); every agent workspace is removed automatically when the run ends, uncommitted state included, and report runs leave nothing behind by construction. To integrate a finished worker:
+An ad-hoc worker's only durable output is what it commits to its branch (`agent/<handle>`); every agent workspace is removed automatically when the run ends, uncommitted state included, and report runs leave nothing behind by construction. To integrate a finished ad-hoc worker's work:
 
 1. `wait_for_agent` on its handle and read its final report (a PR-style summary of what changed).
 2. From your own worktree, `git merge agent/<handle>` to bring the change in, resolving any conflicts as normal.
 3. Once the work is integrated, delete the now-merged local branch with `git branch -d <branch>` (allowed — it is not a `git worktree` command). This applies to the worker's `agent/<handle>` branch and any other local branch you merged — e.g. `git branch -d agent/<handle>` — so merged branches do not accumulate. Never run `git worktree remove` (that is blocked; workspace lifecycle is system-managed).
 
-Retasking a worker handle continues the same branch: its earlier commits are in its next workspace, and once you have merged, its next run bases fresh from your clean HEAD. If a worker's change isn't wanted, do not merge it — the unmerged branch remains until you explicitly delete it, and deleting it is the explicit rejection.
+Retasking a handle continues the same branch: its earlier commits are in its next workspace, and once you have merged, its next run bases fresh from your clean HEAD. If a worker's change isn't wanted, do not merge it — the unmerged branch remains until you explicitly delete it, and deleting it is the explicit rejection.

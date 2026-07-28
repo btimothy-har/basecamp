@@ -48,7 +48,7 @@ The practical consequence: **tool mechanics never go in a prompt fragment.** The
 
 ### File-Length Guidance
 
-The shipped Pi agent carries a cross-project **soft** source-file policy in the always-on craft block (`defaults/craft.md`), which every code-writing consumer composes — primary sessions and the mutative worker alike, so the worker no longer carries its own copy: TypeScript/HTML ≤350, shell ≤400, SQL ≤800, and CSS/Python/other recognized source types ≤500. Tighter project instructions win. This product guidance is separate from repository-specific hard checks such as `scripts/check-file-length.ts`.
+The shipped Pi agent carries a cross-project **soft** source-file policy in the always-on craft block (`defaults/craft.md`), which every code-writing consumer composes — primary sessions and dispatched workers alike, so the worker contract no longer carries its own copy: TypeScript/HTML ≤350, shell ≤400, SQL ≤800, and CSS/Python/other recognized source types ≤500. Tighter project instructions win. This product guidance is separate from repository-specific hard checks such as `scripts/check-file-length.ts`.
 
 `pi/engineering/file-length.ts` observes only successful structured `edit`/`write` results. It reads the resulting recognized source file and sends one hidden, non-blocking steer while that path remains over its cap; returning under cap or settling re-arms it. The write always stands, failures stay silent, unlisted file types are exempt, and bash/code-generator mutations are intentionally outside the attribution boundary. Suppression is ephemeral wiring state, not `processScoped` surviving state.
 
@@ -62,7 +62,7 @@ Agent modes are `analysis`, `planning`, `work`, and `copilot`. `work` is the def
 
 ### Agent Execution Posture
 
-Every dispatched agent runs in its **own transient git worktree**; the posture is anchored on the **deliverable**, not the tools — only `worker` (persona `deliverable: true`) mints a branch, every other run is report-only. Integration is always a plain `git merge agent/<handle>`; the daemon owns the full backstop chain (run-exit reap, restart reconcile, periodic sweep), and the workspace — not the toolset — is the isolation wall. See `pi/core/swarm/README.md` for the branch/teardown matrix, snapshot semantics, the capability-follows-workspace rule, and the daemon-owned backstop chain.
+Every dispatched agent runs in its **own transient git worktree**; the posture is anchored on the **deliverable**, not the tools — ad-hoc dispatches default to deliverable posture, minting a branch from clean HEAD; named report personas are report-only. Integration is always a plain `git merge agent/<handle>`; the daemon owns the full backstop chain (run-exit reap, restart reconcile, periodic sweep), and the workspace — not the toolset — is the isolation wall. See `pi/core/swarm/README.md` for the branch/teardown matrix, snapshot semantics, the capability-follows-workspace rule, and the daemon-owned backstop chain.
 
 ### Agents Dashboard
 
