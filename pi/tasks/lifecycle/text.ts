@@ -39,7 +39,7 @@ export function buildSteerContent(state: TasksState, planRef: GoalCycle["planRef
 
 	lines.push(
 		"",
-		"Call start_task before beginning work on a task. Call complete_task when a task is done. When completing a task at a natural handoff, call complete_task with stop_work: true as the only tool call in that assistant response so the agent loop stops cleanly. Do not batch it with any other tool call. If blocked before the task is done, escalate instead. If the plan changes, call create_tasks with the updated list.",
+		"Call start_task before beginning work on a task, and complete_task when it is done. When the work reaches a natural handoff, stop calling tools and close out with a summary of what you did. If blocked before the task is done, escalate instead. If the plan changes, call create_tasks with the updated list.",
 	);
 	return lines.join("\n");
 }
@@ -80,35 +80,15 @@ export function buildTaskContext(task: Task, index: number, state: TasksState): 
 export interface CompleteTaskResultDetails {
 	task: number;
 	label: string;
-	stop_work: boolean;
-	stop_message: string | null;
 	progress: ReturnType<typeof buildProgress>;
 }
 
-export function buildCompleteTaskStopMessage(index: number, task: Task): string {
-	return `Task ${index} completed: ${task.label}. Stopping work now.`;
-}
-
-export function buildCompleteTaskResultText(
-	state: TasksState,
-	index: number,
-	task: Task,
-	stopMessage: string | null,
-): string {
+export function buildCompleteTaskResultText(state: TasksState, index: number, task: Task): string {
 	const progress = buildProgress(state);
-	const lines = [
+	return [
 		`Task ${index} completed: ${task.label}.`,
 		`Progress: ${progress.completed}/${progress.total} tasks completed.`,
-	];
-
-	if (stopMessage) {
-		lines.push("stop_work requested. Stopping the agent loop now; no final assistant turn will run.");
-	}
-
-	lines.push("", buildStateSnapshot(state));
-	return lines.join("\n");
-}
-
-export function isCompleteTaskStopWorkDetails(details: unknown): details is CompleteTaskResultDetails {
-	return typeof details === "object" && details !== null && (details as { stop_work?: unknown }).stop_work === true;
+		"",
+		buildStateSnapshot(state),
+	].join("\n");
 }

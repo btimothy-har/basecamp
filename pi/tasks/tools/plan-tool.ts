@@ -11,7 +11,7 @@
  * choreography to runHandoff, and maps the outcome to its result.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
@@ -20,12 +20,11 @@ import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
 import type { PlanDraft } from "#tasks/schemas/plan.ts";
 import type { GoalCycle } from "#tasks/schemas/task.ts";
 import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "#tasks/workflows/draft.ts";
+import { createHandoffLatch, dispatchImplementationHandoff } from "#tasks/workflows/handoff/dispatch.ts";
 import {
-	buildHandoffCompactionInstructions,
 	buildHandoffMessage,
 	buildPendingImplementationHandoff,
 	buildWorktreeActivationFailedResult,
-	HANDOFF_COMPACTION_THRESHOLD_PERCENT,
 	type PendingImplementationHandoff,
 	runHandoff,
 } from "#tasks/workflows/handoff/index.ts";
@@ -34,6 +33,18 @@ import { renderPartial, renderSuccess } from "./render.ts";
 
 export interface PlanAccess {
 	getDraft(): PlanDraft | null;
+	/** True while an approved implementation handoff still owes the session a restart. */
+	isHandoffActive(): boolean;
+}
+
+/**
+ * The two collaborators the approval path cannot otherwise be driven through: the
+ * review overlay only resolves through real UI, and the handoff shells out to git.
+ * Injecting them is what makes the latch wiring testable.
+ */
+export interface PlanDeps {
+	review?: (draft: PlanDraft, ctx: ExtensionContext) => Promise<"submit" | "decline">;
+	handoff?: typeof runHandoff;
 }
 
 function cancelledResult(next_step: string) {
@@ -43,9 +54,12 @@ function cancelledResult(next_step: string) {
 	};
 }
 
-export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAccess {
+export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: PlanDeps = {}): PlanAccess {
+	const review = deps.review ?? showReviewOverlay;
+	const handoff = deps.handoff ?? runHandoff;
 	let draft: PlanDraft | null = null;
 	let pendingImplementationHandoff: PendingImplementationHandoff | null = null;
+	const handoffLatch = createHandoffLatch();
 
 	pi.on("agent_end", async (_event, ctx) => {
 		if (!pendingImplementationHandoff) return;
@@ -54,30 +68,15 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 
 		// Pi clears isStreaming after awaited agent_end handlers finish; defer to the next macrotask.
 		setTimeout(() => {
-			let handoffSent = false;
-			const sendHandoff = () => {
-				if (handoffSent) return;
-				handoffSent = true;
-				pi.sendUserMessage(buildHandoffMessage());
-			};
-
-			const usagePercent = ctx.getContextUsage()?.percent;
-			const shouldCompact = typeof usagePercent === "number" && usagePercent > HANDOFF_COMPACTION_THRESHOLD_PERCENT;
-
-			if (!shouldCompact) {
-				sendHandoff();
-				return;
-			}
-
-			try {
-				ctx.compact({
-					customInstructions: buildHandoffCompactionInstructions(handoff),
-					onComplete: sendHandoff,
-					onError: sendHandoff,
-				});
-			} catch {
-				sendHandoff();
-			}
+			dispatchImplementationHandoff({
+				handoff,
+				contextUsagePercent: ctx.getContextUsage()?.percent,
+				compact: (request) => ctx.compact(request),
+				send: () => {
+					handoffLatch.disarm();
+					pi.sendUserMessage(buildHandoffMessage());
+				},
+			});
 		}, 0);
 	});
 
@@ -128,9 +127,7 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 			let reviewResult: "submit" | "decline" = "submit";
 			if (ctx.hasUI) {
 				const reviewDraft = draft;
-				reviewResult = await withHerdrBlocked(pi, "Waiting for plan approval", () =>
-					showReviewOverlay(reviewDraft, ctx),
-				);
+				reviewResult = await withHerdrBlocked(pi, "Waiting for plan approval", () => review(reviewDraft, ctx));
 			}
 
 			if (reviewResult === "decline") {
@@ -165,7 +162,7 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 				return { content: [{ type: "text", text: result }], details: undefined };
 			}
 
-			const outcome = await runHandoff(pi, ctx, { goal: draft.goal.content, worktreeSlug: draft.worktreeSlug });
+			const outcome = await handoff(pi, ctx, { goal: draft.goal.content, worktreeSlug: draft.worktreeSlug });
 			if (outcome.status === "cancelled") {
 				return cancelledResult(
 					"Plan approved, but an execution worktree was not selected. Seek user confirmation before implementation.",
@@ -189,6 +186,7 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 				agentMode: "work",
 			});
 			pendingImplementationHandoff = buildPendingImplementationHandoff(draft, outcome.worktree);
+			handoffLatch.arm();
 
 			const result = buildApprovedResult(draft, "implementation", outcome.worktree, outcome.setupSummary);
 			draft = null;
@@ -246,5 +244,6 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 
 	return {
 		getDraft: () => draft,
+		isHandoffActive: () => handoffLatch.active,
 	};
 }

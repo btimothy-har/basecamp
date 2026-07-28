@@ -1,8 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import { isSubagent } from "#core/host/env.ts";
+import { recentUserMessages } from "#core/session/user-context.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
-import { recentHumanMessages, resolveGateModel, runGate } from "./llm.ts";
+import { resolveGateModel, runGate } from "./llm.ts";
 import { type ReviewDeps, reviewBashCommand } from "./review.ts";
 
 export function registerBashReviewer(pi: ExtensionAPI): void {
@@ -14,7 +15,7 @@ export function registerBashReviewer(pi: ExtensionAPI): void {
 
 		const deps: ReviewDeps = {
 			resolveModel: () => resolveGateModel(ctx),
-			recentMessages: () => recentHumanMessages(ctx.sessionManager),
+			recentMessages: () => recentUserMessages(ctx.sessionManager.getEntries()),
 			runGate: (args) => runGate(args),
 			confirm: (title, body) =>
 				withHerdrBlocked(pi, "Waiting for command approval", () => ctx.ui.confirm(title, body, { signal: ctx.signal })),

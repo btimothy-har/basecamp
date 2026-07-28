@@ -16,6 +16,7 @@ interface RegisteredToolResult {
 
 interface RegisteredTool {
 	name: string;
+	parameters: { properties: Record<string, unknown> };
 	execute(toolCallId: string, params: Record<string, unknown>): Promise<RegisteredToolResult>;
 }
 
@@ -94,8 +95,8 @@ describe("tasks path helpers", () => {
 	});
 });
 
-describe("complete_task stop_work", () => {
-	it("continues normally when stop_work is omitted", async () => {
+describe("complete_task", () => {
+	it("completes a task without terminating the agent loop", async () => {
 		const { pi, completeTask } = setupTasks();
 		const notifications: string[] = [];
 		const result = await completeTask.execute("call-1", { task: 0 });
@@ -115,61 +116,17 @@ describe("complete_task stop_work", () => {
 		);
 
 		assert.match(result.content[0]!.text, /Task 0 completed: first\./);
-		assert.equal((result.details as { stop_work?: boolean }).stop_work, false);
-		assert.equal(result.terminate, false);
-		assert.deepEqual(patches, [undefined]);
+		assert.match(result.content[0]!.text, /Progress: 1\/2 tasks completed\./);
+		// Closing out is a work summary now, so no tool result may end the loop early.
+		assert.equal(result.terminate, undefined);
+		// No tasks-domain tool_result handler remains: the stop-work notifier went with the parameter.
+		assert.deepEqual(patches, []);
 		assert.deepEqual(notifications, []);
 	});
 
-	it("continues normally when stop_work is false", async () => {
-		const { pi, completeTask } = setupTasks();
-		const notifications: string[] = [];
-		const result = await completeTask.execute("call-1", { task: 0, stop_work: false });
-
-		const patches = await pi.emit(
-			"tool_result",
-			{
-				type: "tool_result",
-				toolCallId: "call-1",
-				toolName: "complete_task",
-				input: { task: 0, stop_work: false },
-				content: result.content,
-				details: result.details,
-				isError: false,
-			},
-			makeContext(notifications),
-		);
-
-		assert.match(result.content[0]!.text, /Task 0 completed: first\./);
-		assert.equal((result.details as { stop_work?: boolean }).stop_work, false);
-		assert.equal(result.terminate, false);
-		assert.deepEqual(patches, [undefined]);
-		assert.deepEqual(notifications, []);
-	});
-
-	it("returns a termination signal and notifies when stop_work is true", async () => {
-		const { pi, completeTask } = setupTasks();
-		const notifications: string[] = [];
-		const result = await completeTask.execute("call-1", { task: 0, stop_work: true });
-
-		const patches = await pi.emit(
-			"tool_result",
-			{
-				type: "tool_result",
-				toolCallId: "call-1",
-				toolName: "complete_task",
-				input: { task: 0, stop_work: true },
-				content: result.content,
-				details: result.details,
-				isError: false,
-			},
-			makeContext(notifications),
-		);
-
-		assert.match(result.content[0]!.text, /stop_work requested/);
-		assert.equal((result.details as { stop_work?: boolean }).stop_work, true);
-		assert.equal(result.terminate, true);
-		assert.deepEqual(patches, [undefined]);
-		assert.deepEqual(notifications, ["Task 0 completed: first. Stopping work now."]);
+	// The loop-termination affordance is gone: nothing an agent can pass ends the run early.
+	it("exposes no stop_work parameter", () => {
+		const { completeTask } = setupTasks();
+		assert.deepEqual(Object.keys(completeTask.parameters.properties), ["task"]);
 	});
 });

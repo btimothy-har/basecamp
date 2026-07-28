@@ -12,6 +12,7 @@ const MAX_TEXT_CHARS = 900;
 const MAX_LATEST_PROMPT_CHARS = 1_200;
 const MAX_LINE_CHARS = 240;
 const MAX_TEXT_LINES = 80;
+const MAX_RECENT_MESSAGE_CHARS = 1_200;
 
 function truncate(value: string, maxChars: number): string {
 	return value.length > maxChars ? `${value.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…` : value;
@@ -59,6 +60,38 @@ function userText(message: UserMessage): string {
 				.filter((content): content is TextContent => content.type === "text")
 				.map((content) => content.text)
 				.join("\n");
+}
+
+/**
+ * Text parts of one user message concatenated. Distinct from `userText`, which
+ * joins with newlines for display: a fast-model prompt wants the user's phrasing
+ * exactly as typed, and the parts are fragments of one message rather than blocks.
+ */
+function rawUserText(message: UserMessage): string {
+	return typeof message.content === "string"
+		? message.content
+		: message.content
+				.filter((content): content is TextContent => content.type === "text")
+				.map((content) => content.text)
+				.join("");
+}
+
+/**
+ * The most recent user messages, most-recent-last. Unlike `buildUserContext` these
+ * are not compacted — they back the fast-model prompts (the bash reviewer's gate
+ * and the continuation guard's judge) that need the user's phrasing as typed — but
+ * each is bounded, because a single pasted log or diff would otherwise be replayed
+ * in full on every stop for as long as it stays in the window.
+ */
+export function recentUserMessages(entries: SessionEntry[], limit = 5): string[] {
+	const messages: string[] = [];
+	for (const entry of entries) {
+		if (entry.type !== "message") continue;
+		const message = entry.message as AgentMessage;
+		if (message.role !== "user") continue;
+		messages.push(truncate(rawUserText(message as UserMessage), MAX_RECENT_MESSAGE_CHARS));
+	}
+	return messages.slice(-limit);
 }
 
 function appendBounded(parts: string[], part: string, maxChars: number): boolean {
