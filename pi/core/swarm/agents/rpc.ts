@@ -137,8 +137,7 @@ function dedupeRequestedResults(
 /**
  * Send a request frame and await its correlated ack, collapsing the
  * randomUUID → send → waitForFrame(request_id match) round-trip shared by every
- * request/ack RPC. (dispatch correlates on run_id and waitForAgents on a custom
- * result-set predicate, so both stay bespoke.)
+ * request/ack RPC. (dispatch stays bespoke: it correlates on run_id.)
  */
 async function requestAck<T extends Frame["type"]>(
 	connection: DaemonConnection,
@@ -200,19 +199,17 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 			const requested = new Set(input.agentHandles);
 			// v28: the daemon echoes request_id, so concurrent waits on one socket
 			// correlate exactly — no result-set matching across in-flight waits.
-			const requestId = randomUUID();
-			connection.send({
-				type: "wait",
-				request_id: requestId,
-				agent_ids: [],
-				agent_handles: input.agentHandles,
-				mode: "all",
-				timeout_s: input.timeoutS,
-			});
-			const frame = await waitForFrame(
+			const frame = await requestAck(
 				connection,
 				"wait_result",
-				(candidate) => candidate.request_id === requestId,
+				{
+					type: "wait",
+					request_id: randomUUID(),
+					agent_ids: [],
+					agent_handles: input.agentHandles,
+					mode: "all",
+					timeout_s: input.timeoutS,
+				},
 				input.signal,
 			);
 			return dedupeRequestedResults(frame.results, requested);
