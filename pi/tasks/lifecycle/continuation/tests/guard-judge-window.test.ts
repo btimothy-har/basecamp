@@ -66,6 +66,31 @@ describe("continuation guard volatile state across the judge call", () => {
 	});
 });
 
+describe("continuation guard stop selection", () => {
+	// Walking back to an older turn would present a next-step announcement from several
+	// turns ago as the stop, long after it was actually carried out.
+	it("judges only the last assistant message, not an earlier one with text", async () => {
+		const { pi, judged } = setup();
+		const { ctx } = context();
+
+		await pi.fire(
+			"agent_end",
+			{
+				messages: [
+					{ role: "assistant", content: [{ type: "text", text: "Let me run the tests." }] },
+					{ role: "toolResult", toolName: "bash", content: "ok" },
+					{ role: "assistant", content: [{ type: "toolCall", name: "complete_task", arguments: {} }] },
+				],
+			},
+			ctx,
+		);
+
+		assert.equal(judged.length, 0, "a text-less final message is not a stop the rubric can judge");
+		assert.deepEqual(pi.sent, []);
+		assert.match(pi.entries.at(-1)?.reason ?? "", /no assistant message/);
+	});
+});
+
 describe("continuation guard fail-open behavior", () => {
 	it("does not nudge when the fast model is unavailable", async () => {
 		const { pi } = setup({ resolveModel: async () => null });

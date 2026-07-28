@@ -101,7 +101,7 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 		try {
 			if (isCopilotMode(getAgentMode())) return;
 
-			const messages = event.messages ?? [];
+			const messages = event.messages;
 			const outcome = evaluatePreconditions({
 				providerErrored: providerErrored(messages),
 				planHandoffActive: deps.planHandoffActive(),

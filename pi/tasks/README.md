@@ -71,7 +71,7 @@ One feature, organized by function (not sub-features):
 
 ## Dependencies
 
-- **core** (`#core/*`): agent-mode (+ copilot), session state, workspace service + worktree setup, skill-tracker, host paths/config
+- **core** (`#core/*`): agent-mode (+ copilot), session state, workspace service + worktree setup, skill-tracker, host paths/config, model-alias resolution (the continuation guard's `fast` judge), errors
 
 ## Type contracts
 
