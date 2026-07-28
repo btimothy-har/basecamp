@@ -8,7 +8,6 @@ function input(overrides: Partial<PolicyInput> = {}): PolicyInput {
 		providerErrored: false,
 		planHandoffActive: false,
 		pendingUserMessages: false,
-		stopWorkThisRun: false,
 		consecutiveNudges: 0,
 		maxNudges: MAX_CONSECUTIVE_NUDGES,
 		...overrides,
@@ -30,13 +29,6 @@ describe("evaluatePreconditions", () => {
 		});
 	});
 
-	it("blocks stop_work when the agent invoked the termination signal", () => {
-		assert.deepEqual(evaluatePreconditions(input({ stopWorkThisRun: true })), {
-			act: false,
-			block: "stop_work",
-		});
-	});
-
 	it("blocks pending_user_messages when the user has already spoken", () => {
 		assert.deepEqual(evaluatePreconditions(input({ pendingUserMessages: true })), {
 			act: false,
@@ -51,12 +43,11 @@ describe("evaluatePreconditions", () => {
 		});
 	});
 
-	it("reports provider_error when all five conditions hold simultaneously", () => {
+	it("reports provider_error when every condition holds simultaneously", () => {
 		const allTrue = input({
 			providerErrored: true,
 			planHandoffActive: true,
 			pendingUserMessages: true,
-			stopWorkThisRun: true,
 			consecutiveNudges: MAX_CONSECUTIVE_NUDGES,
 		});
 		assert.deepEqual(evaluatePreconditions(allTrue), { act: false, block: "provider_error" });
@@ -66,7 +57,6 @@ describe("evaluatePreconditions", () => {
 		const overlapping = input({
 			planHandoffActive: true,
 			pendingUserMessages: true,
-			stopWorkThisRun: true,
 			consecutiveNudges: MAX_CONSECUTIVE_NUDGES,
 		});
 		assert.deepEqual(evaluatePreconditions(overlapping), {
@@ -75,13 +65,12 @@ describe("evaluatePreconditions", () => {
 		});
 	});
 
-	it("reports stop_work over pending user messages and the cap", () => {
+	it("reports pending_user_messages over the cap", () => {
 		const overlapping = input({
 			pendingUserMessages: true,
-			stopWorkThisRun: true,
 			consecutiveNudges: MAX_CONSECUTIVE_NUDGES,
 		});
-		assert.deepEqual(evaluatePreconditions(overlapping), { act: false, block: "stop_work" });
+		assert.deepEqual(evaluatePreconditions(overlapping), { act: false, block: "pending_user_messages" });
 	});
 
 	it("reports pending_user_messages over the cap", () => {

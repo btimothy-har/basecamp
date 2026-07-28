@@ -4,8 +4,8 @@
  * The guard runs at `agent_end` ("the agent stopped working") and decides
  * whether that stop was premature. Two layers, deliberately separated:
  *
- *   policy.ts — mechanical preconditions + the stop_work contract. Asks only
- *               "may this hook act right now", never "was the stop correct".
+ *   policy.ts — mechanical preconditions only. Asks "may this hook act right
+ *               now", never "was the stop correct".
  *   judge.ts  — the rubric. The sole authority on whether a stop was premature.
  */
 
@@ -28,12 +28,7 @@ export interface ContinuationVerdict {
 }
 
 /** Why the guard declined to act without consulting the rubric. */
-export type PreconditionBlock =
-	| "provider_error"
-	| "plan_handoff_active"
-	| "pending_user_messages"
-	| "cap_reached"
-	| "stop_work";
+export type PreconditionBlock = "provider_error" | "plan_handoff_active" | "pending_user_messages" | "cap_reached";
 
 export type PolicyOutcome = { act: true } | { act: false; block: PreconditionBlock };
 
@@ -46,7 +41,6 @@ export interface PolicyInput {
 	providerErrored: boolean;
 	planHandoffActive: boolean;
 	pendingUserMessages: boolean;
-	stopWorkThisRun: boolean;
 	consecutiveNudges: number;
 	maxNudges: number;
 }

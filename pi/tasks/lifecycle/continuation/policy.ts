@@ -2,7 +2,8 @@
  * Continuation guard — precondition policy.
  *
  * Decides only whether the guard's `agent_end` hook may act at all; the
- * rubric judge owns "was the stop premature".
+ * rubric judge owns "was the stop premature". Every condition here is
+ * mechanical — none of them asks whether continuing would be correct.
  *
  * `providerErrored` stands in for Pi's own `willRetry`, which extensions never
  * receive: Pi attaches it to the internal session event, not the extension
@@ -33,7 +34,6 @@ function block(reason: PreconditionBlock): PolicyOutcome {
 export function evaluatePreconditions(input: PolicyInput): PolicyOutcome {
 	if (input.providerErrored) return block("provider_error");
 	if (input.planHandoffActive) return block("plan_handoff_active");
-	if (input.stopWorkThisRun) return block("stop_work");
 	if (input.pendingUserMessages) return block("pending_user_messages");
 	if (input.consecutiveNudges >= input.maxNudges) return block("cap_reached");
 	return { act: true };

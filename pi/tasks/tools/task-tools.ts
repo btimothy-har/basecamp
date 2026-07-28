@@ -7,12 +7,10 @@ import { startGoalCycle } from "#tasks/lifecycle/goal-cycle.ts";
 import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
 import {
 	buildCompleteTaskResultText,
-	buildCompleteTaskStopMessage,
 	buildProgress,
 	buildStateSnapshot,
 	buildTaskContext,
 	type CompleteTaskResultDetails,
-	isCompleteTaskStopWorkDetails,
 	requireTasks,
 } from "#tasks/lifecycle/text.ts";
 import type { TaskStatus } from "#tasks/schemas/task.ts";
@@ -137,16 +135,10 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 		name: "complete_task",
 		label: "Complete Task",
 		description:
-			"Mark a task as completed by index. Set stop_work to true only when this completion should end the agent loop because the task is done and this is a natural handoff. If stop_work is true, call complete_task as the only tool call in that assistant response; do not batch it with any other tool call.",
-		promptSnippet: "Mark a task as completed, optionally stopping work",
+			"Mark a task as completed by index. When the work reaches a natural handoff, stop calling tools and close out with a summary of what you did.",
+		promptSnippet: "Mark a task as completed",
 		parameters: Type.Object({
 			task: Type.Number({ description: "Task index (0-based)" }),
-			stop_work: Type.Optional(
-				Type.Boolean({
-					description:
-						"Set true when completing this task should stop the agent loop at a natural handoff. When true, complete_task must be the only tool call in that assistant response.",
-				}),
-			),
 		}),
 		async execute(_id, params) {
 			const target = requireTasks(runtime.state, params.task);
@@ -155,21 +147,16 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 				throw new Error(`Task ${params.task} is ${target.status}.`);
 			}
 
-			const stopWork = params.stop_work === true;
-			const stopMessage = stopWork ? buildCompleteTaskStopMessage(params.task, target) : null;
 			target.status = "completed";
 			runtime.updateWidget();
 			runtime.persistState();
 			return {
-				content: [{ type: "text", text: buildCompleteTaskResultText(runtime.state, params.task, target, stopMessage) }],
+				content: [{ type: "text", text: buildCompleteTaskResultText(runtime.state, params.task, target) }],
 				details: {
 					task: params.task,
 					label: target.label,
-					stop_work: stopWork,
-					stop_message: stopMessage,
 					progress: buildProgress(runtime.state),
 				} satisfies CompleteTaskResultDetails,
-				terminate: stopWork,
 			};
 		},
 		renderCall(args, theme) {
@@ -177,7 +164,6 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 		},
 		renderResult(result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);
-			if (isCompleteTaskStopWorkDetails(result.details)) return renderSuccess("task completed — stopping", theme);
 			return renderSuccess("task completed", theme);
 		},
 	});

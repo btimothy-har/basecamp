@@ -20,7 +20,7 @@ import { getAgentMode } from "#core/agent-mode/index.ts";
 import { errorMessage } from "#core/errors.ts";
 import { isSubagent } from "#core/host/env.ts";
 import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
-import { buildStateSnapshot, isCompleteTaskStopWorkDetails } from "#tasks/lifecycle/text.ts";
+import { buildStateSnapshot } from "#tasks/lifecycle/text.ts";
 import { buildJudgeContext, resolveJudgeModel, runJudge } from "./judge.ts";
 import { finalAssistantText, providerErrored, recentUserMessages } from "./messages.ts";
 import { createNudgeBudget, evaluatePreconditions } from "./policy.ts";
@@ -43,15 +43,27 @@ export interface ContinuationGuardDeps {
 	}) => Promise<ContinuationVerdict | null>;
 }
 
-function nudgeContent(subagent: boolean, reason: string): string {
-	const body = subagent
-		? `Continuation check — work appears to remain: ${reason}\n` +
-			"You are a dispatched agent, so no user will answer a question: decide on your own judgment and proceed. " +
-			"If you are genuinely blocked, state the blocker as your deliverable in your final response."
-		: `Continuation check — you stopped without asking anything and without signalling completion: ${reason}\n` +
-			"Continue the work where you left off. If you genuinely need a decision from the user, call escalate. " +
-			"If the work really is finished, close it out with complete_task.";
-	return `<system-reminder>\n${body}\n</system-reminder>`;
+/**
+ * The nudge is static: the judge's `reason` stays in the audit trail and never
+ * reaches an agent. Model-authored text routed through a system-trusted frame
+ * would launder whatever the judge read — file contents, tool output, a peer's
+ * message — into apparent harness instruction, and a reason that contradicted
+ * the verdict would assert something false about the stop. Both variants offer
+ * three exits so a wrongly nudged agent can settle in one call.
+ */
+const PRIMARY_NUDGE =
+	"This stop looked premature. If work remains, continue it now.\n" +
+	"If you genuinely need a decision from the user, call escalate. If the work is complete, close it out with a work summary.";
+
+// A dispatched run's recorded result is whatever its final message says, so a
+// continuation that omits the deliverable discards it.
+const SUBAGENT_NUDGE =
+	"This stop looked premature. If work remains, continue it now.\n" +
+	"No user is available to answer questions, so decide on your own judgment; if you are genuinely blocked, report the blocker as your deliverable.\n" +
+	"Restate your substantive result in full in your final response — anything you do not restate is lost.";
+
+function nudgeContent(subagent: boolean): string {
+	return `<system-reminder>\n${subagent ? SUBAGENT_NUDGE : PRIMARY_NUDGE}\n</system-reminder>`;
 }
 
 export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntime, deps: ContinuationGuardDeps): void {
@@ -61,7 +73,6 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 	const judge = deps.judge ?? ((args) => runJudge(args));
 
 	const budget = createNudgeBudget();
-	let stopWorkThisRun = false;
 
 	const audit = (entry: ContinuationAuditEntry): void => {
 		try {
@@ -70,11 +81,6 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 			// An unrecorded decision must never change the decision.
 		}
 	};
-
-	pi.on("tool_result", (event) => {
-		if (event.toolName !== "complete_task" || event.isError) return;
-		if (isCompleteTaskStopWorkDetails(event.details)) stopWorkThisRun = true;
-	});
 
 	// Only a genuine user message resets the budget. The nudge is a custom message,
 	// so it cannot clear its own counter; plan handoffs and peer messages arrive as
@@ -96,7 +102,6 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 				providerErrored: providerErrored(messages),
 				planHandoffActive: deps.planHandoffActive(),
 				pendingUserMessages: ctx.hasPendingMessages(),
-				stopWorkThisRun,
 				consecutiveNudges: budget.consecutive,
 				maxNudges: MAX_CONSECUTIVE_NUDGES,
 			});
@@ -148,7 +153,7 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 
 			budget.recordNudge();
 			pi.sendMessage(
-				{ customType: CONTINUATION_NUDGE_TYPE, content: nudgeContent(subagent, verdict.reason), display: false },
+				{ customType: CONTINUATION_NUDGE_TYPE, content: nudgeContent(subagent), display: false },
 				{ deliverAs: "followUp" },
 			);
 			if (ctx.hasUI) ctx.ui.notify(`↻ continuing — ${verdict.reason}`, "info");
@@ -161,8 +166,6 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 			});
 		} catch {
 			// The guard is advisory: a failure here must never disturb the run that just ended.
-		} finally {
-			stopWorkThisRun = false;
 		}
 	});
 }

@@ -15,7 +15,6 @@ import { getAgentMode } from "#core/agent-mode/index.ts";
 import { isSubagent } from "#core/host/env.ts";
 import { hasInvokedSkill } from "#core/skills/tracker.ts";
 import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
-import { isCompleteTaskStopWorkDetails } from "#tasks/lifecycle/text.ts";
 
 const TASK_TOOLS = new Set([
 	"update_goal",
@@ -56,15 +55,6 @@ export function registerTaskGuards(pi: ExtensionAPI, runtime: TasksRuntime): voi
 
 		runtime.guardBlockCount++;
 		pi.sendMessage({ customType: "tasks-guard", content: reason, display: false }, { deliverAs: "steer" });
-	});
-
-	pi.on("tool_result", async (event, eventCtx) => {
-		if (event.toolName !== "complete_task" || event.isError) return;
-		if (!isCompleteTaskStopWorkDetails(event.details)) return;
-
-		if (eventCtx.hasUI) {
-			eventCtx.ui.notify(event.details.stop_message ?? "Stopping work now.", "info");
-		}
 	});
 }
 
