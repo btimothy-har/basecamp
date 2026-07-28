@@ -56,4 +56,3 @@ export function validateCheckpoint(worktreeDir: string, currentBase: string): Ch
 	}
 	return checkpoint;
 }
-

@@ -1,11 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it, type TestContext } from "node:test";
-import {
-	forgetCheckpoint,
-	getCheckpoint,
-	recordCheckpoint,
-	validateCheckpoint,
-} from "#diff/checkpoints.ts";
+import { forgetCheckpoint, getCheckpoint, recordCheckpoint, validateCheckpoint } from "#diff/checkpoints.ts";
 
 /**
  * The checkpoint store is process-global: every test pins its own worktree dir
@@ -17,8 +12,6 @@ function worktree(t: TestContext, name: string): string {
 	t.after(() => forgetCheckpoint(dir));
 	return dir;
 }
-
-
 
 describe("checkpoints", () => {
 	it("record + get round-trips {base, last}", (t) => {
@@ -61,7 +54,6 @@ describe("checkpoints", () => {
 		assert.equal(validateCheckpoint(dir, "other9999"), undefined);
 		assert.equal(getCheckpoint(dir), undefined);
 	});
-
 
 	it("two worktree dirs hold independent checkpoints", (t) => {
 		const a = worktree(t, "isolation-a");

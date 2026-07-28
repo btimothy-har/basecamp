@@ -3,7 +3,8 @@ import { type Static, Type } from "@sinclair/typebox";
 import { errorMessage } from "#core/errors.ts";
 import { resolveReviewBase } from "#core/git/repo.ts";
 import { isSubagent } from "#core/host/env.ts";
-import { type AnnotatedFile, annotationId, type WriteResult, writeSidecar } from "./sidecar.ts";
+import { span } from "./annotations.ts";
+import { type AnnotatedFile, type WriteResult, writeSidecar } from "./sidecar.ts";
 import { reviewWorktreeDir } from "./worktree.ts";
 
 /**
@@ -77,26 +78,22 @@ function toAnnotatedFiles(params: AnnotateChangesetParams): AnnotatedFile[] {
 	}));
 }
 
-function span(range: [number, number]): string {
-	return range[0] === range[1] ? `${range[0]}` : `${range[0]}-${range[1]}`;
-}
-
 /**
  * The keys must reach the model's context, not just the details payload —
  * remove_annotation is unusable unless the confirmation hands the keys back.
+ * They come from the write path rather than the request, so the count and the
+ * listed keys always describe the same set: a re-submitted duplicate collapses
+ * and is reported as recording nothing.
  */
-function formatConfirmation(params: AnnotateChangesetParams, result: WriteResult): string {
-	const keys = params.files.flatMap((file) =>
-		file.annotations.map(
-			(annotation) =>
-				`- ${annotationId(file.path, [annotation.startLine, annotation.endLine], annotation.summary)} ${file.path}:${span([annotation.startLine, annotation.endLine])} — ${annotation.summary}`,
-		),
-	);
-	return [
-		`Recorded ${result.annotations} annotation${result.annotations === 1 ? "" : "s"} across ${result.files} file${result.files === 1 ? "" : "s"} (accumulates until /diff consumes them):`,
-		...keys,
-		"Withdraw one with remove_annotation if a later edit invalidates it.",
-	].join("\n");
+function formatConfirmation(result: WriteResult): string {
+	const added = result.recorded.length;
+	const headline =
+		added === 0
+			? `No new annotations — all ${result.annotations} already recorded for this review.`
+			: `Recorded ${added} annotation${added === 1 ? "" : "s"} (sidecar now holds ${result.annotations} across ${result.files} file${result.files === 1 ? "" : "s"}, until /diff consumes them):`;
+	const keys = result.recorded.map((a) => `- ${a.id} ${a.path}:${span(a.newRange)} — ${a.summary}`);
+	const footer = added === 0 ? [] : ["Withdraw one with remove_annotation if a later edit invalidates it."];
+	return [headline, ...keys, ...footer].join("\n");
 }
 
 export function registerAnnotateTool(pi: ExtensionAPI): void {
@@ -128,8 +125,13 @@ export function registerAnnotateTool(pi: ExtensionAPI): void {
 			}
 			const result = writeSidecar(worktreeDir, base, params.summary, toAnnotatedFiles(params));
 			return {
-				content: [{ type: "text", text: formatConfirmation(params, result) }],
-				details: { sidecarPath: result.path, files: result.files, annotations: result.annotations },
+				content: [{ type: "text", text: formatConfirmation(result) }],
+				details: {
+					sidecarPath: result.path,
+					recorded: result.recorded.length,
+					totalFiles: result.files,
+					totalAnnotations: result.annotations,
+				},
 			};
 		},
 	});

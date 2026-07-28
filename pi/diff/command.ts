@@ -9,7 +9,7 @@ import { checkHerdrEligibility, closeHerdrTab, openHerdrTab, runInHerdrPane } fr
 import { formatAnnotations } from "./annotations.ts";
 import { type Checkpoint, forgetCheckpoint, recordCheckpoint, validateCheckpoint } from "./checkpoints.ts";
 import { detectHunk, type HunkSession, listHunkSessions, readUserNotes, type UserNote } from "./hunk.ts";
-import { parseDiffArgs } from "./mode.ts";
+import { type DiffModeKind, parseDiffArgs } from "./mode.ts";
 import { attachSession, forgetSession, forgetTab, ownedReview, rememberTab } from "./session-state.ts";
 import { clearSidecar, readSidecarBase, sidecarPath } from "./sidecar.ts";
 import { reviewWorktreeDir } from "./worktree.ts";
@@ -24,9 +24,9 @@ export interface LaunchPoll {
 }
 const DEFAULT_LAUNCH_POLL: LaunchPoll = { attempts: 24, intervalMs: 250 };
 
-function tabLabel(worktreeDir: string, incremental: boolean): string {
+function tabLabel(worktreeDir: string, mode: DiffModeKind): string {
 	const label = getBasecampEnv("BASECAMP_WORKTREE_LABEL") ?? worktreeDir.split("/").pop() ?? "review";
-	return incremental ? `diff: ${label} (last)` : `diff: ${label}`;
+	return mode === "last" ? `diff: ${label} (last)` : `diff: ${label}`;
 }
 
 interface Drained {
@@ -172,7 +172,7 @@ async function resolveDiffTarget(
 	pi: ExtensionAPI,
 	ctx: ExtensionContext,
 	worktreeDir: string,
-	mode: "base" | "last",
+	mode: DiffModeKind,
 ): Promise<DiffTarget | null> {
 	let base: string;
 	let head: string;
@@ -216,12 +216,7 @@ function consumeReview(worktreeDir: string, resolved: DiffTarget, sidecarAttache
 	}
 }
 
-async function runDiff(
-	pi: ExtensionAPI,
-	ctx: ExtensionContext,
-	poll: LaunchPoll,
-	mode: "base" | "last",
-): Promise<void> {
+async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll, mode: DiffModeKind): Promise<void> {
 	const ineligible = checkHerdrEligibility({ env: process.env, hasUI: ctx.hasUI, subject: "diffs" });
 	if (ineligible) {
 		ctx.ui.notify(`/diff is unavailable: ${ineligible.detail}`, "error");
@@ -260,7 +255,7 @@ async function runDiff(
 	const tab = await openHerdrTab(pi, {
 		workspaceId,
 		cwd: worktreeDir,
-		label: tabLabel(worktreeDir, !resolved.advances),
+		label: tabLabel(worktreeDir, mode),
 		env: HUNK_TAB_ENV,
 	});
 	if (tab.status !== "ok") {

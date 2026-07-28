@@ -2,7 +2,8 @@
 
 import type { UserNote } from "./hunk.ts";
 
-function span(range: [number, number]): string {
+/** A line range as `12` or `12-20`. Shared with the annotate tool's confirmation. */
+export function span(range: [number, number]): string {
 	const [start, end] = range;
 	return start === end ? `${start}` : `${start}-${end}`;
 }

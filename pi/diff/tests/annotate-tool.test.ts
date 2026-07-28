@@ -165,14 +165,15 @@ describe("annotate_changeset execution", () => {
 		});
 
 		const text = result.content[0]?.text ?? "";
-		assert.match(text, /3 annotations/);
+		assert.match(text, /Recorded 3 annotations/);
 		assert.match(text, /2 files/);
 		// Keys must reach the model — remove_annotation is unusable otherwise.
 		assert.match(text, /[0-9a-f]{12} pi\/diff\/sidecar\.ts:1-10 — writer/);
 		assert.match(text, /remove_annotation/);
 
-		const details = result.details as { sidecarPath: string; files: number; annotations: number };
-		assert.equal(details.annotations, 3);
+		const details = result.details as { sidecarPath: string; recorded: number; totalAnnotations: number };
+		assert.equal(details.recorded, 3);
+		assert.equal(details.totalAnnotations, 3);
 
 		const written = JSON.parse(fs.readFileSync(details.sidecarPath, "utf8")) as {
 			version: number;
@@ -183,6 +184,30 @@ describe("annotate_changeset execution", () => {
 		assert.equal(written.basecampBase, STUB_BASE, "the sidecar anchors to the review base");
 		// The wire format hunk reads is a tuple, whatever shape the tool accepts.
 		assert.deepEqual(written.files[0]?.annotations[0]?.newRange, [1, 10]);
+	});
+
+	it("reports this call's additions, not the accumulated total", async (t) => {
+		// The count and the listed keys must describe the same set, or the model
+		// cannot tell which key belongs to what it just recorded.
+		const tool = toolFor(t, "/wt/counts");
+		const first = {
+			summary: "First.",
+			files: [{ path: "a.ts", annotations: [{ startLine: 1, endLine: 5, summary: "one" }] }],
+		};
+		await tool.execute("call-1", first);
+
+		const second = await tool.execute("call-2", {
+			summary: "Second.",
+			files: [{ path: "b.ts", annotations: [{ startLine: 2, endLine: 2, summary: "two" }] }],
+		});
+		const secondText = second.content[0]?.text ?? "";
+		assert.match(secondText, /Recorded 1 annotation \(sidecar now holds 2/);
+		assert.equal((secondText.match(/^- [0-9a-f]{12} /gm) ?? []).length, 1, "one key for one addition");
+
+		const repeat = await tool.execute("call-3", first);
+		const repeatText = repeat.content[0]?.text ?? "";
+		assert.match(repeatText, /No new annotations/, "a duplicate re-submission records nothing");
+		assert.equal((repeat.details as { recorded: number }).recorded, 0);
 	});
 
 	it("refuses an inverted range instead of writing a sidecar hunk cannot load", async (t) => {

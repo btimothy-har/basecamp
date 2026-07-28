@@ -8,7 +8,10 @@
  * from the raw argument string.
  */
 
-export type DiffMode = { kind: "base" } | { kind: "last" } | { kind: "invalid"; arg: string };
+export type DiffMode = { kind: DiffModeKind } | { kind: "invalid"; arg: string };
+
+/** A mode the command can actually run — the closed keyword set, minus rejection. */
+export type DiffModeKind = "base" | "last";
 
 export function parseDiffArgs(args: string | undefined | null): DiffMode {
 	const trimmed = args?.trim() ?? "";

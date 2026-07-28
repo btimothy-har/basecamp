@@ -100,6 +100,14 @@ export interface RecordedAnnotation {
 	summary: string;
 }
 
+/**
+ * An annotation after stamping, where the id is established rather than
+ * optional — the schema keeps `id` optional for sidecars written before it
+ * existed, so the guarantee is expressed here instead of re-checked downstream.
+ */
+type StampedAnnotation = Annotation & { id: string };
+type StampedFile = Omit<AnnotatedFile, "annotations"> & { annotations: StampedAnnotation[] };
+
 export interface WriteResult {
 	path: string;
 	/** Total files in the sidecar after the write. */
@@ -133,9 +141,9 @@ function readSidecar(worktreeDir: string): Sidecar | null {
  * (which would leave later merges updating only the first, and the shared
  * path's annotations unremovable as ambiguous).
  */
-function stampFiles(files: AnnotatedFile[]): AnnotatedFile[] {
+function stampFiles(files: AnnotatedFile[]): StampedFile[] {
 	const seen = new Set<string>();
-	const byPath = new Map<string, AnnotatedFile>();
+	const byPath = new Map<string, StampedFile>();
 	for (const f of files) {
 		let entry = byPath.get(f.path);
 		if (!entry) {
@@ -198,7 +206,7 @@ function writeSidecarFile(filePath: string, sidecar: Sidecar): void {
  */
 function mergeSidecar(
 	existing: Sidecar,
-	incoming: AnnotatedFile[],
+	incoming: StampedFile[],
 	summary: string,
 ): { sidecar: Sidecar; recorded: RecordedAnnotation[] } {
 	const recorded: RecordedAnnotation[] = [];
@@ -208,7 +216,7 @@ function mergeSidecar(
 		if (!entry) {
 			files.push({ ...incomingFile, annotations: [...incomingFile.annotations] });
 			for (const a of incomingFile.annotations) {
-				recorded.push({ id: a.id ?? "", path: incomingFile.path, newRange: a.newRange, summary: a.summary });
+				recorded.push({ id: a.id, path: incomingFile.path, newRange: a.newRange, summary: a.summary });
 			}
 			continue;
 		}
@@ -216,8 +224,7 @@ function mergeSidecar(
 			entry.annotations.map((a) => a.id ?? annotationId(entry.path, a.newRange, a.summary, a.rationale)),
 		);
 		for (const a of incomingFile.annotations) {
-			// Stamped incoming annotations always carry an id; compute as a fallback for untyped callers.
-			const id = a.id ?? annotationId(incomingFile.path, a.newRange, a.summary, a.rationale);
+			const id = a.id;
 			if (present.has(id)) continue; // Exact duplicate — collapse.
 			const superseded = entry.annotations.findIndex(
 				(stored) =>
@@ -258,7 +265,7 @@ export function writeSidecar(worktreeDir: string, base: string, summary: string,
 	} else {
 		sidecar = { version: SIDECAR_VERSION, basecampBase: base, summary, files: incoming };
 		recorded = incoming.flatMap((f) =>
-			f.annotations.map((a) => ({ id: a.id ?? "", path: f.path, newRange: a.newRange, summary: a.summary })),
+			f.annotations.map((a) => ({ id: a.id, path: f.path, newRange: a.newRange, summary: a.summary })),
 		);
 	}
 
