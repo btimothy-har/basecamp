@@ -5,7 +5,7 @@
  * one and `/diff last` anchors its diff to it. They are review *targets* only —
  * agent annotations are anchored to the review base instead, because that
  * identifies the span they describe. Surviving state, not wiring: like
- * basecamp.diffTabs a checkpoint outlives the pi session that recorded it.
+ * basecamp.diffPanes a checkpoint outlives the pi session that recorded it.
  * Deliberately in-memory only — a checkpoint older than the process is useless
  * because the hunk sessions behind those reviews die with the process too.
  */
