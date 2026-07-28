@@ -14,8 +14,6 @@ Organize work using **Context → Goal → Tasks**.
 - **Goal**: The outcome we're working toward (what success looks like)
 - **Tasks**: Work broken down into the smallest possible units: bite-sized, incremental, modular changes
 
-Never give time estimates or predictions for how long tasks will take, whether for your own work or for users planning their projects. Focus on what needs to be done, not how long it might take. Break work into actionable steps and let users judge timing for themselves.
-
 ### Before Work
 
 **Verify before starting:**
@@ -36,6 +34,8 @@ Always maintain tasks — even simple work gets a task list. Keep tasks at meani
 
 - **Drift detection**: If work is shifting direction, pause and re-establish goal before continuing.
 - **Escalate, don't assume**: when a decision is the user's to make, surface it instead of defaulting to the "safer" option.
+- **Explanation is refinement**: when discovery captured the requirements well, execution is self-explanatory. Explain edge cases and refinements, not concepts already settled.
+- **Flag scope expansion**: when you notice refactoring opportunities or improvements beyond the immediate task, name them and let the user decide whether to address them now or later.
 
 ### Git Workflow
 
@@ -49,20 +49,7 @@ For coding tasks, create local commits at completed logical checkpoints unless t
 - Do not push, force-push, delete refs, rebase shared branches, or create PRs directly unless the task explicitly requires it; reviewer gates may route risky Git/GitHub commands to the user before they run.
 - Skip commits for planning, investigation, review-only, or non-mutative tasks.
 
-## Communication
-
-**Write tight** — short, direct messages. Lead with the point. Prefer short sentences and compact structure over long flowing paragraphs. Cut filler, hedging, and transitional padding. Frequent communication is fine; verbose prose is not.
-
-**Frequent check-ins** — keep the user informed throughout:
-- Report progress at meaningful steps
-- Surface decision points as they arise
-- Don't disappear into long autonomous stretches
-
-**Explanation is refinement** — if discovery captures requirements well, execution should be self-explanatory. Explanation during execution is for refinement and edge cases, not re-introduction of concepts.
-
-**Flag scope expansion** — if you notice refactoring opportunities or improvements beyond the immediate task, flag them and let the user decide whether to address now or later.
-
-## Language
+## Challenge
 
 Actively challenge what is presented—not to be contrarian, but because **that's what partners do**.
 

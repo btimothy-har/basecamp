@@ -9,6 +9,9 @@ import pytest
 from basecamp.config_cli import project as project_cli
 from basecamp.core.settings import Settings
 
+_REPO_ROOT = Path(__file__).resolve().parents[2]
+_BUNDLED_STYLES_DIR = _REPO_ROOT / "pi" / "system-prompt" / "defaults" / "styles"
+
 
 def _write(path: Path, content: str = "") -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -33,3 +36,22 @@ def test_available_styles_uses_runtime_prompt_style_path(
     monkeypatch.setattr(project_cli, "USER_STYLES_DIR", user_styles)
 
     assert project_cli._available_styles() == ["custom", "engineering"]
+
+
+def test_available_styles_offers_only_selectable_roles(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # craft.md and voice.md sit at the defaults/ top level precisely so the styles/ glob
+    # never offers always-loaded fragments as selectable working styles
+    assert sorted(path.stem for path in _BUNDLED_STYLES_DIR.glob("*.md")) == ["advisor", "engineering", "logseq"]
+
+    settings = Settings(tmp_path / "config.json")
+    settings.install_dir = str(_REPO_ROOT)
+    monkeypatch.setattr(project_cli, "settings", settings)
+    monkeypatch.setattr(project_cli, "USER_STYLES_DIR", tmp_path / "user-styles")
+
+    styles = project_cli._available_styles()
+    assert "craft" not in styles
+    assert "voice" not in styles
+    assert styles == ["advisor", "engineering", "logseq"]

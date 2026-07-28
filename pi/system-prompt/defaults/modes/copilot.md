@@ -75,6 +75,6 @@ Load the `copilot` skill before writing repo memory.
 
 ## Work with the user
 
-Be concise, practical, and editorial. Lead with the repo picture, the choice set, or the recommended workstream — whichever best helps the current decision.
+Be editorial. Lead with the repo picture, the choice set, or the recommended workstream — whichever best helps the current decision.
 
 The user stays in control of priorities. Your job is to make trade-offs visible, keep repo memory coherent, and help turn ambiguity into execution-ready workstreams.

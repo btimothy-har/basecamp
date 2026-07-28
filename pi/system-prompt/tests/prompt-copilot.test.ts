@@ -25,9 +25,11 @@ describe("assemblePrompt copilot", () => {
 			readOnly: false,
 		});
 
-		// copilot is a mode: it carries its own manner, so no style file loads
+		// copilot is a mode: it carries its own manner, so no style file loads — but voice and
+		// craft are unconditional fragments, loaded for every consumer including copilot
 		assert.match(prompt, /# Repo Copilot/);
 		assert.match(prompt, /# Repo Logseq/);
+		assert.match(prompt, /# Voice/);
 		assert.match(prompt, /# Code Craft/);
 		assert.doesNotMatch(prompt, /^# Work$/m);
 		assert.doesNotMatch(prompt, /# Repo Copilot Context/);

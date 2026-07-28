@@ -19,6 +19,19 @@ export async function useTempHome(t: TestContext): Promise<string> {
 	return homeDir;
 }
 
+/** Run the body as a dispatched agent by setting the depth env var the daemon stamps on children. */
+export function useAgentDepth(t: TestContext, depth: number): void {
+	const previous = process.env.BASECAMP_AGENT_DEPTH;
+	process.env.BASECAMP_AGENT_DEPTH = String(depth);
+	t.after(() => {
+		if (previous === undefined) {
+			delete process.env.BASECAMP_AGENT_DEPTH;
+		} else {
+			process.env.BASECAMP_AGENT_DEPTH = previous;
+		}
+	});
+}
+
 export function useDefaultAgentMode(t: TestContext): void {
 	resetAgentMode();
 	t.after(() => {
