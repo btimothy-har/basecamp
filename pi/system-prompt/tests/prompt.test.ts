@@ -178,7 +178,7 @@ describe("assemblePrompt", () => {
 		assert.doesNotMatch(personaPrompt, /# Work/);
 	});
 
-	it("includes the voice block in every mode and for persona prompts", async (t) => {
+	it("includes the voice block in every primary mode but never for personas", async (t) => {
 		useDefaultAgentMode(t);
 		await useTempHome(t);
 		const options = {
@@ -201,8 +201,13 @@ describe("assemblePrompt", () => {
 			assertVoice(assemblePrompt(options));
 		}
 
+		// A persona's reader is the primary agent parsing one artifact, and its own template already
+		// mandates that artifact's shape — a final summary section, a restated objective, an unbounded
+		// findings list. Voice would contradict all three, and it loads later, so it would win.
 		setAgentMode("work");
-		assertVoice(assemblePrompt({ ...options, agentPrompt: "custom worker prompt" }));
+		const personaPrompt = assemblePrompt({ ...options, agentPrompt: "custom worker prompt" });
+		assert.doesNotMatch(personaPrompt, /# Voice/);
+		assert.match(personaPrompt, /# Code Craft/);
 	});
 
 	it("orders the role style before voice and voice before code craft", async (t) => {

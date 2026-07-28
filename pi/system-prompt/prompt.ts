@@ -152,12 +152,16 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		if (style) parts.push(style);
 	}
 
-	// Voice and craft are unconditional: every consumer that writes for a reader needs the same
-	// output shape, and every consumer that can write code needs the same rubric. Personas share
-	// one source for each instead of carrying their own copy.
-	const voice = loadPromptFile("voice.md").trim();
-	if (voice) parts.push(voice);
+	// Voice shapes output for a user reading a conversation, so personas are excluded: their reader
+	// is the primary agent parsing one artifact, and each persona's own template owns its shape.
+	// Copilot is included — it loads no style file, so voice is its only manner guidance.
+	if (!opts.agentPrompt) {
+		const voice = loadPromptFile("voice.md").trim();
+		if (voice) parts.push(voice);
+	}
 
+	// Code craft is unconditional: every consumer that can write code needs the same rubric,
+	// so personas share one source instead of carrying their own copy.
 	const craft = loadPromptFile("craft.md").trim();
 	if (craft) parts.push(craft);
 

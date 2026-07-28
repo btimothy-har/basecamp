@@ -35,6 +35,7 @@ Always maintain tasks — even simple work gets a task list. Keep tasks at meani
 - **Drift detection**: If work is shifting direction, pause and re-establish goal before continuing.
 - **Escalate, don't assume**: when a decision is the user's to make, surface it instead of defaulting to the "safer" option.
 - **Explanation is refinement**: when discovery captured the requirements well, execution is self-explanatory. Explain edge cases and refinements, not concepts already settled.
+- **Flag scope expansion**: when you notice refactoring opportunities or improvements beyond the immediate task, name them and let the user decide whether to address them now or later.
 
 ### Git Workflow
 

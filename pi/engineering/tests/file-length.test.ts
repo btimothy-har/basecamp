@@ -241,7 +241,7 @@ describe("file-length reminder", () => {
 		// The caps live in the craft block, which every code-writing consumer composes — including
 		// the mutative worker, which no longer carries its own copy.
 		const craft = fs.readFileSync(
-			path.resolve(import.meta.dirname, "..", "..", "system-prompt", "defaults", "styles", "craft.md"),
+			path.resolve(import.meta.dirname, "..", "..", "system-prompt", "defaults", "craft.md"),
 			"utf8",
 		);
 
