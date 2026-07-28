@@ -2,6 +2,7 @@ import type { ProtocolEnvelope } from "./version.ts";
 
 export interface WaitFrame extends ProtocolEnvelope {
 	type: "wait";
+	request_id: string;
 	agent_ids: string[];
 	agent_handles?: string[];
 	mode: "all";
@@ -18,5 +19,6 @@ export interface WaitResultItem {
 
 export interface WaitResultFrame extends ProtocolEnvelope {
 	type: "wait_result";
+	request_id: string;
 	results: WaitResultItem[];
 }

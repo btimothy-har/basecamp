@@ -1,16 +1,16 @@
 # Pi Swarm Daemon Protocol
 
-Protocol version: `27`
+Protocol version: `28`
 
 All frames are JSON objects with an envelope:
 
 ```json
-{"type":"<frame_type>","v":27,...}
+{"type":"<frame_type>","v":28,...}
 ```
 
 Version handling:
 - The daemon validates `v` on every inbound frame.
-- If `v != 27`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
+- If `v != 28`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
 - v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
 - v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
@@ -25,11 +25,12 @@ Version handling:
 - v25 adds mutable session facets to `register`, the self-scoped `session_metadata` frame, and the read-only dashboard HTTP capability.
 - v26 removes the selected-agent run-message HTTP read and narrows `/runs/summary` to compact active-agent widget fields.
 - v27 adds `owned_branch`, `branch_base`, and `branch_created` to dispatch specs: every repo-backed run owns a transient workspace that the daemon force-removes on run exit, deleting the branch only when this run minted it and it gained no commits past its recorded base OID.
+- v28 adds `ping`/`pong` keepalive frames and a `request_id` on `wait`/`wait_result`. Waits and `message_status(wait_until_delivery)` now execute as daemon-side tasks instead of inline in the connection read loop, so a slow wait no longer starves other frames on that socket. The daemon also uses a `ping` frame as its incumbent-liveness probe before accepting a duplicate registration.
 
 ## Transport
 
 - HTTP over Unix domain socket (UDS):
-  - `GET /health` → `{"status":"ok","protocol":27}`
+  - `GET /health` → `{"status":"ok","protocol":28}`
   - `GET /runs/summary?root_id=<id>` returns compact rows for the in-Pi active-agent widget.
   - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
   - `GET /workstreams/{id_or_slug}` returns a single workstream (including its `version`) with its joined agent rows and `versions` content-history array.
@@ -142,7 +143,8 @@ Waits for one or more public agent handles:
 ```json
 {
   "type": "wait",
-  "v": 27,
+  "v": 28,
+  "request_id": "wait-001",
   "agent_ids": [],
   "agent_handles": ["mossy-otter-a1b2c3"],
   "mode": "all",
@@ -151,6 +153,8 @@ Waits for one or more public agent handles:
 ```
 
 `agent_ids` remains for internal/backward-compatible callers. New LLM-facing callers should send `agent_handles`.
+
+The daemon runs the wait as its own task and echoes `request_id` on the result, so a client may have several waits in flight on one connection and correlate each answer exactly.
 
 Authorization is strict and dispatcher-owned: the requester may wait only when its registered `node_id` equals the `dispatcher_id` on the target agent's current primary run. Session handles are not primary-run targets and return `unknown`.
 
@@ -164,7 +168,23 @@ Returns one result per requested agent handle:
 - `running`: authorized current primary run is still non-terminal after timeout.
 - `unknown`: missing, unauthorized, no current primary run, or non-awaitable (including session handles) from the caller's perspective.
 
-Result items contain `agent_handle` for handle-based requests and do not expose private `run_id`. `agent_id` may be present for legacy/id-based requests inside trusted extension-daemon plumbing and must not be shown as the public handle.
+The frame echoes the originating `request_id`. Result items contain `agent_handle` for handle-based requests and do not expose private `run_id`. `agent_id` may be present for legacy/id-based requests inside trusted extension-daemon plumbing and must not be shown as the public handle.
+
+### `ping` / `pong` either direction
+
+Application-level keepalive, in addition to the transport-level websocket pings the daemon is configured with (`ws_ping_interval`/`ws_ping_timeout`, 20s/20s):
+
+```json
+{"type":"ping","v":28,"nonce":"ping-01"}
+```
+
+The only correct answer is a `pong` carrying the same `nonce`:
+
+```json
+{"type":"pong","v":28,"nonce":"ping-01"}
+```
+
+An unsolicited `pong` is inert and must not close the connection. The daemon also sends `ping` as its **incumbent-liveness probe**: when a second connection registers an already-connected `node_id`, the daemon pings the incumbent and waits for a `pong` echoing that nonce. A pong keeps the incumbent's session and the newcomer is rejected with `duplicate_node_connection`; only an unanswered probe releases the node id. A completed write is not sufficient evidence — a frozen peer's transport still accepts bytes — which is why the answer is required. Blind takeover is never performed.
 
 ### `list_agents` client → daemon
 
@@ -173,7 +193,7 @@ Requests a safe directory of agents visible under the caller's root session:
 ```json
 {
   "type": "list_agents",
-  "v": 27,
+  "v": 28,
   "request_id": "list-001",
   "awaitable": true
 }
@@ -419,6 +439,7 @@ Reports protocol/parse errors and closes the WebSocket for fatal frame errors. C
 A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
-2. Send `register` with `v: 27`.
+2. Send `register` with `v: 28`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
-4. Use the `agent_handle` with `wait` or discover agents through `list_agents`.
+4. Use the `agent_handle` with `wait` (carrying a `request_id` the result echoes) or discover agents through `list_agents`.
+5. Answer every daemon `ping` with a same-nonce `pong`. The daemon probes an incumbent connection this way before admitting a duplicate registration for the same `node_id`, and an unanswered probe is what releases the id to the newcomer — so a client that stops answering loses its registration to the next session that resumes.

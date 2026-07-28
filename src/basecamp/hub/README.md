@@ -13,6 +13,18 @@ The dashboard query always returns live roots plus a five-at-a-time, 24-hour dis
 
 Run the daemon through the `basecamp` CLI (entry point in `src/basecamp/cli.py`). Tests live in `tests/hub/`; dashboard model tests also run under `npm test`.
 
+## Connection liveness and takeover
+
+A node id admits one connection at a time, but that guard cannot be a bare rejection: a session that died uncleanly (kill, sleep/wake) leaves a half-open socket whose handler only notices the close on its next read or write, and a reconnect refused with `duplicate_node_connection` locked the user out until the daemon restarted. Three things resolve it together.
+
+Uvicorn's transport keepalive already closes a peer that stops answering protocol pings, in roughly forty seconds — that is stock behaviour, not something this daemon configures. What it does not cover is a peer whose transport still accepts bytes, which is the common shape of an unclean exit: a duplicate register would sit behind a `duplicate_node_connection` rejection for that whole window.
+
+So a duplicate register **probes the incumbent** and requires an answer. The probe is a v28 `ping` frame carrying a fresh nonce, and liveness means the matching `pong` came back within `_INCUMBENT_PROBE_TIMEOUT_S`. A completed write is deliberately *not* the signal: uvicorn selects `WebSocketsSansIOProtocol`, whose `writable` event is set at construction and never cleared, so the send buffers into the transport without suspending and a frozen peer accepts the bytes exactly like a healthy one — a write-success check reports every incumbent alive and the takeover never fires. A live incumbent keeps its session and the newcomer gets the same `duplicate_node_connection` rejection as before; only an unanswered probe yields the node id. **Blind takeover is deliberately not implemented** — an accidental resume against a working session must never displace it.
+
+Waiting for a pong suspends, so the registration cannot simply claim the id afterwards: another register may have settled in between. `Registry.claim_connection` is a compare-and-set against the generation observed before the probe, and a racing registration is rejected rather than silently displacing the winner. Entries carry a monotonic **generation** for the same reason on the way out — `remove_connection` only clears the entry that is still its own, so a stale handler cannot remove or reap the connection that replaced it.
+
+The probe is only trustworthy if the read loop is responsive, which is why `wait` and `message_status(wait_until_delivery)` execute as tracked `asyncio` tasks rather than inline: previously a wait blocked its own socket for the full timeout, starving telemetry, dispatch, peer messages, and cancel, and delaying close discovery by exactly as long. `wait` therefore carries a `request_id` that the result echoes (v28), which also makes concurrent waits on one socket unambiguous for the client.
+
 ## Agents dashboard architecture
 
 `basecamp agents` opens the global read-only browser dashboard. It first runs a Python port of the TypeScript hub ensure contract: the same `daemon.spawn.lock` path, exclusive `0600` `{pid, ts}` file, 30-second stale rule, protocol health gate, PID command validation, detached `basecamp hub` command, and timeout behavior. The daemon independently holds `daemon.server.lock` with nonblocking `flock` for its entire lifetime **before** touching the socket, so the one-hub invariant remains authoritative even if clients race or someone launches `basecamp hub` manually. Both TypeScript and Python spawn-lock owners verify the acquired file's inode before unlinking it.

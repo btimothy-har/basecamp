@@ -227,6 +227,7 @@ def test_attempt_proxy_forwards_wait_without_inline_daemon_recv(tmp_path: Path) 
     wait = WaitFrame(
         type="wait",
         v=PROTOCOL_VERSION,
+        request_id="wait-proxy-1",
         agent_handles=["amber-fox-a1b2c3"],
         mode="all",
         timeout_s=30,
@@ -244,6 +245,7 @@ def test_attempt_proxy_forwards_wait_result_from_daemon(tmp_path: Path) -> None:
     proxy = AttemptDaemonProxy(_context(tmp_path))
     wait_result = WaitResultFrame(
         type="wait_result",
+        request_id="wait-proxy-1",
         v=PROTOCOL_VERSION,
         results=[
             WaitResultItem(

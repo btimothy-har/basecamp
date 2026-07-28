@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 
 import pytest
-from app_helpers import _build_app, _build_app_with_store, _register_ws
+from app_helpers import _answer_liveness_probe, _build_app, _build_app_with_store, _register_ws
 from fastapi.testclient import TestClient
 
 from basecamp.hub.frames import PROTOCOL_VERSION
@@ -329,6 +329,8 @@ def test_ws_duplicate_active_registration_is_rejected(tmp_path: Path) -> None:
                         "cwd": "/tmp/other",
                     }
                 )
+                # The incumbent answers the liveness probe, so it keeps the node id.
+                _answer_liveness_probe(first)
                 reply = second.receive_json()
 
     assert reply["type"] == "error"
@@ -396,11 +398,11 @@ def test_ws_unsupported_inbound_frame_returns_error(tmp_path: Path) -> None:
     assert "registered" in reply["message"]
 
 
-def test_health_returns_protocol_27(tmp_path: Path) -> None:
+def test_health_returns_current_protocol(tmp_path: Path) -> None:
     app = _build_app(tmp_path)
 
     with TestClient(app) as client:
         response = client.get("/health")
 
     assert response.status_code == 200
-    assert response.json()["protocol"] == 27
+    assert response.json()["protocol"] == PROTOCOL_VERSION

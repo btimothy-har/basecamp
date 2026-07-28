@@ -18,6 +18,7 @@ import type {
 	PeerMessageDeliveryFrame,
 	PeerMessageFrame,
 } from "./peer-message.ts";
+import type { PingFrame, PongFrame } from "./ping.ts";
 import type { ErrorFrame, RegisteredFrame, RegisterFrame, SessionMetadataFrame } from "./register.ts";
 import type { ResultReportFrame, TelemetryFrame } from "./telemetry.ts";
 import { PROTOCOL_VERSION } from "./version.ts";
@@ -38,6 +39,7 @@ export type * from "./dispatch.ts";
 export type * from "./list-agents.ts";
 export type * from "./message-status.ts";
 export type * from "./peer-message.ts";
+export type * from "./ping.ts";
 export type * from "./register.ts";
 export type * from "./telemetry.ts";
 export type * from "./wait.ts";
@@ -72,7 +74,9 @@ export type Frame =
 	| UpdateWorkstreamFrame
 	| UpdateWorkstreamAckFrame
 	| ReviseWorkstreamFrame
-	| ReviseWorkstreamAckFrame;
+	| ReviseWorkstreamAckFrame
+	| PingFrame
+	| PongFrame;
 
 export const FRAME_TYPES = [
 	"register",
@@ -103,6 +107,8 @@ export const FRAME_TYPES = [
 	"update_workstream_ack",
 	"revise_workstream",
 	"revise_workstream_ack",
+	"ping",
+	"pong",
 ] as const;
 
 const KNOWN_TYPE_SET = new Set<string>(FRAME_TYPES);

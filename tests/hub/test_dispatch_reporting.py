@@ -56,6 +56,7 @@ def test_backstop_marks_failed_and_resolves_wait(tmp_path: Path) -> None:
                 json.dumps(
                     {
                         "type": "wait",
+                        "request_id": f"wait-{uuid.uuid4()}",
                         "v": PROTOCOL_VERSION,
                         "agent_ids": [agent_id],
                         "mode": "all",

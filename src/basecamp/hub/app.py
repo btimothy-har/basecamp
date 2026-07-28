@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
-from typing import Literal
+from uuid import uuid4
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
@@ -14,15 +14,14 @@ from .frames import (
     AttachWorkstreamAgentFrame,
     CancelFrame,
     CreateWorkstreamFrame,
-    DispatchAckFrame,
     DispatchFrame,
     ErrorFrame,
     ListAgentsFrame,
-    ListAgentsResultFrame,
     MessageStatusFrame,
     PeerMessageDeliveryAckFrame,
-    PeerMessageDeliveryFrame,
     PeerMessageFrame,
+    PingFrame,
+    PongFrame,
     RegisteredFrame,
     RegisterFrame,
     ResultReportFrame,
@@ -31,31 +30,35 @@ from .frames import (
     TelemetryFrame,
     UpdateWorkstreamFrame,
     WaitFrame,
-    WaitResultFrame,
     parse_frame,
     serialize_frame,
+)
+from .handlers import (
+    handle_attach_workstream_agent,
+    handle_cancel,
+    handle_create_workstream,
+    handle_dispatch,
+    handle_list_agents,
+    handle_message_status,
+    handle_peer_message,
+    handle_revise_workstream,
+    handle_update_workstream,
+    handle_wait,
 )
 from .http_routes import register_http_routes
 from .registry import Registry
 from .store import DuplicateAgentHandleError, Store
 from .swarm.service import (
-    AcceptedPeerMessage,
-    accept_peer_message,
-    attach_workstream_agent,
-    cancel_agent,
-    create_workstream,
-    dispatch_agent,
     handle_peer_message_delivery_ack,
     handle_result_report,
     handle_telemetry,
-    list_agents,
-    message_status_result,
-    notify_message_delivery_terminal,
-    revise_workstream,
     schedule_disconnect_reaper,
-    update_workstream,
-    wait_for_agents,
 )
+
+# Starlette's WebSocket cannot send a protocol-level ping; this is the timeout
+# for the send-based incumbent probe (see _incumbent_is_live).
+_INCUMBENT_PROBE_TIMEOUT_S = 10.0
+_TAKEOVER_CLOSE_TIMEOUT_S = 2.0
 
 
 def create_app(
@@ -70,6 +73,7 @@ def create_app(
     registry = Registry()
     daemon_socket_path = daemon_uds or ""
     reapers: set[asyncio.Task[None]] = set()
+    # Deliveries target other connections, so they outlive the requester's socket.
     delivery_tasks: set[asyncio.Task[None]] = set()
 
     register_http_routes(app, store=store, registry=registry, dashboard_access=dashboard_access)
@@ -79,6 +83,11 @@ def create_app(
         await websocket.accept()
 
         node_id: str | None = None
+        connection_generation = -1
+        # Waits reply to *this* socket, so they belong to this connection and are
+        # cancelled when it goes away — otherwise a client that disconnects
+        # mid-wait leaves a task awaiting a run only to write to a dead socket.
+        reply_tasks: set[asyncio.Task[None]] = set()
         try:
             first_payload = await websocket.receive_json()
             if not isinstance(first_payload, dict):
@@ -107,7 +116,25 @@ def create_app(
                 )
                 return
 
-            if registry.has_connection(parsed.node_id):
+            incumbent = registry.get_connection(parsed.node_id)
+            incumbent_generation = registry.get_connection_generation(parsed.node_id)
+            if incumbent is not None:
+                # Never blind-replace: a live incumbent keeps its session (an
+                # accidental resume elsewhere gets a clean rejection); only a
+                # peer that fails to answer its probe yields its node id.
+                if await _incumbent_is_live(incumbent, parsed.node_id, registry):
+                    await _send_error_and_close(
+                        websocket,
+                        code="duplicate_node_connection",
+                        message="Node is already connected.",
+                    )
+                    return
+                await _close_websocket_quietly(incumbent)
+
+            # Probing suspends, so re-establish the claim atomically: another
+            # registration for this node id may have settled while we waited.
+            claimed = registry.claim_connection(parsed.node_id, websocket, replacing=incumbent_generation)
+            if claimed is None:
                 await _send_error_and_close(
                     websocket,
                     code="duplicate_node_connection",
@@ -116,7 +143,7 @@ def create_app(
                 return
 
             node_id = parsed.node_id
-            registry.set_connection(parsed.node_id, websocket)
+            connection_generation = claimed
             try:
                 await asyncio.to_thread(
                     store.upsert_agent,
@@ -136,8 +163,7 @@ def create_app(
                     agent_mode=parsed.agent_mode,
                 )
             except DuplicateAgentHandleError as exc:
-                if registry.get_connection(parsed.node_id) is websocket:
-                    registry.remove_connection(parsed.node_id)
+                registry.remove_connection(parsed.node_id, generation=connection_generation)
                 await _send_error_and_close(
                     websocket,
                     code="duplicate_agent_handle",
@@ -189,7 +215,7 @@ def create_app(
                         pass
                     continue
                 if isinstance(inbound, DispatchFrame):
-                    await _handle_dispatch(
+                    await handle_dispatch(
                         websocket=websocket,
                         frame=inbound,
                         dispatcher_node_id=parsed.node_id,
@@ -209,17 +235,30 @@ def create_app(
                         registry=registry,
                     )
                     continue
+                if isinstance(inbound, PingFrame):
+                    await websocket.send_json(serialize_frame(PongFrame(type="pong", nonce=inbound.nonce)))
+                    continue
+                if isinstance(inbound, PongFrame):
+                    # Answers the probe carrying this nonce; any other pong is inert.
+                    registry.resolve_probe(parsed.node_id, inbound.nonce)
+                    continue
                 if isinstance(inbound, WaitFrame):
-                    await _handle_wait(
-                        frame=inbound,
-                        websocket=websocket,
-                        store=store,
-                        registry=registry,
-                        requester_node_id=parsed.node_id,
+                    # Runs as a task so a long wait never blocks the read loop
+                    # (telemetry, dispatch, peer messages, ping answers).
+                    wait_task = asyncio.create_task(
+                        handle_wait(
+                            frame=inbound,
+                            websocket=websocket,
+                            store=store,
+                            registry=registry,
+                            requester_node_id=parsed.node_id,
+                        )
                     )
+                    reply_tasks.add(wait_task)
+                    wait_task.add_done_callback(reply_tasks.discard)
                     continue
                 if isinstance(inbound, ListAgentsFrame):
-                    await _handle_list_agents(
+                    await handle_list_agents(
                         frame=inbound,
                         websocket=websocket,
                         store=store,
@@ -228,7 +267,7 @@ def create_app(
                     )
                     continue
                 if isinstance(inbound, PeerMessageFrame):
-                    await _handle_peer_message(
+                    await handle_peer_message(
                         frame=inbound,
                         websocket=websocket,
                         store=store,
@@ -246,69 +285,44 @@ def create_app(
                     )
                     continue
                 if isinstance(inbound, MessageStatusFrame):
-                    await websocket.send_json(
-                        serialize_frame(
-                            await message_status_result(
-                                frame=inbound,
-                                requester_node_id=parsed.node_id,
-                                store=store,
-                                registry=registry,
-                            )
+                    # wait_until_delivery can block as long as a run wait; same task treatment.
+                    status_task = asyncio.create_task(
+                        handle_message_status(
+                            frame=inbound,
+                            websocket=websocket,
+                            store=store,
+                            registry=registry,
+                            requester_node_id=parsed.node_id,
                         )
                     )
+                    reply_tasks.add(status_task)
+                    status_task.add_done_callback(reply_tasks.discard)
                     continue
                 if isinstance(inbound, CancelFrame):
-                    await websocket.send_json(
-                        serialize_frame(
-                            await cancel_agent(
-                                frame=inbound,
-                                requester_node_id=parsed.node_id,
-                                store=store,
-                                registry=registry,
-                            )
-                        )
+                    await handle_cancel(
+                        frame=inbound,
+                        websocket=websocket,
+                        store=store,
+                        registry=registry,
+                        requester_node_id=parsed.node_id,
                     )
                     continue
                 if isinstance(inbound, CreateWorkstreamFrame):
-                    await websocket.send_json(
-                        serialize_frame(
-                            await create_workstream(
-                                frame=inbound,
-                                store=store,
-                            )
-                        )
-                    )
+                    await handle_create_workstream(frame=inbound, websocket=websocket, store=store)
                     continue
                 if isinstance(inbound, AttachWorkstreamAgentFrame):
-                    await websocket.send_json(
-                        serialize_frame(
-                            await attach_workstream_agent(
-                                frame=inbound,
-                                requester_node_id=parsed.node_id,
-                                store=store,
-                            )
-                        )
+                    await handle_attach_workstream_agent(
+                        frame=inbound,
+                        websocket=websocket,
+                        store=store,
+                        requester_node_id=parsed.node_id,
                     )
                     continue
                 if isinstance(inbound, UpdateWorkstreamFrame):
-                    await websocket.send_json(
-                        serialize_frame(
-                            await update_workstream(
-                                frame=inbound,
-                                store=store,
-                            )
-                        )
-                    )
+                    await handle_update_workstream(frame=inbound, websocket=websocket, store=store)
                     continue
                 if isinstance(inbound, ReviseWorkstreamFrame):
-                    await websocket.send_json(
-                        serialize_frame(
-                            await revise_workstream(
-                                frame=inbound,
-                                store=store,
-                            )
-                        )
-                    )
+                    await handle_revise_workstream(frame=inbound, websocket=websocket, store=store)
                     continue
 
                 await _send_error_and_close(
@@ -327,151 +341,67 @@ def create_app(
                 message=f"Failed to parse frame: {exc}",
             )
         finally:
-            if node_id is not None and registry.get_connection(node_id) is websocket:
-                registry.remove_connection(node_id)
+            await _cancel_reply_tasks(reply_tasks)
+            # Generation-guarded cleanup: a stale handler (replaced via takeover
+            # of a zombie incumbent) must not remove or reap the newer entry.
+            if node_id is not None and registry.remove_connection(node_id, generation=connection_generation):
                 try:
                     await asyncio.to_thread(store.touch_agent, node_id)
                 except sqlite3.Error:
                     # Reaping must still proceed when a best-effort recency write loses a shutdown race.
                     pass
                 finally:
-                    schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
+                    # The touch above suspends, so re-check: a reconnect that landed
+                    # in that window already cancelled its predecessor's reaper, and
+                    # scheduling one here would target a live connection.
+                    if not registry.has_connection(node_id):
+                        schedule_disconnect_reaper(node_id=node_id, registry=registry, store=store)
 
     return app
 
 
-async def _handle_dispatch(
-    *,
-    websocket: WebSocket,
-    frame: DispatchFrame,
-    dispatcher_node_id: str,
-    daemon_socket_path: str,
-    registry: Registry,
-    store: Store,
-    reapers: set[asyncio.Task[None]],
-) -> None:
-    ack = await dispatch_agent(
-        frame=frame,
-        dispatcher_node_id=dispatcher_node_id,
-        daemon_socket_path=daemon_socket_path,
-        registry=registry,
-        store=store,
-        reapers=reapers,
-    )
-    await _send_dispatch_ack(websocket, run_id=frame.run_id, status=ack.status, reason=ack.reason)
+async def _incumbent_is_live(incumbent: WebSocket, node_id: str, registry: Registry) -> bool:
+    """Classify an incumbent connection by round-tripping a liveness probe.
 
+    A completed write proves nothing: the selected websocket implementation
+    buffers into the transport without suspending, so a frozen or half-open
+    peer accepts the bytes exactly like a healthy one. Liveness therefore
+    requires evidence *from* the peer — a pong echoing this probe's nonce,
+    which the client already sends. A send failure means dead outright; a
+    silent peer means dead once the timeout elapses.
+    """
 
-async def _handle_wait(
-    *,
-    frame: WaitFrame,
-    websocket: WebSocket,
-    store: Store,
-    registry: Registry,
-    requester_node_id: str,
-) -> None:
-    results = await wait_for_agents(
-        frame=frame,
-        store=store,
-        registry=registry,
-        requester_node_id=requester_node_id,
-    )
-    await websocket.send_json(serialize_frame(WaitResultFrame(type="wait_result", results=results)))
-
-
-async def _handle_list_agents(
-    *,
-    frame: ListAgentsFrame,
-    websocket: WebSocket,
-    store: Store,
-    registry: Registry,
-    requester_node_id: str,
-) -> None:
-    result = ListAgentsResultFrame(
-        type="list_agents_result",
-        request_id=frame.request_id,
-        agents=await list_agents(
-            frame=frame,
-            store=store,
-            requester_node_id=requester_node_id,
-            live_node_ids=registry.live_node_ids(),
-        ),
-    )
-    await websocket.send_json(serialize_frame(result))
-
-
-async def _handle_peer_message(
-    *,
-    frame: PeerMessageFrame,
-    websocket: WebSocket,
-    store: Store,
-    registry: Registry,
-    requester_node_id: str,
-    delivery_tasks: set[asyncio.Task[None]],
-) -> None:
-    accepted = await accept_peer_message(frame=frame, requester_node_id=requester_node_id, store=store)
-    if not isinstance(accepted, AcceptedPeerMessage):
-        await websocket.send_json(serialize_frame(accepted))
-        return
-
-    task = asyncio.create_task(
-        _push_peer_message_delivery(
-            delivery=accepted.delivery,
-            target_agent_id=accepted.target_agent_id,
-            registry=registry,
-            store=store,
-        )
-    )
-    delivery_tasks.add(task)
-    task.add_done_callback(delivery_tasks.discard)
-    await websocket.send_json(serialize_frame(accepted.ack))
-
-
-async def _push_peer_message_delivery(
-    *,
-    delivery: PeerMessageDeliveryFrame,
-    target_agent_id: str,
-    registry: Registry,
-    store: Store,
-) -> None:
-    target_websocket = registry.get_connection(target_agent_id)
-    if target_websocket is None:
-        updated = await asyncio.to_thread(
-            store.mark_message_unavailable,
-            delivery.message_id,
-            "target_unavailable",
-        )
-        if updated:
-            notify_message_delivery_terminal(delivery.message_id, registry=registry)
-        return
-
+    nonce = uuid4().hex
+    probe = PingFrame(type="ping", nonce=nonce)
+    answered = registry.open_probe(node_id, nonce)
     try:
-        await target_websocket.send_json(serialize_frame(delivery))
-    except Exception as exc:  # noqa: BLE001
-        updated = await asyncio.to_thread(store.mark_message_failed, delivery.message_id, str(exc))
-        if updated:
-            notify_message_delivery_terminal(delivery.message_id, registry=registry)
+        async with asyncio.timeout(_INCUMBENT_PROBE_TIMEOUT_S):
+            await incumbent.send_json(serialize_frame(probe))
+            await answered
+    except Exception:  # noqa: BLE001 — send failure or unanswered probe reads as dead
+        return False
+    finally:
+        registry.close_probe(node_id, nonce)
+    return True
+
+
+async def _cancel_reply_tasks(tasks: set[asyncio.Task[None]]) -> None:
+    """Cancel this connection's outstanding reply tasks and await their exit."""
+
+    pending = [task for task in tasks if not task.done()]
+    for task in pending:
+        task.cancel()
+    # gather collects each task's cancellation as a result, while still letting a
+    # cancellation aimed at *this* handler propagate rather than being swallowed.
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def _close_websocket_quietly(websocket: WebSocket) -> None:
+    try:
+        async with asyncio.timeout(_TAKEOVER_CLOSE_TIMEOUT_S):
+            await websocket.close(code=1000)
+    except Exception:  # noqa: BLE001 — close is best effort; takeover proceeds
         return
-
-    await asyncio.to_thread(store.mark_message_sent, delivery.message_id)
-
-
-async def _send_dispatch_ack(
-    websocket: WebSocket,
-    *,
-    run_id: str,
-    status: Literal["spawned", "rejected"],
-    reason: str | None,
-) -> None:
-    await websocket.send_json(
-        serialize_frame(
-            DispatchAckFrame(
-                type="dispatch_ack",
-                run_id=run_id,
-                status=status,
-                reason=reason,
-            )
-        )
-    )
 
 
 async def _send_error_and_close(websocket: WebSocket, *, code: str, message: str) -> None:

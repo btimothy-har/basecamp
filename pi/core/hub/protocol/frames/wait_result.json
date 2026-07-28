@@ -1,6 +1,7 @@
 {
   "type": "wait_result",
-  "v": 27,
+  "v": 28,
+  "request_id": "wait-001",
   "results": [
     {
       "agent_handle": "mossy-otter-a1b2c3",

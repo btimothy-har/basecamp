@@ -116,12 +116,6 @@ function hasAgentHandle(result: WaitResultItem): result is WaitResultItem & { ag
 	return typeof result.agent_handle === "string";
 }
 
-function sameAsRequested(resultAgentHandles: string[], requestedSet: Set<string>): boolean {
-	const resultSet = new Set(resultAgentHandles);
-	if (resultSet.size !== requestedSet.size) return false;
-	return [...requestedSet].every((agentHandle) => resultSet.has(agentHandle));
-}
-
 function dedupeRequestedResults(
 	results: WaitResultFrame["results"],
 	requested: Set<string>,
@@ -143,8 +137,7 @@ function dedupeRequestedResults(
 /**
  * Send a request frame and await its correlated ack, collapsing the
  * randomUUID → send → waitForFrame(request_id match) round-trip shared by every
- * request/ack RPC. (dispatch correlates on run_id and waitForAgents on a custom
- * result-set predicate, so both stay bespoke.)
+ * request/ack RPC. (dispatch stays bespoke: it correlates on run_id.)
  */
 async function requestAck<T extends Frame["type"]>(
 	connection: DaemonConnection,
@@ -204,21 +197,19 @@ export function createDaemonClient(connection: DaemonConnection): DaemonClient {
 		},
 		waitForAgents: async (input) => {
 			const requested = new Set(input.agentHandles);
-			connection.send({
-				type: "wait",
-				agent_ids: [],
-				agent_handles: input.agentHandles,
-				mode: "all",
-				timeout_s: input.timeoutS,
-			});
-			const frame = await waitForFrame(
+			// v28: the daemon echoes request_id, so concurrent waits on one socket
+			// correlate exactly — no result-set matching across in-flight waits.
+			const frame = await requestAck(
 				connection,
 				"wait_result",
-				(candidate) =>
-					sameAsRequested(
-						candidate.results.filter(hasAgentHandle).map((result) => result.agent_handle),
-						requested,
-					),
+				{
+					type: "wait",
+					request_id: randomUUID(),
+					agent_ids: [],
+					agent_handles: input.agentHandles,
+					mode: "all",
+					timeout_s: input.timeoutS,
+				},
 				input.signal,
 			);
 			return dedupeRequestedResults(frame.results, requested);

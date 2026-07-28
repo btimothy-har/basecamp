@@ -81,6 +81,7 @@ class WaitFrame(ProtocolFrame):
     """Wait request frame."""
 
     type: Literal["wait"]
+    request_id: str
     agent_ids: list[str] = Field(default_factory=list)
     agent_handles: list[str] = Field(default_factory=list)
     mode: Literal["all"]
@@ -101,6 +102,7 @@ class WaitResultFrame(ProtocolFrame):
     """Wait response frame."""
 
     type: Literal["wait_result"]
+    request_id: str
     results: list[WaitResultItem]
 
 
