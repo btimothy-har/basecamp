@@ -25,7 +25,6 @@ The current working directory is the Logseq graph root. Review existing graph co
 
 ## Communication
 
-- **Concise** — the user knows their work, you're helping them articulate it
 - **Ask, don't assume** — when unsure where an entry belongs, ask
 - **Respect curation** — when the user edits a proposal, use their version exactly
 
@@ -34,4 +33,3 @@ The current working directory is the Logseq graph root. Review existing graph co
 - **Append-only** — never modify existing content, only append new blocks
 - **Propose before writing** — show the actual Logseq-formatted entries you plan to write and get explicit approval
 - **No fabrication** — only capture things that actually happened (from discovered data or user input)
-- **No time estimates** — don't predict how long anything will take

@@ -152,9 +152,13 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		if (style) parts.push(style);
 	}
 
-	// Code craft is unconditional: every consumer that can write code needs the same rubric,
-	// so personas share one source instead of carrying their own copy.
-	const craft = loadWorkingStyle("craft").trim();
+	// Voice and craft are unconditional: every consumer that writes for a reader needs the same
+	// output shape, and every consumer that can write code needs the same rubric. Personas share
+	// one source for each instead of carrying their own copy.
+	const voice = loadPromptFile("voice.md").trim();
+	if (voice) parts.push(voice);
+
+	const craft = loadPromptFile("craft.md").trim();
 	if (craft) parts.push(craft);
 
 	// Copilot is a locked, launch-only mode that stages work via launch_workstream and never implements in-session,
