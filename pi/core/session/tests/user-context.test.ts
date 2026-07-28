@@ -115,6 +115,18 @@ describe("recentUserMessages", () => {
 		assert.deepEqual(recentUserMessages(entries as SessionEntry[], 1), ["third part"]);
 	});
 
+	// The continuation guard sends these on essentially every stop, so one pasted log
+	// would otherwise be replayed in full for as long as it stays in the window.
+	it("bounds each message so a large paste cannot dominate the prompt", () => {
+		const entries = [{ type: "message", message: { role: "user", content: "x".repeat(50_000) } }];
+
+		const [only] = recentUserMessages(entries as SessionEntry[]);
+
+		assert.ok(only);
+		assert.ok(only.length < 1_300, `expected a bounded message, got ${only.length} chars`);
+		assert.match(only, /…$/);
+	});
+
 	it("defaults to the five most recent user messages", () => {
 		const entries = Array.from({ length: 7 }, (_, i) => ({
 			type: "message",
