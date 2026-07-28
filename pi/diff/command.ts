@@ -2,14 +2,16 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "#core/errors.ts";
-import { resolveReviewBase } from "#core/git/repo.ts";
+import { gitOutput, resolveReviewBase } from "#core/git/repo.ts";
 import { getBasecampEnv, isSubagent } from "#core/host/env.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import { checkHerdrEligibility, closeHerdrTab, openHerdrTab, runInHerdrPane } from "#core/ui/herdr-pane.ts";
 import { formatAnnotations } from "./annotations.ts";
+import { type Checkpoint, recordCheckpoint, validateCheckpoint } from "./checkpoints.ts";
 import { detectHunk, type HunkSession, listHunkSessions, readUserNotes, type UserNote } from "./hunk.ts";
+import { parseDiffArgs } from "./mode.ts";
 import { attachSession, forgetSession, forgetTab, ownedReview, rememberTab } from "./session-state.ts";
-import { readSidecarBase, sidecarPath } from "./sidecar.ts";
+import { clearSidecar, readSidecarBase, sidecarPath } from "./sidecar.ts";
 import { reviewWorktreeDir } from "./worktree.ts";
 
 // hunk's own update nag would render inside a tab Basecamp owns.
@@ -22,8 +24,9 @@ export interface LaunchPoll {
 }
 const DEFAULT_LAUNCH_POLL: LaunchPoll = { attempts: 24, intervalMs: 250 };
 
-function tabLabel(worktreeDir: string): string {
-	return `diff: ${getBasecampEnv("BASECAMP_WORKTREE_LABEL") ?? worktreeDir.split("/").pop() ?? "review"}`;
+function tabLabel(worktreeDir: string, incremental: boolean): string {
+	const label = getBasecampEnv("BASECAMP_WORKTREE_LABEL") ?? worktreeDir.split("/").pop() ?? "review";
+	return incremental ? `diff: ${label} (last)` : `diff: ${label}`;
 }
 
 interface Drained {
@@ -123,7 +126,78 @@ function deliver(pi: ExtensionAPI, ctx: ExtensionContext, notes: UserNote[]): vo
 	);
 }
 
-async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll): Promise<void> {
+interface DiffTarget {
+	/** The single argument handed to `hunk diff`. */
+	target: string;
+	/** Current merge-base — what the checkpoint is recorded against. */
+	base: string;
+	/** HEAD at launch — what a completed base review records. */
+	head: string;
+	/** Whether a completed review advances the checkpoint (only base reviews do). */
+	advances: boolean;
+}
+
+/**
+ * What the review should diff against. `/diff` shows everything since the
+ * merge-base; `/diff last` shows only what moved since the last completed
+ * `/diff` — user-initiated checkpoints, by SHA under the clean-tree
+ * assumption. A checkpoint is followed only while the merge-base it was
+ * recorded against still resolves: worktree directories are reused across
+ * branches, and a checkpoint taken on one branch is meaningless on another.
+ *
+ * `/diff last` never advances the checkpoint — it is a look back at the same
+ * span, so running it twice shows the same incremental diff. With no
+ * surviving checkpoint it degrades to a base review (which then records),
+ * because the only thing it could mean is "everything".
+ */
+async function resolveDiffTarget(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	worktreeDir: string,
+	mode: "base" | "last",
+): Promise<DiffTarget | null> {
+	let base: string;
+	let head: string;
+	try {
+		base = await resolveReviewBase(pi, worktreeDir);
+		head = await gitOutput(pi, worktreeDir, ["rev-parse", "HEAD"]);
+	} catch (err) {
+		ctx.ui.notify(`/diff could not resolve the review base: ${errorMessage(err)}`, "error");
+		return null;
+	}
+
+	const checkpoint = validateCheckpoint(worktreeDir, base);
+	if (mode === "last" && checkpoint) {
+		return { target: checkpoint.last, base, head, advances: false };
+	}
+	if (mode === "last") {
+		ctx.ui.notify("/diff last: no checkpoint recorded yet — showing the full diff.", "info");
+	}
+	return { target: base, base, head, advances: true };
+}
+
+/**
+ * The review ended with its notes safely read: the agent's rationale for this
+ * span has been shown, so the sidecar is consumed, and a base review moves
+ * the checkpoint up to HEAD. Ordering matters — the checkpoint advance is
+ * what guarantees cleared rationale is never re-rendered against the same
+ * span. On any earlier failure the sidecar and checkpoint are both left
+ * alone, so a retry sees the same span with its rationale intact.
+ */
+function consumeReview(worktreeDir: string, resolved: DiffTarget): void {
+	clearSidecar(worktreeDir);
+	if (resolved.advances) {
+		const checkpoint: Checkpoint = { base: resolved.base, last: resolved.head };
+		recordCheckpoint(worktreeDir, checkpoint);
+	}
+}
+
+async function runDiff(
+	pi: ExtensionAPI,
+	ctx: ExtensionContext,
+	poll: LaunchPoll,
+	mode: "base" | "last",
+): Promise<void> {
 	const ineligible = checkHerdrEligibility({ env: process.env, hasUI: ctx.hasUI, subject: "diffs" });
 	if (ineligible) {
 		ctx.ui.notify(`/diff is unavailable: ${ineligible.detail}`, "error");
@@ -143,13 +217,8 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	}
 
 	const worktreeDir = reviewWorktreeDir();
-	let base: string;
-	try {
-		base = await resolveReviewBase(pi, worktreeDir);
-	} catch (err) {
-		ctx.ui.notify(`/diff could not resolve the review base: ${errorMessage(err)}`, "error");
-		return;
-	}
+	const resolved = await resolveDiffTarget(pi, ctx, worktreeDir, mode);
+	if (!resolved) return;
 
 	const live = await listHunkSessions(pi, worktreeDir);
 	const drained = await drainOwnedReview(pi, worktreeDir, live);
@@ -167,7 +236,7 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	const tab = await openHerdrTab(pi, {
 		workspaceId,
 		cwd: worktreeDir,
-		label: tabLabel(worktreeDir),
+		label: tabLabel(worktreeDir, !resolved.advances),
 		env: HUNK_TAB_ENV,
 	});
 	if (tab.status !== "ok") {
@@ -177,7 +246,7 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	}
 	rememberTab(worktreeDir, tab.value.tabId);
 
-	const launched = await runInHerdrPane(pi, tab.value.paneId, hunkArgv(base, worktreeDir));
+	const launched = await runInHerdrPane(pi, tab.value.paneId, hunkArgv(resolved.target, worktreeDir));
 	if (launched.status !== "ok") {
 		await closeAndForget(pi, worktreeDir, tab.value.tabId);
 		deliver(pi, ctx, drained.notes);
@@ -211,6 +280,7 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	}
 
 	await closeAndForget(pi, worktreeDir, tab.value.tabId);
+	consumeReview(worktreeDir, resolved);
 	deliver(pi, ctx, [...drained.notes, ...read.notes]);
 }
 
@@ -218,9 +288,15 @@ export function registerDiffCommand(pi: ExtensionAPI, poll: LaunchPoll = DEFAULT
 	if (isSubagent()) return;
 
 	pi.registerCommand("diff", {
-		description: "Review this branch's changes in hunk and send your annotations back",
-		handler: async (_args, ctx) => {
-			await runDiff(pi, ctx, poll);
+		description:
+			"Review this branch's changes in hunk and send your annotations back; `/diff last` reviews only what changed since your last /diff",
+		handler: async (args, ctx) => {
+			const mode = parseDiffArgs(args);
+			if (mode.kind === "invalid") {
+				ctx.ui.notify(`Unknown /diff argument "${mode.arg}" — expected nothing or "last".`, "error");
+				return;
+			}
+			await runDiff(pi, ctx, poll, mode.kind);
 		},
 	});
 }
