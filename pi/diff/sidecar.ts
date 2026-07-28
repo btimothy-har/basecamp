@@ -74,18 +74,40 @@ export function sidecarPath(worktreeDir: string): string {
 }
 
 /**
- * Deterministic annotation key: sha256 of path, range, and summary, first 12
- * hex chars. Same content → same key, so exact-duplicate dedupe on merge is
- * free. 12 chars (not 8) buys a cheap collision margin.
+ * Deterministic annotation key: sha256 of path, range, summary, and
+ * rationale, first 12 hex chars. Same content → same key, so exact-duplicate
+ * dedupe on merge is free; a corrected rationale yields a NEW key, so
+ * rewording an annotation never silently collides with — or is silently
+ * dropped in favour of — the wording it replaces. 12 chars (not 8) buys a
+ * cheap collision margin.
  */
-export function annotationId(path: string, newRange: [number, number], summary: string): string {
-	return createHash("sha256").update(`${path}\n${newRange[0]}\n${newRange[1]}\n${summary}`).digest("hex").slice(0, 12);
+export function annotationId(
+	filePath: string,
+	newRange: [number, number],
+	summary: string,
+	rationale?: string,
+): string {
+	return createHash("sha256")
+		.update(`${filePath}\n${newRange[0]}\n${newRange[1]}\n${summary}\n${rationale ?? ""}`)
+		.digest("hex")
+		.slice(0, 12);
+}
+
+export interface RecordedAnnotation {
+	id: string;
+	path: string;
+	newRange: [number, number];
+	summary: string;
 }
 
 export interface WriteResult {
 	path: string;
+	/** Total files in the sidecar after the write. */
 	files: number;
+	/** Total annotations in the sidecar after the write. */
 	annotations: number;
+	/** Annotations this call actually added (post-dedupe/supersession), in call order. */
+	recorded: RecordedAnnotation[];
 }
 
 /**
@@ -105,21 +127,30 @@ function readSidecar(worktreeDir: string): Sidecar | null {
 /**
  * Every incoming annotation is stamped with its computed id — always computed,
  * never trusted from input — and, within one batch, exact duplicates collapse
- * to their first occurrence.
+ * to their first occurrence. Entries are folded by path: one entry per path,
+ * annotations concatenated in encounter order, a later non-undefined per-file
+ * summary winning — so one call can never write two entries for the same path
+ * (which would leave later merges updating only the first, and the shared
+ * path's annotations unremovable as ambiguous).
  */
 function stampFiles(files: AnnotatedFile[]): AnnotatedFile[] {
 	const seen = new Set<string>();
-	return files.map((f) => ({
-		...f,
-		annotations: f.annotations
-			.map((a) => ({ ...a, id: annotationId(f.path, a.newRange, a.summary) }))
-			.filter((a) => {
-				const id = a.id as string;
-				if (seen.has(id)) return false;
-				seen.add(id);
-				return true;
-			}),
-	}));
+	const byPath = new Map<string, AnnotatedFile>();
+	for (const f of files) {
+		let entry = byPath.get(f.path);
+		if (!entry) {
+			entry = { path: f.path, annotations: [] };
+			byPath.set(f.path, entry);
+		}
+		for (const a of f.annotations) {
+			const id = annotationId(f.path, a.newRange, a.summary, a.rationale);
+			if (seen.has(id)) continue;
+			seen.add(id);
+			entry.annotations.push({ ...a, id });
+		}
+		if (f.summary !== undefined) entry.summary = f.summary;
+	}
+	return [...byPath.values()];
 }
 
 /**
@@ -155,27 +186,55 @@ function writeSidecarFile(filePath: string, sidecar: Sidecar): void {
  * entry appends annotations whose ids are not already present (exact
  * duplicates collapse) and, when it carries a summary, replaces the entry's
  * summary; new paths are added. The incoming top-level summary always wins.
+ *
+ * Supersession: the annotation id includes the rationale, so a corrected
+ * rationale for the same path + range + summary arrives under a NEW id.
+ * Rather than appending a near-duplicate, the incoming annotation REPLACES
+ * the matching stored one in place — same position, new rationale and id —
+ * which is what the "annotate again to reword" workflow promises.
+ *
+ * Returns the merged sidecar and the annotations this call actually
+ * contributed (appended or superseding, in call order).
  */
-function mergeSidecar(existing: Sidecar, incoming: AnnotatedFile[], summary: string): Sidecar {
+function mergeSidecar(
+	existing: Sidecar,
+	incoming: AnnotatedFile[],
+	summary: string,
+): { sidecar: Sidecar; recorded: RecordedAnnotation[] } {
+	const recorded: RecordedAnnotation[] = [];
 	const files = existing.files.map((f) => ({ ...f, annotations: [...f.annotations] }));
 	for (const incomingFile of incoming) {
 		const entry = files.find((f) => f.path === incomingFile.path);
 		if (!entry) {
 			files.push({ ...incomingFile, annotations: [...incomingFile.annotations] });
+			for (const a of incomingFile.annotations) {
+				recorded.push({ id: a.id ?? "", path: incomingFile.path, newRange: a.newRange, summary: a.summary });
+			}
 			continue;
 		}
-		const present = new Set(entry.annotations.map((a) => a.id ?? annotationId(entry.path, a.newRange, a.summary)));
+		const present = new Set(
+			entry.annotations.map((a) => a.id ?? annotationId(entry.path, a.newRange, a.summary, a.rationale)),
+		);
 		for (const a of incomingFile.annotations) {
 			// Stamped incoming annotations always carry an id; compute as a fallback for untyped callers.
-			const id = a.id ?? annotationId(incomingFile.path, a.newRange, a.summary);
-			if (!present.has(id)) {
+			const id = a.id ?? annotationId(incomingFile.path, a.newRange, a.summary, a.rationale);
+			if (present.has(id)) continue; // Exact duplicate — collapse.
+			const superseded = entry.annotations.findIndex(
+				(stored) =>
+					stored.newRange[0] === a.newRange[0] && stored.newRange[1] === a.newRange[1] && stored.summary === a.summary,
+			);
+			if (superseded >= 0) {
+				present.delete(entry.annotations[superseded]?.id ?? "");
+				entry.annotations[superseded] = a;
+			} else {
 				entry.annotations.push(a);
-				present.add(id);
 			}
+			present.add(id);
+			recorded.push({ id, path: incomingFile.path, newRange: a.newRange, summary: a.summary });
 		}
 		if (incomingFile.summary !== undefined) entry.summary = incomingFile.summary;
 	}
-	return { ...existing, summary, files };
+	return { sidecar: { ...existing, summary, files }, recorded };
 }
 
 /**
@@ -192,16 +251,22 @@ export function writeSidecar(worktreeDir: string, base: string, summary: string,
 	const incoming = stampFiles(files);
 	const existing = readSidecar(worktreeDir);
 
-	const sidecar: Sidecar =
-		existing !== null && existing.basecampBase === base
-			? mergeSidecar(existing, incoming, summary)
-			: { version: SIDECAR_VERSION, basecampBase: base, summary, files: incoming };
+	let sidecar: Sidecar;
+	let recorded: RecordedAnnotation[];
+	if (existing !== null && existing.basecampBase === base) {
+		({ sidecar, recorded } = mergeSidecar(existing, incoming, summary));
+	} else {
+		sidecar = { version: SIDECAR_VERSION, basecampBase: base, summary, files: incoming };
+		recorded = incoming.flatMap((f) =>
+			f.annotations.map((a) => ({ id: a.id ?? "", path: f.path, newRange: a.newRange, summary: a.summary })),
+		);
+	}
 
 	const filePath = sidecarPath(worktreeDir);
 	writeSidecarFile(filePath, sidecar);
 
 	const annotationCount = sidecar.files.reduce((acc, f) => acc + f.annotations.length, 0);
-	return { path: filePath, files: sidecar.files.length, annotations: annotationCount };
+	return { path: filePath, files: sidecar.files.length, annotations: annotationCount, recorded };
 }
 
 /**
@@ -260,11 +325,5 @@ export function removeAnnotation(
  * branches — so the caller compares this before rendering stale rationale.
  */
 export function readSidecarBase(worktreeDir: string): string | null {
-	try {
-		const parsed: unknown = JSON.parse(fs.readFileSync(sidecarPath(worktreeDir), "utf8"));
-		const base = (parsed as { basecampBase?: unknown }).basecampBase;
-		return typeof base === "string" && base !== "" ? base : null;
-	} catch {
-		return null;
-	}
+	return readSidecar(worktreeDir)?.basecampBase ?? null;
 }
