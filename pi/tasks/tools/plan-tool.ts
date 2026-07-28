@@ -11,7 +11,7 @@
  * choreography to runHandoff, and maps the outcome to its result.
  */
 
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
@@ -37,6 +37,16 @@ export interface PlanAccess {
 	isHandoffActive(): boolean;
 }
 
+/**
+ * The two collaborators the approval path cannot otherwise be driven through: the
+ * review overlay only resolves through real UI, and the handoff shells out to git.
+ * Injecting them is what makes the latch wiring testable.
+ */
+export interface PlanDeps {
+	review?: (draft: PlanDraft, ctx: ExtensionContext) => Promise<"submit" | "decline">;
+	handoff?: typeof runHandoff;
+}
+
 function cancelledResult(next_step: string) {
 	return {
 		content: [{ type: "text" as const, text: JSON.stringify({ status: "handoff_cancelled", next_step }) }],
@@ -44,7 +54,9 @@ function cancelledResult(next_step: string) {
 	};
 }
 
-export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAccess {
+export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: PlanDeps = {}): PlanAccess {
+	const review = deps.review ?? showReviewOverlay;
+	const handoff = deps.handoff ?? runHandoff;
 	let draft: PlanDraft | null = null;
 	let pendingImplementationHandoff: PendingImplementationHandoff | null = null;
 	const handoffLatch = createHandoffLatch();
@@ -115,9 +127,7 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 			let reviewResult: "submit" | "decline" = "submit";
 			if (ctx.hasUI) {
 				const reviewDraft = draft;
-				reviewResult = await withHerdrBlocked(pi, "Waiting for plan approval", () =>
-					showReviewOverlay(reviewDraft, ctx),
-				);
+				reviewResult = await withHerdrBlocked(pi, "Waiting for plan approval", () => review(reviewDraft, ctx));
 			}
 
 			if (reviewResult === "decline") {
@@ -152,7 +162,7 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 				return { content: [{ type: "text", text: result }], details: undefined };
 			}
 
-			const outcome = await runHandoff(pi, ctx, { goal: draft.goal.content, worktreeSlug: draft.worktreeSlug });
+			const outcome = await handoff(pi, ctx, { goal: draft.goal.content, worktreeSlug: draft.worktreeSlug });
 			if (outcome.status === "cancelled") {
 				return cancelledResult(
 					"Plan approved, but an execution worktree was not selected. Seek user confirmation before implementation.",
