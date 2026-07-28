@@ -402,4 +402,4 @@ basecamp is organized by the artifacts it ships:
 
 ## License
 
-Apache 2.0
+MIT
