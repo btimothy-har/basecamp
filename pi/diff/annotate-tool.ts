@@ -3,6 +3,7 @@ import { type Static, Type } from "@sinclair/typebox";
 import { errorMessage } from "#core/errors.ts";
 import { resolveReviewBase } from "#core/git/repo.ts";
 import { isSubagent } from "#core/host/env.ts";
+import { span } from "./annotations.ts";
 import { type AnnotatedFile, type WriteResult, writeSidecar } from "./sidecar.ts";
 import { reviewWorktreeDir } from "./worktree.ts";
 
@@ -41,14 +42,16 @@ export const AnnotateChangesetParams = Type.Object(
 export type AnnotateChangesetParams = Static<typeof AnnotateChangesetParams>;
 
 const TOOL_DESCRIPTION = [
-	"Annotate the current changeset with rationale that renders inline beside the code in /diff.",
-	"Call this once, when the work is complete — this version does not re-anchor line ranges against later edits,",
-	"so annotating mid-task and then editing the same file above an annotated range will silently mis-anchor it.",
+	"Annotate the changeset with rationale that renders inline beside the code the next time the user runs /diff.",
+	"Annotate as you work — calls accumulate until /diff consumes them at review close.",
+	"Each annotation returns a key; if a later edit invalidates one, withdraw it with remove_annotation and annotate again.",
+	"This version does not re-anchor line ranges against later edits,",
+	"so editing a file above an annotated range silently mis-anchors it — delete and re-annotate to be safe.",
 	"Paths are relative to the worktree root; startLine and endLine are 1-based on the NEW side of the diff.",
 	"Annotations on files not present in the changeset are silently dropped by the viewer.",
 ].join(" ");
 
-const PROMPT_SNIPPET = "Annotate the changeset for /diff (call once, when work is complete)";
+const PROMPT_SNIPPET = "Annotate the changeset for /diff as you work";
 
 /** JSON Schema cannot express endLine >= startLine, so the pairing is checked here. */
 function invertedRanges(params: AnnotateChangesetParams): string[] {
@@ -75,11 +78,22 @@ function toAnnotatedFiles(params: AnnotateChangesetParams): AnnotatedFile[] {
 	}));
 }
 
+/**
+ * The keys must reach the model's context, not just the details payload —
+ * remove_annotation is unusable unless the confirmation hands the keys back.
+ * They come from the write path rather than the request, so the count and the
+ * listed keys always describe the same set: a re-submitted duplicate collapses
+ * and is reported as recording nothing.
+ */
 function formatConfirmation(result: WriteResult): string {
-	return [
-		`Recorded ${result.annotations} annotation${result.annotations === 1 ? "" : "s"} across ${result.files} file${result.files === 1 ? "" : "s"}.`,
-		"These will appear the next time you run /diff, until the reviewed base moves on.",
-	].join("\n");
+	const added = result.recorded.length;
+	const headline =
+		added === 0
+			? `No new annotations — all ${result.annotations} already recorded for this review.`
+			: `Recorded ${added} annotation${added === 1 ? "" : "s"} (sidecar now holds ${result.annotations} across ${result.files} file${result.files === 1 ? "" : "s"}, until /diff consumes them):`;
+	const keys = result.recorded.map((a) => `- ${a.id} ${a.path}:${span(a.newRange)} — ${a.summary}`);
+	const footer = added === 0 ? [] : ["Withdraw one with remove_annotation if a later edit invalidates it."];
+	return [headline, ...keys, ...footer].join("\n");
 }
 
 export function registerAnnotateTool(pi: ExtensionAPI): void {
@@ -98,8 +112,11 @@ export function registerAnnotateTool(pi: ExtensionAPI): void {
 				throw new Error(`endLine must not precede startLine: ${inverted.join(", ")}`);
 			}
 			const worktreeDir = reviewWorktreeDir();
-			// Stamped so /diff can tell rationale about this changeset from rationale
-			// left behind by whatever this worktree directory held previously.
+			// Anchored to the review base, which identifies the *span* these
+			// annotations describe rather than any one diff target: ranges are on
+			// the new side (the working tree), so they render in a full or an
+			// incremental review alike. The base is also stable as commits land,
+			// which is what lets calls accumulate instead of replacing each other.
 			let base: string;
 			try {
 				base = await resolveReviewBase(pi, worktreeDir);
@@ -109,7 +126,12 @@ export function registerAnnotateTool(pi: ExtensionAPI): void {
 			const result = writeSidecar(worktreeDir, base, params.summary, toAnnotatedFiles(params));
 			return {
 				content: [{ type: "text", text: formatConfirmation(result) }],
-				details: { sidecarPath: result.path, files: result.files, annotations: result.annotations },
+				details: {
+					sidecarPath: result.path,
+					recorded: result.recorded.length,
+					totalFiles: result.files,
+					totalAnnotations: result.annotations,
+				},
 			};
 		},
 	});

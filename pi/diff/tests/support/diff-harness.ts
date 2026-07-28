@@ -6,15 +6,18 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { forgetCheckpoint, recordCheckpoint } from "#diff/checkpoints.ts";
 import { registerDiffCommand } from "#diff/command.ts";
 import { forgetTab } from "#diff/session-state.ts";
 
 type ExecResult = { code: number; stdout: string; stderr: string; killed: boolean };
-type CommandHandler = (args: string[], ctx: unknown) => Promise<void>;
+type CommandHandler = (args: string, ctx: unknown) => Promise<void>;
 export type Note = { filePath: string; newRange?: [number, number]; body: string };
 
 export const WORKTREE = "/repo/wt/feature";
 export const BASE = "43e3afd68b290430804ef6d7cc0fba60336dcd98";
+export const HEAD_SHA = "55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa";
+export const PREV_SHA = "99bb99bb99bb99bb99bb99bb99bb99bb99bb99bb";
 export const NEW_SESSION = "11111111-1111-1111-1111-111111111111";
 export const STALE_SESSION = "22222222-2222-2222-2222-222222222222";
 
@@ -48,6 +51,12 @@ export interface HarnessOptions {
 	tabCreateCode?: number;
 	paneRunCode?: number;
 	tabCloseCode?: number;
+	/** Arguments the run is invoked with, e.g. "last". */
+	args?: string;
+	/** Checkpoint recorded before the run, as if an earlier /diff completed. */
+	checkpoint?: { base: string; last: string };
+	/** False when the recorded checkpoint is not an ancestor of HEAD (rebase, sibling branch). */
+	checkpointIsAncestor?: boolean;
 }
 
 export function harness(options: HarnessOptions = {}): Harness {
@@ -63,7 +72,11 @@ export function harness(options: HarnessOptions = {}): Harness {
 		calls.push({ command, args });
 		const joined = args.join(" ");
 		if (command === "git" && joined.includes("symbolic-ref")) return ok("origin/main");
+		if (command === "git" && joined.includes("merge-base --is-ancestor")) {
+			return options.checkpointIsAncestor === false ? { ...ok(), code: 1 } : ok();
+		}
 		if (command === "git" && joined.includes("merge-base")) return ok(BASE);
+		if (command === "git" && joined.includes("rev-parse") && joined.includes("HEAD")) return ok(HEAD_SHA);
 		if (command === "hunk" && joined === "--version") {
 			return options.hunkAvailable === false ? { ...ok(), code: 127 } : ok("0.17.6");
 		}
@@ -96,7 +109,11 @@ export function harness(options: HarnessOptions = {}): Harness {
 	const pi = {
 		exec,
 		events: { emit: () => {} },
-		sendMessage: (message: { content: string }) => sent.push(message),
+		// Returns void, like the real ExtensionAPI surface: the session reports its
+		// own delivery failures, so extension code is handed no result to await.
+		sendUserMessage: (content: string) => {
+			sent.push({ content });
+		},
 		registerCommand: (_name: string, spec: { handler: CommandHandler }) => {
 			handler = spec.handler;
 		},
@@ -111,6 +128,8 @@ export function harness(options: HarnessOptions = {}): Harness {
 		},
 	};
 
+	if (options.checkpoint) recordCheckpoint(WORKTREE, options.checkpoint);
+
 	registerDiffCommand(pi, { attempts: 3, intervalMs: 1 });
 	return {
 		calls,
@@ -118,7 +137,7 @@ export function harness(options: HarnessOptions = {}): Harness {
 		sent,
 		run: async () => {
 			assert.ok(handler, "/diff was not registered");
-			await handler([], ctx);
+			await handler(options.args ?? "", ctx);
 		},
 	};
 }
@@ -144,8 +163,10 @@ export function herdrEnv(t: TestContext, overrides: Record<string, string | unde
 	}
 	// Surviving state outlives a single test, so every case starts from empty.
 	forgetTab(WORKTREE);
+	forgetCheckpoint(WORKTREE);
 	t.after(() => {
 		forgetTab(WORKTREE);
+		forgetCheckpoint(WORKTREE);
 		fs.rmSync(scratch, { recursive: true, force: true });
 		for (const [key, value] of originals) {
 			if (value === undefined) delete process.env[key];
