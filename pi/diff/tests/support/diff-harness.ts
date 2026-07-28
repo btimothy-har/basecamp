@@ -109,9 +109,10 @@ export function harness(options: HarnessOptions = {}): Harness {
 	const pi = {
 		exec,
 		events: { emit: () => {} },
+		// Returns void, like the real ExtensionAPI surface: the session reports its
+		// own delivery failures, so extension code is handed no result to await.
 		sendUserMessage: (content: string) => {
 			sent.push({ content });
-			return Promise.resolve();
 		},
 		registerCommand: (_name: string, spec: { handler: CommandHandler }) => {
 			handler = spec.handler;

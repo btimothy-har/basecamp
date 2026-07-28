@@ -108,6 +108,15 @@ export interface RecordedAnnotation {
 type StampedAnnotation = Annotation & { id: string };
 type StampedFile = Omit<AnnotatedFile, "annotations"> & { annotations: StampedAnnotation[] };
 
+/**
+ * Two annotations describe the same thing when they share a range and a
+ * headline; only the rationale may have been corrected. Identity (the key)
+ * includes the rationale, so this is deliberately the coarser comparison.
+ */
+function sameAnchor(a: Annotation, b: Annotation): boolean {
+	return a.newRange[0] === b.newRange[0] && a.newRange[1] === b.newRange[1] && a.summary === b.summary;
+}
+
 export interface WriteResult {
 	path: string;
 	/** Total files in the sidecar after the write. */
@@ -142,7 +151,6 @@ function readSidecar(worktreeDir: string): Sidecar | null {
  * path's annotations unremovable as ambiguous).
  */
 function stampFiles(files: AnnotatedFile[]): StampedFile[] {
-	const seen = new Set<string>();
 	const byPath = new Map<string, StampedFile>();
 	for (const f of files) {
 		let entry = byPath.get(f.path);
@@ -151,10 +159,13 @@ function stampFiles(files: AnnotatedFile[]): StampedFile[] {
 			byPath.set(f.path, entry);
 		}
 		for (const a of f.annotations) {
-			const id = annotationId(f.path, a.newRange, a.summary, a.rationale);
-			if (seen.has(id)) continue;
-			seen.add(id);
-			entry.annotations.push({ ...a, id });
+			const stamped = { ...a, id: annotationId(f.path, a.newRange, a.summary, a.rationale) };
+			const at = entry.annotations.findIndex((held) => sameAnchor(held, stamped));
+			// Supersede within the batch exactly as a correction supersedes an already
+			// stored annotation — the guarantee cannot depend on whether a sidecar for
+			// this span happens to exist yet. Identical resubmissions collapse here too.
+			if (at >= 0) entry.annotations[at] = stamped;
+			else entry.annotations.push(stamped);
 		}
 		if (f.summary !== undefined) entry.summary = f.summary;
 	}
@@ -226,10 +237,7 @@ function mergeSidecar(
 		for (const a of incomingFile.annotations) {
 			const id = a.id;
 			if (present.has(id)) continue; // Exact duplicate — collapse.
-			const superseded = entry.annotations.findIndex(
-				(stored) =>
-					stored.newRange[0] === a.newRange[0] && stored.newRange[1] === a.newRange[1] && stored.summary === a.summary,
-			);
+			const superseded = entry.annotations.findIndex((stored) => sameAnchor(stored, a));
 			if (superseded >= 0) {
 				present.delete(entry.annotations[superseded]?.id ?? "");
 				entry.annotations[superseded] = a;

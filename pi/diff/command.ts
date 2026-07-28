@@ -139,9 +139,9 @@ function deliver(pi: ExtensionAPI, ctx: ExtensionContext, notes: UserNote[]): vo
 	// them like any other instruction from the user, not like extension output.
 	// Only annotations the user actually wrote reach here, which is what makes
 	// speaking as the user honest; an empty review returns above without a turn.
-	void Promise.resolve(pi.sendUserMessage(formatAnnotations(notes), { deliverAs: "followUp" })).catch(() => {
-		ctx.ui.notify("/diff could not deliver your annotations to the agent.", "error");
-	});
+	// Handing the message over is synchronous on this surface, and the session
+	// reports its own delivery failures, so there is no local result to inspect.
+	pi.sendUserMessage(formatAnnotations(notes), { deliverAs: "followUp" });
 }
 
 interface DiffTarget {
@@ -300,8 +300,9 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	}
 
 	await closeAndForget(pi, worktreeDir, tab.value.tabId);
-	// Deliver before consuming: the notes exist only in memory until they are
-	// sent, so a failure while clearing state must not be able to lose them.
+	// Hand the notes over before touching local state: hunk's window is already
+	// closed, so this is the only copy, and clearing the sidecar can still throw
+	// on a permissions or busy error.
 	deliver(pi, ctx, [...drained.notes, ...read.notes]);
 	consumeReview(worktreeDir, resolved, launch.sidecarAttached);
 }
