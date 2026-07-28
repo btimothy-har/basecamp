@@ -102,9 +102,14 @@ export function registerDispatchAgentTool(
 			const requestedAgentConfig = requestedAgent
 				? (discoverAgents().find((candidate) => candidate.name === requestedAgent) ?? null)
 				: null;
-			// Deliverable-anchored posture: only a `deliverable: true` persona (worker) mints a
-			// branch; every other persona and ad-hoc runs are branchless report runs.
-			const kind = requestedAgentConfig?.deliverable ? ("deliverable" as const) : ("report" as const);
+			// Ad-hoc dispatches (no `agent`) default to deliverable posture — they mint a branch
+			// from clean HEAD for merge integration. Named personas use their own `deliverable`
+			// flag: report personas (scout, review specialists) stay report-only.
+			const kind = !requestedAgent
+				? ("deliverable" as const)
+				: requestedAgentConfig?.deliverable
+					? ("deliverable" as const)
+					: ("report" as const);
 
 			// Deliverable branches are handle-keyed, so provisioning happens per dispatch attempt
 			// with a fresh per-attempt worktree token: a duplicate-handle rejection discards the

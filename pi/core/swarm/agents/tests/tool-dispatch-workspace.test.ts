@@ -22,7 +22,7 @@ useTempWorktreesRoot();
 describe("dispatch_agent workspace provisioning", () => {
 	installDaemonToolTestHooks();
 
-	it("dispatch_agent gives a worker a deliverable branch spec from a clean parent", async (t) => {
+	it("dispatch_agent gives an ad-hoc dispatch a deliverable branch spec from a clean parent", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}`;
 		t.after(() => fs.rmSync(path.join(worktreesRoot(), "bc-tool-test"), { recursive: true, force: true }));
@@ -37,7 +37,7 @@ describe("dispatch_agent workspace provisioning", () => {
 
 			const executePromise = dispatchTool.execute(
 				"1",
-				{ task: "hello world", agent: "worker" },
+				{ task: "hello world" },
 				new AbortController().signal,
 				() => {},
 				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
@@ -143,7 +143,7 @@ describe("dispatch_agent workspace provisioning", () => {
 
 			const executePromise = dispatchTool.execute(
 				"1",
-				{ task: "hello world", agent: "worker" },
+				{ task: "hello world" },
 				new AbortController().signal,
 				() => {},
 				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
@@ -187,7 +187,7 @@ describe("dispatch_agent workspace provisioning", () => {
 
 			const executePromise = dispatchTool.execute(
 				"1",
-				{ task: "hello world", agent: "worker" },
+				{ task: "hello world" },
 				new AbortController().signal,
 				() => {},
 				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
@@ -250,7 +250,7 @@ describe("dispatch_agent workspace provisioning", () => {
 
 			const executePromise = dispatchTool.execute(
 				"1",
-				{ task: "hello world", agent: "worker" },
+				{ task: "hello world" },
 				new AbortController().signal,
 				() => {},
 				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
@@ -278,7 +278,7 @@ describe("dispatch_agent workspace provisioning", () => {
 		}
 	});
 
-	it("dispatch_agent surfaces commit-first guidance when a worker is dispatched from a dirty parent", async (t) => {
+	it("dispatch_agent surfaces commit-first guidance when an ad-hoc dispatch targets a dirty parent", async (t) => {
 		trackSkillInvocation("agents");
 		const repoName = `bc-tool-test/r-${process.pid}-${Date.now()}-dirty`;
 		t.after(() => fs.rmSync(path.join(worktreesRoot(), "bc-tool-test"), { recursive: true, force: true }));
@@ -295,13 +295,10 @@ describe("dispatch_agent workspace provisioning", () => {
 			registerDaemonTools(pi, async () => connection, daemonToolDeps);
 			const dispatchTool = toolByName(tools, "dispatch_agent");
 
-			const result = await dispatchTool.execute(
-				"1",
-				{ task: "implement it", agent: "worker" },
-				new AbortController().signal,
-				() => {},
-				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
-			);
+			const result = await dispatchTool.execute("1", { task: "implement it" }, new AbortController().signal, () => {}, {
+				model: "claude-sonnet",
+				sessionManager: { getSessionId: () => "session-id" },
+			});
 
 			assert.equal(result.isError, true);
 			assert.match(result.content[0].text, /commit your WIP first/);

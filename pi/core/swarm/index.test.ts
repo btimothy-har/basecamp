@@ -94,7 +94,6 @@ describe("core/swarm primitive entrypoint", () => {
 				"scout",
 				"security-specialist",
 				"testing-specialist",
-				"worker",
 			]),
 		);
 	});
