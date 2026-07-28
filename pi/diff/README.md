@@ -15,9 +15,20 @@ Reviews are user-initiated checkpoints. Each completed `/diff` records the workt
 /diff        → full review; checkpoint moves up
 ```
 
-`/diff last` never advances the checkpoint — it is a second look at the same span, so running it twice shows the same incremental diff. With no recorded checkpoint it falls back to a full review (with a notice) and records one. Empty diffs run normally and still record.
+`/diff last` never advances the checkpoint — it is a second look at the same span, so running it twice shows the same incremental diff. With no usable checkpoint it falls back to a full review (with a notice) and records one. Empty diffs run normally and still record.
 
-Checkpoints live in a `processScoped` map (`basecamp.diffCheckpoints`) keyed by worktree: they survive `/reload` but not a restart — deliberately, since hunk sessions die with the process too. Each checkpoint also records the merge-base it was taken against, and is dropped when that base no longer resolves: worktree directories are reused across branches, and a checkpoint taken on one branch is meaningless on another. Under the clean-tree assumption the checkpoint is just a SHA; nothing snapshots dirty-tree state.
+Checkpoints live in a `processScoped` map (`basecamp.diffCheckpoints`) keyed by worktree: they survive `/reload` but not a restart — deliberately, since hunk sessions die with the process too.
+
+A checkpoint is followed only when **both** guards hold, because either alone is insufficient:
+
+| guard | catches |
+|---|---|
+| recorded merge-base still resolves | the base moved under the branch (fetch, rebase onto a new tip) |
+| `last` is an ancestor of `HEAD` | sibling branches (which *share* a merge-base) and amend/rebase orphans |
+
+Without the ancestry check a checkpoint from a sibling branch passes validation, and `git diff <its-head>` renders that branch's commits as reversals — a span the user never made.
+
+**Accepted limitation:** the checkpoint is a commit SHA, and `hunk diff <sha>` includes the working tree, so uncommitted work already reviewed under a base `/diff` reappears in the next `/diff last`. Recording a dirty-tree snapshot (`git stash create`) would close it at the cost of dangling objects and GC coupling; the clean-tree assumption is the deliberate trade.
 
 The tab label carries the mode (`diff: <label> (last)`) so two tabs are distinguishable.
 
@@ -45,11 +56,13 @@ Notes are read on cancel as well as confirm. Text the user already wrote is thei
 
 ## Annotation lifecycle
 
-The agent annotates **as it works**, not once at the end. Each `annotate_changeset` call merges into the per-worktree sidecar (same-path files append, exact duplicates collapse by key, latest summaries win), and the next `/diff` whose target matches the sidecar's stamp renders everything accumulated. At review close — notes read, tab closed — the sidecar is **cleared** and the checkpoint advances, in that order: the advance is what guarantees cleared rationale is never re-rendered against the same span. On any earlier failure (unread notes, unopened tab) neither happens, so a retry sees the same span with its rationale intact.
+The agent annotates **as it works**, not once at the end. Each `annotate_changeset` call merges into the per-worktree sidecar (same-path entries coalesce, exact duplicates collapse by key, a corrected rationale supersedes in place, latest summaries win), and the next review of the same span renders everything accumulated. At review close — notes read, tab closed — the sidecar is **cleared**, but only when that review actually attached it: clearing rationale a launch never rendered would destroy it unread, so an unattached sidecar is left for the review that can show it. On any earlier failure (unread notes, unopened tab) nothing is consumed, so a retry sees the same span with its rationale intact.
 
-Annotations are stamped with the **last checkpoint** — the coordinates the next `/diff last` reviews — so rationale and review share line numbers by construction. With no checkpoint recorded the stamp falls back to HEAD, which under the clean-tree assumption *is* the last diff point; the store self-initializes. A merge only happens within one anchor: a call stamped with a different base replaces the sidecar's files, because anything carrying an older anchor was never reviewed and describes a span that is gone.
+The anchor is **span identity, not a diff target**. Annotations are stamped with the review base, and a launch attaches the sidecar when that base still matches — in either mode. This works because annotation ranges are recorded against the *new* side of the diff, which is the working tree whichever target is used: rationale valid for an incremental view is equally valid in the full one. Matching against the launch target instead is the trap — the annotate-time anchor and a `/diff last` target are different quantities, so on a feature branch they never agree and a full `/diff` silently renders nothing. Stamping the base also makes the anchor stable as commits land, which is what lets calls accumulate rather than replace each other; a call carrying a genuinely different base replaces the files, because that rationale describes a span that is gone.
 
-Each annotation carries a deterministic key (`sha256(path, range, summary)[:12]`), returned in the tool confirmation so the agent can reference it. `remove_annotation(key)` withdraws one — the case it exists for is annotate → revise the code above it → withdraw the mis-anchored note → annotate again. Removal prunes empty file entries and deletes an emptied sidecar outright (hunk is never handed a husk). An unknown key errors loudly — it usually means a completed `/diff` already consumed it.
+Each annotation carries a deterministic key (`sha256(path, range, summary, rationale)[:12]`), returned in the tool confirmation — which reports what *this call* added, so the count and the listed keys describe the same set. `remove_annotation(key)` withdraws one — the case it exists for is annotate → revise the code above it → withdraw the mis-anchored note → annotate again. Removal prunes empty file entries and deletes an emptied sidecar outright (hunk is never handed a husk). An unknown key errors loudly — it usually means a completed `/diff` already consumed it.
+
+The rationale reaches the user only through the sidecar, and the user's notes reach the agent as a **user message** — they are the user's own words, so they arrive as if typed rather than as extension output. Only annotations the user actually wrote are delivered; an empty review notifies and sends nothing.
 
 ## Why sidecars are launch-only
 
