@@ -108,8 +108,8 @@ export function registerDispatchAgentTool(
 			const kind = !requestedAgent
 				? ("deliverable" as const)
 				: requestedAgentConfig?.deliverable
-						? ("deliverable" as const)
-						: ("report" as const);
+					? ("deliverable" as const)
+					: ("report" as const);
 
 			// Deliverable branches are handle-keyed, so provisioning happens per dispatch attempt
 			// with a fresh per-attempt worktree token: a duplicate-handle rejection discards the

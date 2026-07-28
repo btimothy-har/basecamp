@@ -295,13 +295,10 @@ describe("dispatch_agent workspace provisioning", () => {
 			registerDaemonTools(pi, async () => connection, daemonToolDeps);
 			const dispatchTool = toolByName(tools, "dispatch_agent");
 
-			const result = await dispatchTool.execute(
-				"1",
-				{ task: "implement it" },
-				new AbortController().signal,
-				() => {},
-				{ model: "claude-sonnet", sessionManager: { getSessionId: () => "session-id" } },
-			);
+			const result = await dispatchTool.execute("1", { task: "implement it" }, new AbortController().signal, () => {}, {
+				model: "claude-sonnet",
+				sessionManager: { getSessionId: () => "session-id" },
+			});
 
 			assert.equal(result.isError, true);
 			assert.match(result.content[0].text, /commit your WIP first/);

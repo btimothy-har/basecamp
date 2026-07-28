@@ -239,7 +239,7 @@ describe("file-length reminder", () => {
 
 	it("keeps the shared craft guidance aligned with the runtime policy", () => {
 		// The caps live in the craft block, which every code-writing consumer composes — including
-		// the mutative worker, which no longer carries its own copy.
+		// dispatched workers, whose contract no longer carries its own copy.
 		const craft = fs.readFileSync(
 			path.resolve(import.meta.dirname, "..", "..", "system-prompt", "defaults", "craft.md"),
 			"utf8",
@@ -255,10 +255,11 @@ describe("file-length reminder", () => {
 			assert.ok(craft.includes(guidance), `craft block should include ${guidance}`);
 		}
 
-		const workerPrompt = fs.readFileSync(
-			path.resolve(import.meta.dirname, "..", "..", "core", "swarm", "agents", "builtin", "worker.md"),
+		// The deliverable workspace contract (in executor.ts) must not restate the caps.
+		const executor = fs.readFileSync(
+			path.resolve(import.meta.dirname, "..", "..", "core", "swarm", "agents", "executor.ts"),
 			"utf8",
 		);
-		assert.ok(!workerPrompt.includes("soft caps"), "worker must not restate the caps");
+		assert.ok(!executor.includes("soft caps"), "deliverable contract must not restate the caps");
 	});
 });
