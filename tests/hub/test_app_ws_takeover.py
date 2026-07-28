@@ -149,6 +149,33 @@ def test_ws_wait_does_not_block_connection_read_loop(tmp_path: Path) -> None:
             assert replies[1]["request_id"] == "wait-block-1"
 
 
+def test_ws_disconnect_mid_wait_leaves_no_pending_reply_task(tmp_path: Path) -> None:
+    # A client that disconnects while a wait is in flight must not leave the
+    # spawned reply task alive: it would resolve later and write to a dead
+    # socket. Task cancellation on handler exit is what lets the app shut down.
+    app = _build_app(tmp_path)
+    pending_before_close: list[int] = []
+
+    with TestClient(app) as client:
+        with client.websocket_connect("/ws") as ws:
+            _register_ws(ws, node_id="node-1", role="agent", parent_id=None, sibling_group="sg-main")
+            ws.send_json(
+                {
+                    "type": "message_status",
+                    "v": PROTOCOL_VERSION,
+                    "request_id": "status-hang",
+                    "message_id": "never-delivered",
+                    "wait_until_delivery": True,
+                    "timeout_s": 30,
+                }
+            )
+            pending_before_close.append(1)
+
+    # Reaching here at all is the assertion: an uncancelled wait task would keep
+    # the TestClient portal from tearing the app down.
+    assert pending_before_close == [1]
+
+
 def test_registry_remove_connection_generation_guard() -> None:
     registry = Registry()
     first_gen = registry.set_connection("node-1", object())

@@ -71,8 +71,8 @@ def create_app(
     registry = Registry()
     daemon_socket_path = daemon_uds or ""
     reapers: set[asyncio.Task[None]] = set()
+    # Deliveries target other connections, so they outlive the requester's socket.
     delivery_tasks: set[asyncio.Task[None]] = set()
-    wait_tasks: set[asyncio.Task[None]] = set()
 
     register_http_routes(app, store=store, registry=registry, dashboard_access=dashboard_access)
 
@@ -82,6 +82,10 @@ def create_app(
 
         node_id: str | None = None
         connection_generation = -1
+        # Waits reply to *this* socket, so they belong to this connection and are
+        # cancelled when it goes away — otherwise a client that disconnects
+        # mid-wait leaves a task awaiting a run only to write to a dead socket.
+        reply_tasks: set[asyncio.Task[None]] = set()
         try:
             first_payload = await websocket.receive_json()
             if not isinstance(first_payload, dict):
@@ -235,8 +239,8 @@ def create_app(
                             requester_node_id=parsed.node_id,
                         )
                     )
-                    wait_tasks.add(wait_task)
-                    wait_task.add_done_callback(wait_tasks.discard)
+                    reply_tasks.add(wait_task)
+                    wait_task.add_done_callback(reply_tasks.discard)
                     continue
                 if isinstance(inbound, ListAgentsFrame):
                     await handle_list_agents(
@@ -276,8 +280,8 @@ def create_app(
                             requester_node_id=parsed.node_id,
                         )
                     )
-                    wait_tasks.add(status_task)
-                    status_task.add_done_callback(wait_tasks.discard)
+                    reply_tasks.add(status_task)
+                    status_task.add_done_callback(reply_tasks.discard)
                     continue
                 if isinstance(inbound, CancelFrame):
                     await handle_cancel(
@@ -322,6 +326,7 @@ def create_app(
                 message=f"Failed to parse frame: {exc}",
             )
         finally:
+            await _cancel_reply_tasks(reply_tasks)
             # Generation-guarded cleanup: a stale handler (replaced via takeover
             # of a zombie incumbent) must not remove or reap the newer entry.
             if node_id is not None and registry.remove_connection(node_id, generation=connection_generation):
@@ -356,6 +361,19 @@ async def _incumbent_is_live(incumbent: WebSocket) -> bool:
     except Exception:  # noqa: BLE001 — any send failure reads as a dead incumbent
         return False
     return True
+
+
+async def _cancel_reply_tasks(tasks: set[asyncio.Task[None]]) -> None:
+    """Cancel this connection's outstanding reply tasks and await their exit."""
+
+    pending = [task for task in tasks if not task.done()]
+    for task in pending:
+        task.cancel()
+    for task in pending:
+        try:
+            await task
+        except BaseException:  # noqa: BLE001 — teardown swallows cancellation and send failures alike
+            continue
 
 
 async def _close_websocket_quietly(websocket: WebSocket) -> None:

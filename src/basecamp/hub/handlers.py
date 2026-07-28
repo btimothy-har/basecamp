@@ -46,6 +46,20 @@ from .swarm.service import (
 )
 
 
+async def _send_reply(websocket: WebSocket, frame: object) -> None:
+    """Write a deferred reply, tolerating a requester that already went away.
+
+    Waits and delivery-status waits resolve on their own schedule, so the socket
+    they answer may be gone by then — exactly the long-running case this exists
+    for. The awaited work is already done and recorded; only the reply is lost.
+    """
+
+    try:
+        await websocket.send_json(serialize_frame(frame))
+    except Exception:  # noqa: BLE001 — a dead requester is not an error worth raising
+        return
+
+
 async def handle_dispatch(
     *,
     websocket: WebSocket,
@@ -90,8 +104,9 @@ async def handle_wait(
         registry=registry,
         requester_node_id=requester_node_id,
     )
-    await websocket.send_json(
-        serialize_frame(WaitResultFrame(type="wait_result", request_id=frame.request_id, results=results))
+    await _send_reply(
+        websocket,
+        WaitResultFrame(type="wait_result", request_id=frame.request_id, results=results),
     )
 
 
@@ -180,16 +195,13 @@ async def handle_message_status(
     registry: Registry,
     requester_node_id: str,
 ) -> None:
-    await websocket.send_json(
-        serialize_frame(
-            await message_status_result(
-                frame=frame,
-                requester_node_id=requester_node_id,
-                store=store,
-                registry=registry,
-            )
-        )
+    result = await message_status_result(
+        frame=frame,
+        requester_node_id=requester_node_id,
+        store=store,
+        registry=registry,
     )
+    await _send_reply(websocket, result)
 
 
 async def handle_cancel(
