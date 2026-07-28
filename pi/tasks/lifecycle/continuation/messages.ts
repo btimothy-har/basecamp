@@ -7,7 +7,6 @@
  */
 
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 /** The rubric needs enough of the stop to judge it, not the whole thing. */
 const STOP_TEXT_LIMIT = 4_000;
@@ -57,14 +56,4 @@ export function finalAssistantText(messages: readonly AgentMessage[]): string {
 export function providerErrored(messages: readonly AgentMessage[]): boolean {
 	const stopReason = lastAssistantMessage(messages)?.stopReason;
 	return stopReason === "error" || stopReason === "aborted";
-}
-
-export function recentUserMessages(sessionManager: ExtensionContext["sessionManager"], limit = 5): string[] {
-	const messages: string[] = [];
-	for (const entry of sessionManager.getEntries()) {
-		if (entry.type === "message" && entry.message.role === "user") {
-			messages.push(textFromContent(entry.message.content));
-		}
-	}
-	return messages.slice(-limit);
 }

@@ -10,7 +10,6 @@ import {
 	resolveJudgeModel,
 	runJudge,
 } from "#tasks/lifecycle/continuation/judge.ts";
-import { recentUserMessages } from "#tasks/lifecycle/continuation/messages.ts";
 import { buildRubric, CONTINUATION_RUBRIC, offeredCategories } from "#tasks/lifecycle/continuation/rubric.ts";
 import {
 	type ContinuationVerdict,
@@ -302,41 +301,5 @@ describe("CONTINUATION_RUBRIC", () => {
 		for (const subagent of [false, true]) {
 			assert.equal(buildRubric(subagent).includes("Q (Asked)"), offeredCategories(subagent).includes("Q"));
 		}
-	});
-});
-
-describe("recentUserMessages", () => {
-	function sessionManager(entries: unknown[]): ExtensionContext["sessionManager"] {
-		return { getEntries: () => entries } as ExtensionContext["sessionManager"];
-	}
-
-	it("returns only user-role messages, most-recent-last, respecting the limit", () => {
-		const entries = [
-			{ type: "message", message: { role: "user", content: "first" } },
-			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "reply" }] } },
-			{ type: "custom", data: {} },
-			{ type: "message", message: { role: "user", content: [{ type: "text", text: "second" }] } },
-			{
-				type: "message",
-				message: {
-					role: "user",
-					content: [
-						{ type: "text", text: "third " },
-						{ type: "text", text: "part" },
-					],
-				},
-			},
-		];
-		assert.deepEqual(recentUserMessages(sessionManager(entries)), ["first", "second", "third part"]);
-		assert.deepEqual(recentUserMessages(sessionManager(entries), 2), ["second", "third part"]);
-		assert.deepEqual(recentUserMessages(sessionManager(entries), 1), ["third part"]);
-	});
-
-	it("defaults to the five most recent user messages", () => {
-		const entries = Array.from({ length: 7 }, (_, i) => ({
-			type: "message",
-			message: { role: "user", content: `msg-${i}` },
-		}));
-		assert.deepEqual(recentUserMessages(sessionManager(entries)), ["msg-2", "msg-3", "msg-4", "msg-5", "msg-6"]);
 	});
 });

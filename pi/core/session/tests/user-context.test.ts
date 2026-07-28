@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { SessionEntry } from "@earendil-works/pi-coding-agent";
-import { buildUserContext } from "#core/session/user-context.ts";
+import { buildUserContext, recentUserMessages } from "#core/session/user-context.ts";
 
 function entry(message: unknown): SessionEntry {
 	return { type: "message", message } as unknown as SessionEntry;
@@ -89,5 +89,37 @@ describe("buildUserContext", () => {
 		assert.match(context, /\[fenced code block omitted\]/);
 		assert.match(context, /\[\d+ log-like lines omitted\]/);
 		assert.doesNotMatch(context, /const secret = 1/);
+	});
+});
+
+describe("recentUserMessages", () => {
+	it("returns only user-role messages, most-recent-last, respecting the limit", () => {
+		const entries = [
+			{ type: "message", message: { role: "user", content: "first" } },
+			{ type: "message", message: { role: "assistant", content: [{ type: "text", text: "reply" }] } },
+			{ type: "custom", data: {} },
+			{ type: "message", message: { role: "user", content: [{ type: "text", text: "second" }] } },
+			{
+				type: "message",
+				message: {
+					role: "user",
+					content: [
+						{ type: "text", text: "third " },
+						{ type: "text", text: "part" },
+					],
+				},
+			},
+		];
+		assert.deepEqual(recentUserMessages(entries as SessionEntry[]), ["first", "second", "third part"]);
+		assert.deepEqual(recentUserMessages(entries as SessionEntry[], 2), ["second", "third part"]);
+		assert.deepEqual(recentUserMessages(entries as SessionEntry[], 1), ["third part"]);
+	});
+
+	it("defaults to the five most recent user messages", () => {
+		const entries = Array.from({ length: 7 }, (_, i) => ({
+			type: "message",
+			message: { role: "user", content: `msg-${i}` },
+		}));
+		assert.deepEqual(recentUserMessages(entries as SessionEntry[]), ["msg-2", "msg-3", "msg-4", "msg-5", "msg-6"]);
 	});
 });

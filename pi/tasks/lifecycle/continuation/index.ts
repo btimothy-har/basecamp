@@ -19,10 +19,11 @@ import { isCopilotMode } from "#core/agent-mode/copilot.ts";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { errorMessage } from "#core/errors.ts";
 import { isSubagent } from "#core/host/env.ts";
+import { recentUserMessages } from "#core/session/user-context.ts";
 import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
 import { buildStateSnapshot } from "#tasks/lifecycle/text.ts";
 import { buildJudgeContext, resolveJudgeModel, runJudge } from "./judge.ts";
-import { finalAssistantText, providerErrored, recentUserMessages } from "./messages.ts";
+import { finalAssistantText, providerErrored } from "./messages.ts";
 import { createNudgeBudget, evaluatePreconditions } from "./policy.ts";
 import { type ContinuationAuditEntry, type ContinuationVerdict, MAX_CONSECUTIVE_NUDGES } from "./types.ts";
 
@@ -134,7 +135,7 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 				readOnly: isReadOnly(),
 				subagent,
 				finalAssistantMessage: stopMessage,
-				recentUserMessages: recentUserMessages(ctx.sessionManager),
+				recentUserMessages: recentUserMessages(ctx.sessionManager.getEntries()),
 			});
 
 			// The run is still streaming here, so the session cannot settle until this
