@@ -12,6 +12,7 @@ from app_helpers import _answer_liveness_probe, _build_app, _build_app_with_stor
 from fastapi.testclient import TestClient
 
 import basecamp.hub.app as app_module
+import basecamp.hub.handlers as handlers_module
 from basecamp.hub.frames import PROTOCOL_VERSION
 from basecamp.hub.registry import Registry
 
@@ -299,6 +300,41 @@ def test_ws_disconnect_mid_wait_cancels_the_pending_reply_task(tmp_path: Path) -
                 time.sleep(0.02)
             assert tasks[0].done(), "reply task outlived its connection"
             assert tasks[0].cancelled()
+
+
+def test_ws_wait_store_failure_still_answers_the_requester(tmp_path: Path) -> None:
+    # A reply task runs detached, so a store failure inside it used to reach
+    # nobody: no wait_result, no error, socket open, and a client whose
+    # waitForFrame has no deadline waits forever. The requester must always get
+    # a correlated reply; "unknown" is the honest answer when the daemon could
+    # not determine the state.
+    app = _build_app(tmp_path)
+
+    class StoreFailureError(RuntimeError):
+        pass
+
+    def boom(**_kwargs: object) -> None:
+        raise StoreFailureError
+
+    with mock.patch.object(handlers_module, "wait_for_agents", boom):
+        with TestClient(app) as client:
+            with client.websocket_connect("/ws") as ws:
+                _register_ws(ws, node_id="node-1", role="agent", parent_id=None, sibling_group="sg-main")
+                ws.send_json(
+                    {
+                        "type": "wait",
+                        "v": PROTOCOL_VERSION,
+                        "request_id": "wait-failing",
+                        "agent_handles": ["amber-fox-a1b2c3"],
+                        "mode": "all",
+                        "timeout_s": 30,
+                    }
+                )
+                reply = ws.receive_json()
+
+    assert reply["type"] == "wait_result"
+    assert reply["request_id"] == "wait-failing"
+    assert [item["status"] for item in reply["results"]] == ["unknown"]
 
 
 def test_registry_claim_connection_is_compare_and_set() -> None:

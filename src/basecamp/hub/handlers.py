@@ -20,12 +20,14 @@ from .frames import (
     ListAgentsFrame,
     ListAgentsResultFrame,
     MessageStatusFrame,
+    MessageStatusResultFrame,
     PeerMessageDeliveryFrame,
     PeerMessageFrame,
     ReviseWorkstreamFrame,
     UpdateWorkstreamFrame,
     WaitFrame,
     WaitResultFrame,
+    WaitResultItem,
     serialize_frame,
 )
 from .registry import Registry
@@ -98,12 +100,20 @@ async def handle_wait(
     registry: Registry,
     requester_node_id: str,
 ) -> None:
-    results = await wait_for_agents(
-        frame=frame,
-        store=store,
-        registry=registry,
-        requester_node_id=requester_node_id,
-    )
+    try:
+        results = await wait_for_agents(
+            frame=frame,
+            store=store,
+            registry=registry,
+            requester_node_id=requester_node_id,
+        )
+    except Exception:  # noqa: BLE001 — the requester must still get a correlated reply
+        results = [
+            WaitResultItem(agent_handle=agent_handle, status="unknown", result=None, error=None)
+            for agent_handle in frame.agent_handles
+        ] + [
+            WaitResultItem(agent_id=agent_id, status="unknown", result=None, error=None) for agent_id in frame.agent_ids
+        ]
     await _send_reply(
         websocket,
         WaitResultFrame(type="wait_result", request_id=frame.request_id, results=results),
@@ -195,12 +205,25 @@ async def handle_message_status(
     registry: Registry,
     requester_node_id: str,
 ) -> None:
-    result = await message_status_result(
-        frame=frame,
-        requester_node_id=requester_node_id,
-        store=store,
-        registry=registry,
-    )
+    try:
+        result = await message_status_result(
+            frame=frame,
+            requester_node_id=requester_node_id,
+            store=store,
+            registry=registry,
+        )
+    except Exception:  # noqa: BLE001 — the requester must still get a correlated reply
+        result = MessageStatusResultFrame(
+            type="message_status_result",
+            request_id=frame.request_id,
+            message_id=frame.message_id,
+            status="unknown",
+            error=None,
+            created_at=None,
+            sent_at=None,
+            queued_at=None,
+            failed_at=None,
+        )
     await _send_reply(websocket, result)
 
 
