@@ -82,7 +82,7 @@ Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`,
 
 ### Diff Surface
 
-`/diff` is Basecamp's diff/review surface: primary-only, hard-dependent on both Herdr and an installed `hunk`, scoped to `merge-base(defaultBranch, HEAD)` as a single `git diff` target so committed and uncommitted work show together. It blocks the session while you review, then returns your inline notes as line-anchored feedback; `annotate_changeset` lets the working agent seed its own rationale onto the same diff. The constraints that shape it — why the block is load-bearing, why sidecars are launch-only, and why every `herdr pane run` argument is quoted — are in `pi/diff/README.md`.
+`/diff` is Basecamp's diff/review surface: it opens hunk in a split Herdr pane beside the session, and is primary-only, hard-dependent on both Herdr and an installed `hunk`, scoped to `merge-base(defaultBranch, HEAD)` as a single `git diff` target so committed and uncommitted work show together. It blocks the session while you review, then returns your inline notes as line-anchored feedback; `annotate_changeset` lets the working agent seed its own rationale onto the same diff. The constraints that shape it — why the block is load-bearing, why sidecars are launch-only, and why every `herdr pane run` argument is quoted — are in `pi/diff/README.md`.
 
 ### Code Review
 

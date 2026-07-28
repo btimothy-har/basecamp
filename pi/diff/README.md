@@ -1,6 +1,6 @@
 # diff
 
-Basecamp's diff/review surface, filling the gap left when Companion was retired: `/diff` opens [hunk](https://github.com/modem-dev/hunk) in a Herdr tab, blocks the session while you review, and returns your inline annotations as line-anchored feedback. `annotate_changeset` lets the working agent put its own rationale beside the same diff.
+Basecamp's diff/review surface, filling the gap left when Companion was retired: `/diff` opens [hunk](https://github.com/modem-dev/hunk) in a split Herdr pane, blocks the session while you review, and returns your inline annotations as line-anchored feedback. `annotate_changeset` lets the working agent put its own rationale beside the same diff.
 
 Basecamp launches and drives hunk; hunk renders and captures. Both are hard dependencies — absent Herdr or hunk, `/diff` reports why and changes nothing.
 
@@ -30,16 +30,16 @@ Without the ancestry check a checkpoint from a sibling branch passes validation,
 
 **Accepted limitation:** the checkpoint is a commit SHA, and `hunk diff <sha>` includes the working tree, so uncommitted work already reviewed under a base `/diff` reappears in the next `/diff last`. Recording a dirty-tree snapshot (`git stash create`) would close it at the cost of dangling objects and GC coupling; the clean-tree assumption is the deliberate trade.
 
-The tab label carries the mode (`diff: <label> (last)`) so two tabs are distinguishable.
+`herdr pane split` has no `--label` flag, so the pane's terminal title comes from hunk rather than carrying the mode. Two concurrent reviews of the same worktree are not supported — only one review per worktree runs at a time, tracked by `OwnedReview`.
 
 ## Flow
 
 ```
-herdr tab create --workspace $HERDR_WORKSPACE_ID --cwd <worktree> \
-                 --label "diff: <label>" --no-focus --env HUNK_DISABLE_UPDATE_NOTICE=1
+herdr pane split $HERDR_PANE_ID --direction right --ratio 0.5 --cwd <worktree> \
+                --no-focus --env HUNK_DISABLE_UPDATE_NOTICE=1
 herdr pane run <pane_id> 'hunk' 'diff' '<target>' ['--agent-context' '<sidecar>']
 hunk session comment list --repo <worktree> --type user --json
-herdr tab close <tab_id>
+herdr pane close <pane_id>
 ```
 
 The default target is `merge-base(detectDefaultBranch(), HEAD)` passed as a **single** argument. `hunk diff <target>` becomes `git diff --no-ext-diff --find-renames <target>`, so one view carries committed *and* uncommitted work — three-dot `main...HEAD` would show only commits. On the default branch the merge-base is HEAD, which degrades to a working-tree diff with no special case. `/diff last` substitutes the recorded checkpoint SHA as the target; nothing else in the flow changes.
@@ -56,7 +56,7 @@ Notes are read on cancel as well as confirm. Text the user already wrote is thei
 
 ## Annotation lifecycle
 
-The agent annotates **as it works**, not once at the end. Each `annotate_changeset` call merges into the per-worktree sidecar (same-path entries coalesce, exact duplicates collapse by key, a corrected rationale supersedes in place, latest summaries win), and the next review of the same span renders everything accumulated. At review close — notes read, tab closed — the sidecar is **cleared**, but only when that review actually attached it: clearing rationale a launch never rendered would destroy it unread, so an unattached sidecar is left for the review that can show it. On any earlier failure (unread notes, unopened tab) nothing is consumed, so a retry sees the same span with its rationale intact.
+The agent annotates **as it works**, not once at the end. Each `annotate_changeset` call merges into the per-worktree sidecar (same-path entries coalesce, exact duplicates collapse by key, a corrected rationale supersedes in place, latest summaries win), and the next review of the same span renders everything accumulated. At review close — notes read, pane closed — the sidecar is **cleared**, but only when that review actually attached it: clearing rationale a launch never rendered would destroy it unread, so an unattached sidecar is left for the review that can show it. On any earlier failure (unread notes, unopened pane) nothing is consumed, so a retry sees the same span with its rationale intact.
 
 The anchor is **span identity, not a diff target**. Annotations are stamped with the review base, and a launch attaches the sidecar when that base still matches — in either mode. This works because annotation ranges are recorded against the *new* side of the diff, which is the working tree whichever target is used: rationale valid for an incremental view is equally valid in the full one. Matching against the launch target instead is the trap — the annotate-time anchor and a `/diff last` target are different quantities, so on a feature branch they never agree and a full `/diff` silently renders nothing. Stamping the base also makes the anchor stable as commits land, which is what lets calls accumulate rather than replace each other; a call carrying a genuinely different base replaces the files, because that rationale describes a span that is gone.
 
@@ -79,17 +79,17 @@ Putting the sidecar inside the root would satisfy reload, but not in a worktree:
 
 ## Reload discards notes across scopes
 
-Reloading a session to the **same** ref preserves its notes; reloading to a **different** ref destroys all of them, agent notes included, with no warning. `/diff` therefore replaces sessions rather than repointing them, and drains a leftover session's user notes before closing its tab.
+Reloading a session to the **same** ref preserves its notes; reloading to a **different** ref destroys all of them, agent notes included, with no warning. `/diff` therefore replaces sessions rather than repointing them, and drains a leftover session's user notes before closing its pane.
 
-The tab id is `processScoped` (`basecamp.diffTabs`) because a hunk tab outlives the session that opened it; losing the id on `/reload` would strand a tab nothing can close.
+The pane id is `processScoped` (`basecamp.diffPanes`) because a hunk pane outlives the session that opened it; losing the id on `/reload` would strand a pane nothing can close.
 
 ## `herdr pane run` is unescaped send-keys
 
-`pane run` types its argument list into the target pane's shell and escapes nothing — `$HOME` expands and `a;touch x` executes. It also cannot re-launch into a pane already running a TUI; keystrokes go to the TUI instead, so closing is `herdr tab close`, never a sent `q`.
+`pane run` types its argument list into the target pane's shell and escapes nothing — `$HOME` expands and `a;touch x` executes. It also cannot re-launch into a pane already running a TUI; keystrokes go to the TUI instead, so closing is `herdr pane close`, never a sent `q`.
 
 `runInHerdrPane` single-quotes every element, including the command name. Git refs legally contain `;`, `$`, `&`, and backticks, so this is a correctness requirement rather than hardening. `/diff` accepts a **closed keyword set** — nothing, or `last` — parsed into a mode enum before anything runs; anything else errors without touching the shell. The invariant that no user input reaches the shell is unchanged: the SHAs that reach the argv are resolved by Basecamp from git, never parsed from the argument string.
 
-`herdr tab create` without an explicit `--workspace` creates the tab in whichever workspace currently has focus rather than the caller's, so `--workspace` is always sent.
+`herdr pane split` splits the current session's pane (`$HERDR_PANE_ID`) rightward, so the diff appears side-by-side in the same tab rather than in a separate tab. `pane split` has no `--label` flag, so the pane's terminal title comes from hunk rather than being set to "diff: <label>".
 
 ## Annotation staleness
 
