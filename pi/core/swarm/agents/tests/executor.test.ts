@@ -184,6 +184,8 @@ describe("workspace contract prompt layer", () => {
 		assert.match(prompt, /## Workspace contract/);
 		assert.match(prompt, /`agent\/quiet-badger-3dc450`/);
 		assert.match(prompt, /only commits on your branch survive/i);
+		assert.match(prompt, /implementation worker/i);
+		assert.match(prompt, /PR-description-style summary/i);
 	});
 
 	it("gives a persona the report-scratch contract for report runs", () => {
@@ -201,7 +203,17 @@ describe("workspace contract prompt layer", () => {
 		assert.match(prompt ?? "", /your report is your only deliverable/i);
 	});
 
-	it("keeps default prompt assembly for persona-less runs: contract rides in the task text", () => {
+	it("keeps default prompt assembly for persona-less deliverable runs: contract with worker guidance rides in the task text", () => {
+		const { args, prompt } = buildToolArgs(null, { kind: "deliverable", branch: "agent/test-handle" });
+		assert.equal(prompt, null, "no --agent-prompt for ad-hoc runs");
+		assert.match(args.at(-1) ?? "", /## Workspace contract/);
+		assert.match(args.at(-1) ?? "", /implementation worker/i);
+		assert.match(args.at(-1) ?? "", /PR-description-style summary/i);
+		assert.match(args.at(-1) ?? "", /only commits on your branch survive/i);
+		assert.match(args.at(-1) ?? "", /Task: inspect tools/);
+	});
+
+	it("keeps default prompt assembly for persona-less report runs: contract rides in the task text", () => {
 		const { args, prompt } = buildToolArgs(null, { kind: "report" });
 		assert.equal(prompt, null, "no --agent-prompt for ad-hoc runs");
 		assert.match(args.at(-1) ?? "", /## Workspace contract/);

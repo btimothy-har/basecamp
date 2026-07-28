@@ -72,7 +72,7 @@ describe("provisionAgentWorkspace — deliverable", () => {
 			agentHandle: "h1",
 			isRetask: false,
 			runToken: "aaaaaa",
-			agentName: "worker",
+			agentName: "adhoc",
 		} as const;
 		assert.equal(await provisionAgentWorkspace(pi, request, null), null);
 		assert.equal(await provisionAgentWorkspace(pi, request, workspace("r", { repo: null })), null);
@@ -91,7 +91,7 @@ describe("provisionAgentWorkspace — deliverable", () => {
 				agentHandle: "quiet-badger-3dc450",
 				isRetask: false,
 				runToken: "3f9a2c",
-				agentName: "worker",
+				agentName: "adhoc",
 			},
 			workspace(repoName),
 		);
@@ -102,7 +102,7 @@ describe("provisionAgentWorkspace — deliverable", () => {
 			{
 				kind: "deliverable",
 				branch,
-				label: "agent-3f9a2c/worker",
+				label: "agent-3f9a2c/adhoc",
 				baseOid: "headoid",
 				branchCreated: true,
 				repoRoot: REPO_ROOT,
@@ -123,7 +123,7 @@ describe("provisionAgentWorkspace — deliverable", () => {
 			() =>
 				provisionAgentWorkspace(
 					pi,
-					{ kind: "deliverable", agentHandle: "h2", isRetask: false, runToken: "aaaaaa", agentName: "worker" },
+					{ kind: "deliverable", agentHandle: "h2", isRetask: false, runToken: "aaaaaa", agentName: "adhoc" },
 					workspace(repoName),
 				),
 			/commit your WIP first/,
@@ -144,7 +144,7 @@ describe("provisionAgentWorkspace — deliverable", () => {
 			() =>
 				provisionAgentWorkspace(
 					pi,
-					{ kind: "deliverable", agentHandle: "h2d", isRetask: false, runToken: "aaaaab", agentName: "worker" },
+					{ kind: "deliverable", agentHandle: "h2d", isRetask: false, runToken: "aaaaab", agentName: "adhoc" },
 					workspace(repoName),
 				),
 			/detached HEAD/,
@@ -160,7 +160,7 @@ describe("provisionAgentWorkspace — deliverable", () => {
 			() =>
 				provisionAgentWorkspace(
 					pi,
-					{ kind: "deliverable", agentHandle: "h3", isRetask: false, runToken: "aaaaaa", agentName: "worker" },
+					{ kind: "deliverable", agentHandle: "h3", isRetask: false, runToken: "aaaaaa", agentName: "adhoc" },
 					workspace(repoName),
 				),
 			/already exists but this is not a retask/,
@@ -183,7 +183,7 @@ describe("provisionAgentWorkspace — deliverable", () => {
 
 		const provision = await provisionAgentWorkspace(
 			pi,
-			{ kind: "deliverable", agentHandle: "h4", isRetask: true, runToken: "bbbbbb", agentName: "worker" },
+			{ kind: "deliverable", agentHandle: "h4", isRetask: true, runToken: "bbbbbb", agentName: "adhoc" },
 			workspace(repoName),
 		);
 
@@ -213,7 +213,7 @@ describe("provisionAgentWorkspace — deliverable", () => {
 
 		const provision = await provisionAgentWorkspace(
 			pi,
-			{ kind: "deliverable", agentHandle: "h5", isRetask: true, runToken: "cccccc", agentName: "worker" },
+			{ kind: "deliverable", agentHandle: "h5", isRetask: true, runToken: "cccccc", agentName: "adhoc" },
 			workspace(repoName),
 		);
 
