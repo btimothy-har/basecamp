@@ -222,7 +222,7 @@ mode prompt, plus read-only constraints when applicable
          ↓
 working style prompt, or subagent prompt for dispatched agents
          ↓
-voice.md and craft.md (always-on output-shape and code-quality guidance)
+voice.md (output shape; primary sessions) then craft.md (code quality; always)
          ↓
 environment.md (CLI usage, Python/uv)
          ↓
