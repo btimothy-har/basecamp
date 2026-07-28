@@ -24,13 +24,6 @@ _SOCKET_MODE = 0o600
 _SERVER_LOCK_MODE = 0o600
 _DEFAULT_SWEEP_INTERVAL_S = 3600.0
 
-# Websocket-level keepalive: a peer that misses pings for this window is a zombie
-# (half-open UDS peer after an unclean client exit, e.g. sleep/wake or kill) and
-# gets its socket closed by the server — without it a dead session's socket only
-# dies when its handler next reads or writes, which a long wait can delay for hours.
-_WS_PING_INTERVAL_S = 20.0
-_WS_PING_TIMEOUT_S = 20.0
-
 
 class HubAlreadyRunningError(LauncherError):
     """Another hub process owns this runtime directory."""
@@ -92,13 +85,7 @@ def create_server(
     """Build a UDS-bound daemon server for the given store."""
 
     app = create_app(store, daemon_uds=uds_path, dashboard_access=dashboard_access)
-    config = uvicorn.Config(
-        app,
-        uds=uds_path,
-        log_level=log_level,
-        ws_ping_interval=_WS_PING_INTERVAL_S,
-        ws_ping_timeout=_WS_PING_TIMEOUT_S,
-    )
+    config = uvicorn.Config(app, uds=uds_path, log_level=log_level)
     return UdsServer(config, sweep_interval_s=sweep_interval_s)
 
 
