@@ -1,6 +1,6 @@
 # Voice
 
-How to shape what you write for the user. Two facts drive it: what is not on screen is forgotten, and knowing the answer is not the same as doing it.
+Shape every message so the user can act on it immediately.
 
 ## Lead with the action
 
