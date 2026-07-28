@@ -6,14 +6,17 @@ import { Value } from "@sinclair/typebox/value";
 import {
 	buildJudgeContext,
 	buildJudgeTool,
-	ContinuationVerdictSchema,
 	parseJudgeResponse,
 	resolveJudgeModel,
 	runJudge,
 } from "#tasks/lifecycle/continuation/judge.ts";
 import { recentUserMessages } from "#tasks/lifecycle/continuation/messages.ts";
 import { buildRubric, CONTINUATION_RUBRIC, offeredCategories } from "#tasks/lifecycle/continuation/rubric.ts";
-import type { ContinuationVerdict, JudgeInput } from "#tasks/lifecycle/continuation/types.ts";
+import {
+	type ContinuationVerdict,
+	ContinuationVerdictSchema,
+	type JudgeInput,
+} from "#tasks/lifecycle/continuation/types.ts";
 
 const fakeModel: Model<any> = {
 	id: "claude-haiku",
@@ -94,32 +97,60 @@ describe("parseJudgeResponse", () => {
 	it("parses valid verdicts for both retrigger values", () => {
 		const retrigger: ContinuationVerdict = { retrigger: true, category: "E", reason: "Stopped on an error." };
 		const stop: ContinuationVerdict = { retrigger: false, category: "D", reason: "Work is done." };
-		assert.deepEqual(parseJudgeResponse(assistantWithToolCall("continuation_verdict", retrigger)), retrigger);
-		assert.deepEqual(parseJudgeResponse(assistantWithToolCall("continuation_verdict", stop)), stop);
+		assert.deepEqual(parseJudgeResponse(assistantWithToolCall("continuation_verdict", retrigger), false), retrigger);
+		assert.deepEqual(parseJudgeResponse(assistantWithToolCall("continuation_verdict", stop), false), stop);
 	});
 
 	it("returns null for zero, two, or wrongly named tool calls", () => {
 		const verdict = { retrigger: false, category: "Q", reason: "It asked." };
 		const base = assistantWithToolCall("continuation_verdict", verdict);
-		assert.equal(parseJudgeResponse({ ...base, content: [{ type: "text", text: "no call" }] }), null);
+		assert.equal(parseJudgeResponse({ ...base, content: [{ type: "text", text: "no call" }] }, false), null);
 		assert.equal(
-			parseJudgeResponse({
-				...base,
-				content: [
-					{ type: "toolCall", id: "call-1", name: "continuation_verdict", arguments: verdict },
-					{ type: "toolCall", id: "call-2", name: "continuation_verdict", arguments: verdict },
-				],
-			}),
+			parseJudgeResponse(
+				{
+					...base,
+					content: [
+						{ type: "toolCall", id: "call-1", name: "continuation_verdict", arguments: verdict },
+						{ type: "toolCall", id: "call-2", name: "continuation_verdict", arguments: verdict },
+					],
+				},
+				false,
+			),
 			null,
 		);
-		assert.equal(parseJudgeResponse(assistantWithToolCall("other_tool", verdict)), null);
+		assert.equal(parseJudgeResponse(assistantWithToolCall("other_tool", verdict), false), null);
 	});
 
 	it("returns null when arguments fail schema validation", () => {
 		assert.equal(
-			parseJudgeResponse(assistantWithToolCall("continuation_verdict", { retrigger: true, category: "X" })),
+			parseJudgeResponse(assistantWithToolCall("continuation_verdict", { retrigger: true, category: "X" }), false),
 			null,
 		);
+	});
+
+	// The tool enum is a provider hint, not a gate, so the parser has to enforce the
+	// withholding too — otherwise a Q verdict strands a run with no user to answer it.
+	it("rejects a category the subagent tool schema withheld, while accepting it for a primary session", () => {
+		const asked = { retrigger: false, category: "Q" as const, reason: "It asked the user." };
+		const response = assistantWithToolCall("continuation_verdict", asked);
+
+		assert.deepEqual(parseJudgeResponse(response, false), asked);
+		assert.equal(parseJudgeResponse(response, true), null);
+	});
+
+	// retrigger and category are deliberately redundant: disagreement means the model
+	// was confused, and failing open is cheaper than acting on a contradiction.
+	it("returns null when retrigger contradicts the category's polarity", () => {
+		const vetoButNudge = { retrigger: true, category: "Q" as const, reason: "It asked." };
+		const triggerButHold = { retrigger: false, category: "I" as const, reason: "Work remains." };
+
+		assert.equal(parseJudgeResponse(assistantWithToolCall("continuation_verdict", vetoButNudge), false), null);
+		assert.equal(parseJudgeResponse(assistantWithToolCall("continuation_verdict", triggerButHold), false), null);
+	});
+
+	it("returns null for a reason beyond the schema bound", () => {
+		const verbose = { retrigger: true, category: "R" as const, reason: "x".repeat(401) };
+		assert.equal(parseJudgeResponse(assistantWithToolCall("continuation_verdict", verbose), false), null);
 	});
 });
 
@@ -130,6 +161,7 @@ describe("runJudge", () => {
 			model: fakeModel,
 			auth: { apiKey: "test-key" },
 			context: buildJudgeContext(judgeInput()),
+			subagent: false,
 			complete: async (_model, _context, options) => {
 				assert.equal(options?.apiKey, "test-key");
 				assert.deepEqual(options?.toolChoice, { type: "tool", name: "continuation_verdict" });
@@ -158,6 +190,7 @@ describe("runJudge", () => {
 					model: fakeModel,
 					auth: { apiKey: "test-key" },
 					context: buildJudgeContext(judgeInput()),
+					subagent: false,
 					complete: async () => response,
 				}),
 				null,
@@ -171,6 +204,7 @@ describe("runJudge", () => {
 				model: fakeModel,
 				auth: { apiKey: "test-key" },
 				context: buildJudgeContext(judgeInput()),
+				subagent: false,
 				complete: async () => ({
 					...assistantWithToolCall("continuation_verdict", { retrigger: false, category: "Q", reason: "ok" }),
 					stopReason: "error",
@@ -184,6 +218,7 @@ describe("runJudge", () => {
 				model: fakeModel,
 				auth: { apiKey: "test-key" },
 				context: buildJudgeContext(judgeInput()),
+				subagent: false,
 				complete: async () => ({
 					...assistantWithToolCall("continuation_verdict", { retrigger: false, category: "Q", reason: "ok" }),
 					stopReason: "error",

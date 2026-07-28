@@ -9,28 +9,14 @@
 import type { Api, AssistantMessage, Context, Model, ModelThinkingLevel, Tool } from "@earendil-works/pi-ai";
 import { complete as defaultComplete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Type } from "@sinclair/typebox";
 import { Value } from "@sinclair/typebox/value";
 import {
 	resolveAliasedModel,
 	resolveForcedToolChoice,
 	resolvePortableReasoningEffort,
 } from "#core/model/resolution.ts";
-import { buildRubric, offeredCategories } from "./rubric.ts";
-import { type ContinuationVerdict, type JudgeInput, RUBRIC_CATEGORIES, type RubricCategory } from "./types.ts";
-
-function categorySchema(categories: readonly RubricCategory[]) {
-	return Type.Union(categories.map((category) => Type.Literal(category)));
-}
-
-export const ContinuationVerdictSchema = Type.Object(
-	{
-		retrigger: Type.Boolean(),
-		category: categorySchema(RUBRIC_CATEGORIES),
-		reason: Type.String(),
-	},
-	{ additionalProperties: false },
-);
+import { buildRubric, categoryRetriggers, offeredCategories } from "./rubric.ts";
+import { type ContinuationVerdict, type JudgeInput, verdictSchema } from "./types.ts";
 
 /**
  * Q is withheld from the subagent schema, not merely de-emphasized in the prompt:
@@ -42,14 +28,7 @@ export function buildJudgeTool(subagent: boolean): Tool {
 	return {
 		name: "continuation_verdict",
 		description: "Reports whether the agent's stop was premature, the rubric category, and a short reason.",
-		parameters: Type.Object(
-			{
-				retrigger: Type.Boolean(),
-				category: categorySchema(offeredCategories(subagent)),
-				reason: Type.String(),
-			},
-			{ additionalProperties: false },
-		),
+		parameters: verdictSchema(offeredCategories(subagent)),
 	};
 }
 
@@ -79,14 +58,20 @@ export function buildJudgeContext(input: JudgeInput): Context {
 	};
 }
 
-export function parseJudgeResponse(msg: AssistantMessage): ContinuationVerdict | null {
+/**
+ * Validates against the same narrowed schema the tool offered, because a provider
+ * treats the parameter enum as a hint rather than a gate.
+ */
+export function parseJudgeResponse(msg: AssistantMessage, subagent: boolean): ContinuationVerdict | null {
 	const toolCalls = msg.content.filter((content) => content.type === "toolCall");
 	if (toolCalls.length !== 1) return null;
 	const call = toolCalls[0];
 	if (call === undefined || call.type !== "toolCall" || call.name !== "continuation_verdict") return null;
 
 	const args: unknown = call.arguments;
-	if (!Value.Check(ContinuationVerdictSchema, args)) return null;
+	if (!Value.Check(verdictSchema(offeredCategories(subagent)), args)) return null;
+	// A verdict that contradicts its own category is model confusion, not a decision.
+	if (args.retrigger !== categoryRetriggers(args.category)) return null;
 
 	return args;
 }
@@ -105,6 +90,7 @@ export async function runJudge(opts: {
 	model: Model<Api>;
 	auth: { apiKey?: string; headers?: Record<string, string> };
 	context: Context;
+	subagent: boolean;
 	signal?: AbortSignal;
 	complete?: typeof defaultComplete;
 }): Promise<ContinuationVerdict | null> {
@@ -117,7 +103,7 @@ export async function runJudge(opts: {
 		...(reasoningEffort === undefined ? {} : { reasoningEffort }),
 	});
 	if (msg.stopReason === "error") throw new Error(msg.errorMessage ?? "continuation judge provider returned an error");
-	return parseJudgeResponse(msg);
+	return parseJudgeResponse(msg, opts.subagent);
 }
 
 // The feature is deliberately inert without a configured fast alias.

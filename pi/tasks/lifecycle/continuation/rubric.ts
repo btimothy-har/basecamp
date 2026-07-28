@@ -37,6 +37,13 @@ export function offeredCategories(subagent: boolean): readonly RubricCategory[] 
 	return subagent ? RUBRIC_CATEGORIES.filter((category) => category !== "Q") : RUBRIC_CATEGORIES;
 }
 
+const VETO_CATEGORIES = new Set<RubricCategory>(["Q", "D", "H"]);
+
+/** Polarity belongs to the category, stated here beside the vetoes and triggers it describes. */
+export function categoryRetriggers(category: RubricCategory): boolean {
+	return !VETO_CATEGORIES.has(category);
+}
+
 export function buildRubric(subagent: boolean): string {
 	const vetoes = subagent ? [VETO_D, VETO_H] : [VETO_Q, VETO_D, VETO_H];
 	const sections = [

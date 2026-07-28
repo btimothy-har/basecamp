@@ -42,6 +42,7 @@ export interface ContinuationGuardDeps {
 		model: Model<Api>;
 		auth: ResolvedJudgeModel["auth"];
 		context: Context;
+		subagent: boolean;
 		signal: AbortSignal;
 	}) => Promise<ContinuationVerdict | null>;
 }
@@ -144,7 +145,7 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 
 			let verdict: ContinuationVerdict | null;
 			try {
-				verdict = await judge({ model: resolved.model, auth: resolved.auth, context, signal });
+				verdict = await judge({ model: resolved.model, auth: resolved.auth, context, subagent, signal });
 			} catch (error) {
 				record({ outcome: "no_verdict", reason: errorMessage(error) });
 				return;
