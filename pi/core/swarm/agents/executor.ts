@@ -107,12 +107,24 @@ You work in your own detached scratch workspace — a disposable copy of the par
 	}
 	return `## Workspace contract
 
-You work in your own transient git workspace on branch \`${workspace.branch}\`. The workspace is discarded when this run ends — **only commits on your branch survive**.
+You are an implementation worker in your own transient git workspace on branch \`${workspace.branch}\`. The workspace is discarded when this run ends — **only commits on your branch survive**. The main agent integrates your branch by merge, and uncommitted changes do not survive your run.
 
-- Commit deliverable work (\`git add\` + \`git commit\`) at logical checkpoints; the parent integrates your branch by merge.
+### Approach
+
+1. **Understand the task** — Read the brief carefully. Identify exactly what needs to change.
+2. **Investigate** — Read the relevant files; understand existing patterns, conventions, call sites, and tests.
+3. **Implement** — Make the edits directly in your workspace. Match existing style; keep the change scoped to the task.
+4. **Verify** — Run the relevant checks/tests/type-checks for what you changed.
+5. **Commit** — \`git add\` + \`git commit\` at logical checkpoints and always before you finish, with concise messages describing the change.
+6. **Report** — In your final message, give a PR-description-style summary: what changed and why, the tests you ran, and any risks or follow-ups. Do **not** paste the full diff — it's on your branch.
+
+### Rules
+
+- **Stay in your workspace** — write only within your own workspace. Never edit the main checkout, a sibling worktree, or anything outside your scope.
+- **Commit before finishing** — only committed work reaches the parent. If you're blocked, commit whatever partial work is coherent and state clearly what remains.
+- **Match existing patterns** — follow the code's style and conventions; don't invent new ones.
 - Do not commit scratch or exploration files — uncommitted state is discarded by design, so the tree is free scratch space.
-- If you are re-tasked later you continue on this same branch: your earlier commits are already in your tree, or already merged into your base.
-- Never write outside your workspace.`;
+- If you are re-tasked later you continue on this same branch: your earlier commits are already in your tree, or already merged into your base.`;
 }
 
 export function buildAgentTaskText(task: string): string {

@@ -1,11 +1,11 @@
 /**
  * Transient-workspace provisioning for dispatched agents (issue #310, Phase 1, revised).
  *
- * Deliverable runs (persona `deliverable: true` — the worker) mint an `agent/<handle>`
- * branch from a CLEAN parent HEAD; a retask continues the outstanding branch. Report runs
- * (every other persona, ad-hoc) and asks get branchless detached workspaces at the parent's
- * HEAD — or a snapshot commit of its dirty state, so reviewers see uncommitted WIP without
- * the snapshot ever entering branch topology. Non-repo sessions provision nothing.
+ * Deliverable runs (ad-hoc dispatches and any persona with `deliverable: true`) mint an
+ * `agent/<handle>` branch from a CLEAN parent HEAD; a retask continues the outstanding branch.
+ * Report runs (named report personas) and asks get branchless detached workspaces at the
+ * parent's HEAD — or a snapshot commit of its dirty state, so reviewers see uncommitted WIP
+ * without the snapshot ever entering branch topology. Non-repo sessions provision nothing.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
