@@ -5,7 +5,7 @@ import { MAX_CONSECUTIVE_NUDGES, type PolicyInput } from "#tasks/lifecycle/conti
 
 function input(overrides: Partial<PolicyInput> = {}): PolicyInput {
 	return {
-		willRetry: false,
+		providerErrored: false,
 		planHandoffActive: false,
 		pendingUserMessages: false,
 		stopWorkThisRun: false,
@@ -16,10 +16,10 @@ function input(overrides: Partial<PolicyInput> = {}): PolicyInput {
 }
 
 describe("evaluatePreconditions", () => {
-	it("blocks will_retry when the run is not actually over", () => {
-		assert.deepEqual(evaluatePreconditions(input({ willRetry: true })), {
+	it("blocks when the model call itself failed, leaving no agent judgment to nudge", () => {
+		assert.deepEqual(evaluatePreconditions(input({ providerErrored: true })), {
 			act: false,
-			block: "will_retry",
+			block: "provider_error",
 		});
 	});
 
@@ -51,15 +51,15 @@ describe("evaluatePreconditions", () => {
 		});
 	});
 
-	it("reports will_retry when all five conditions hold simultaneously", () => {
+	it("reports provider_error when all five conditions hold simultaneously", () => {
 		const allTrue = input({
-			willRetry: true,
+			providerErrored: true,
 			planHandoffActive: true,
 			pendingUserMessages: true,
 			stopWorkThisRun: true,
 			consecutiveNudges: MAX_CONSECUTIVE_NUDGES,
 		});
-		assert.deepEqual(evaluatePreconditions(allTrue), { act: false, block: "will_retry" });
+		assert.deepEqual(evaluatePreconditions(allTrue), { act: false, block: "provider_error" });
 	});
 
 	it("reports plan_handoff_active over the later conditions", () => {

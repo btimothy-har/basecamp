@@ -29,7 +29,7 @@ export interface ContinuationVerdict {
 
 /** Why the guard declined to act without consulting the rubric. */
 export type PreconditionBlock =
-	| "will_retry"
+	| "provider_error"
 	| "plan_handoff_active"
 	| "pending_user_messages"
 	| "cap_reached"
@@ -39,7 +39,11 @@ export type PolicyOutcome = { act: true } | { act: false; block: PreconditionBlo
 
 /** Pure inputs to the precondition policy — no Pi API surface. */
 export interface PolicyInput {
-	willRetry: boolean;
+	/**
+	 * The model call itself failed, so there is no agent judgment to nudge. This is
+	 * NOT rubric category E, which covers an agent that hit a *tool* error and gave up.
+	 */
+	providerErrored: boolean;
 	planHandoffActive: boolean;
 	pendingUserMessages: boolean;
 	stopWorkThisRun: boolean;
@@ -50,8 +54,12 @@ export interface PolicyInput {
 /** Inputs the rubric judges a stop against. */
 export interface JudgeInput {
 	goal: string | null;
-	/** Pre-rendered `buildStateSnapshot` output, so the judge stays decoupled from task schemas. */
-	taskSnapshot: string;
+	/**
+	 * Structured task state — parsed `buildStateSnapshot` output, so it nests as JSON
+	 * in the prompt rather than as an escaped string, and the judge stays decoupled
+	 * from the task schemas.
+	 */
+	taskSnapshot: unknown;
 	mode: AgentMode;
 	readOnly: boolean;
 	subagent: boolean;

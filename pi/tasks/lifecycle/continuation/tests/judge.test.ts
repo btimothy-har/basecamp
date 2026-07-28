@@ -8,10 +8,10 @@ import {
 	buildJudgeTool,
 	ContinuationVerdictSchema,
 	parseJudgeResponse,
-	recentUserMessages,
 	resolveJudgeModel,
 	runJudge,
 } from "#tasks/lifecycle/continuation/judge.ts";
+import { recentUserMessages } from "#tasks/lifecycle/continuation/messages.ts";
 import { buildRubric, CONTINUATION_RUBRIC, offeredCategories } from "#tasks/lifecycle/continuation/rubric.ts";
 import type { ContinuationVerdict, JudgeInput } from "#tasks/lifecycle/continuation/types.ts";
 

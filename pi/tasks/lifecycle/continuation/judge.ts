@@ -1,4 +1,4 @@
-import type { Api, AssistantMessage, Context, Message, Model, ModelThinkingLevel, Tool } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Context, Model, ModelThinkingLevel, Tool } from "@earendil-works/pi-ai";
 import { complete as defaultComplete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
@@ -9,6 +9,7 @@ import {
 	resolvePortableReasoningEffort,
 } from "#core/model/resolution.ts";
 import { buildRubric, offeredCategories } from "./rubric.ts";
+
 import { type ContinuationVerdict, type JudgeInput, RUBRIC_CATEGORIES, type RubricCategory } from "./types.ts";
 
 function categorySchema(categories: readonly RubricCategory[]) {
@@ -117,24 +118,4 @@ export async function resolveJudgeModel(
 	ctx: ExtensionContext,
 ): Promise<{ model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string> } } | null> {
 	return resolveAliasedModel(ctx, "fast");
-}
-
-function textFromContent(content: Message["content"]): string {
-	if (typeof content === "string") return content;
-	return content
-		.filter((item) => item.type === "text")
-		.map((item) => item.text)
-		.join("");
-}
-
-// Local reimplementation of bash-reviewer's recentHumanMessages: cross-domain
-// imports resolve only through a domain's public index, which does not export it.
-export function recentUserMessages(sessionManager: ExtensionContext["sessionManager"], limit = 5): string[] {
-	const messages: string[] = [];
-	for (const entry of sessionManager.getEntries()) {
-		if (entry.type === "message" && entry.message.role === "user") {
-			messages.push(textFromContent(entry.message.content));
-		}
-	}
-	return messages.slice(-limit);
 }

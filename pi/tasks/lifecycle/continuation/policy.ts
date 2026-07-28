@@ -2,7 +2,17 @@
  * Continuation guard — precondition policy.
  *
  * Decides only whether the guard's `agent_end` hook may act at all; the
- * rubric judge owns "was the stop premature". This module deliberately has
+ * rubric judge owns "was the stop premature".
+ *
+ * `providerErrored` stands in for Pi's own `willRetry`, which extensions never
+ * receive: Pi attaches it to the internal session event, not the extension
+ * event, and derives it from the last assistant message being a retryable
+ * error. We read that same message, so the signal is equivalent or wider — it
+ * also covers non-retryable errors and exhausted retries, none of which are a
+ * premature stop. It must not be conflated with rubric category E, which is
+ * about an agent abandoning work after a *tool* failure.
+ *
+ * This module deliberately has
  * no notion of escalation: an earlier design suppressed acting whenever
  * `escalate` had been called during the run, which is wrong because a stop
  * occurring later in the same run — long after that escalation was resolved —
@@ -21,7 +31,7 @@ function block(reason: PreconditionBlock): PolicyOutcome {
  * condition that holds wins and determines the recorded reason.
  */
 export function evaluatePreconditions(input: PolicyInput): PolicyOutcome {
-	if (input.willRetry) return block("will_retry");
+	if (input.providerErrored) return block("provider_error");
 	if (input.planHandoffActive) return block("plan_handoff_active");
 	if (input.stopWorkThisRun) return block("stop_work");
 	if (input.pendingUserMessages) return block("pending_user_messages");
