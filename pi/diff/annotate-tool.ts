@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { type Static, Type } from "@sinclair/typebox";
 import { errorMessage } from "#core/errors.ts";
-import { resolveReviewBase } from "#core/git/repo.ts";
 import { isSubagent } from "#core/host/env.ts";
-import { type AnnotatedFile, type WriteResult, writeSidecar } from "./sidecar.ts";
+import { lastCheckpointOrHead } from "./checkpoints.ts";
+import { type AnnotatedFile, annotationId, type WriteResult, writeSidecar } from "./sidecar.ts";
 import { reviewWorktreeDir } from "./worktree.ts";
 
 /**
@@ -41,14 +41,16 @@ export const AnnotateChangesetParams = Type.Object(
 export type AnnotateChangesetParams = Static<typeof AnnotateChangesetParams>;
 
 const TOOL_DESCRIPTION = [
-	"Annotate the current changeset with rationale that renders inline beside the code in /diff.",
-	"Call this once, when the work is complete — this version does not re-anchor line ranges against later edits,",
-	"so annotating mid-task and then editing the same file above an annotated range will silently mis-anchor it.",
+	"Annotate the changeset with rationale that renders inline beside the code the next time the user runs /diff.",
+	"Annotate as you work — calls accumulate until /diff consumes them at review close.",
+	"Each annotation returns a key; if a later edit invalidates one, withdraw it with remove_annotation and annotate again.",
+	"This version does not re-anchor line ranges against later edits,",
+	"so editing a file above an annotated range silently mis-anchors it — delete and re-annotate to be safe.",
 	"Paths are relative to the worktree root; startLine and endLine are 1-based on the NEW side of the diff.",
 	"Annotations on files not present in the changeset are silently dropped by the viewer.",
 ].join(" ");
 
-const PROMPT_SNIPPET = "Annotate the changeset for /diff (call once, when work is complete)";
+const PROMPT_SNIPPET = "Annotate the changeset for /diff as you work";
 
 /** JSON Schema cannot express endLine >= startLine, so the pairing is checked here. */
 function invertedRanges(params: AnnotateChangesetParams): string[] {
@@ -75,10 +77,25 @@ function toAnnotatedFiles(params: AnnotateChangesetParams): AnnotatedFile[] {
 	}));
 }
 
-function formatConfirmation(result: WriteResult): string {
+function span(range: [number, number]): string {
+	return range[0] === range[1] ? `${range[0]}` : `${range[0]}-${range[1]}`;
+}
+
+/**
+ * The keys must reach the model's context, not just the details payload —
+ * remove_annotation is unusable unless the confirmation hands the keys back.
+ */
+function formatConfirmation(params: AnnotateChangesetParams, result: WriteResult): string {
+	const keys = params.files.flatMap((file) =>
+		file.annotations.map(
+			(annotation) =>
+				`- ${annotationId(file.path, [annotation.startLine, annotation.endLine], annotation.summary)} ${file.path}:${span([annotation.startLine, annotation.endLine])} — ${annotation.summary}`,
+		),
+	);
 	return [
-		`Recorded ${result.annotations} annotation${result.annotations === 1 ? "" : "s"} across ${result.files} file${result.files === 1 ? "" : "s"}.`,
-		"These will appear the next time you run /diff, until the reviewed base moves on.",
+		`Recorded ${result.annotations} annotation${result.annotations === 1 ? "" : "s"} across ${result.files} file${result.files === 1 ? "" : "s"} (accumulates until /diff consumes them):`,
+		...keys,
+		"Withdraw one with remove_annotation if a later edit invalidates it.",
 	].join("\n");
 }
 
@@ -98,17 +115,18 @@ export function registerAnnotateTool(pi: ExtensionAPI): void {
 				throw new Error(`endLine must not precede startLine: ${inverted.join(", ")}`);
 			}
 			const worktreeDir = reviewWorktreeDir();
-			// Stamped so /diff can tell rationale about this changeset from rationale
-			// left behind by whatever this worktree directory held previously.
+			// Anchored to the last review checkpoint — the same coordinates the
+			// user's next /diff last reviews — so rationale and review share line
+			// numbers by construction. HEAD is the self-initializing fallback.
 			let base: string;
 			try {
-				base = await resolveReviewBase(pi, worktreeDir);
+				base = await lastCheckpointOrHead(pi, worktreeDir);
 			} catch (err) {
 				throw new Error(`Cannot anchor annotations: ${errorMessage(err)}`);
 			}
 			const result = writeSidecar(worktreeDir, base, params.summary, toAnnotatedFiles(params));
 			return {
-				content: [{ type: "text", text: formatConfirmation(result) }],
+				content: [{ type: "text", text: formatConfirmation(params, result) }],
 				details: { sidecarPath: result.path, files: result.files, annotations: result.annotations },
 			};
 		},

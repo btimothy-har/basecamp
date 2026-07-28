@@ -6,6 +6,7 @@ import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Value } from "@sinclair/typebox/value";
 import { AnnotateChangesetParams, registerAnnotateTool } from "#diff/annotate-tool.ts";
+import { forgetCheckpoint, recordCheckpoint } from "#diff/checkpoints.ts";
 
 interface RegisteredTool {
 	name: string;
@@ -29,7 +30,7 @@ interface MockPi {
 	exec(command: string, args: string[]): Promise<{ code: number; stdout: string; stderr: string; killed: boolean }>;
 }
 
-const STUB_BASE = "43e3afd68b290430804ef6d7cc0fba60336dcd98";
+const STUB_HEAD = "55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa";
 
 function createMockPi(): MockPi {
 	const tools = new Map<string, RegisteredTool>();
@@ -38,9 +39,9 @@ function createMockPi(): MockPi {
 		registerTool(tool: RegisteredTool) {
 			tools.set(tool.name, tool);
 		},
-		// The tool stamps the sidecar with the review base, so it resolves git.
+		// With no checkpoint recorded the tool anchors annotations to HEAD.
 		async exec(_command: string, args: string[]) {
-			const stdout = args.join(" ").includes("merge-base") ? STUB_BASE : "origin/main";
+			const stdout = args.join(" ").includes("rev-parse") ? STUB_HEAD : "origin/main";
 			return { code: 0, stdout, stderr: "", killed: false };
 		},
 	};
@@ -86,7 +87,8 @@ describe("annotate_changeset registration", () => {
 		assert.ok(pi.tools.has("annotate_changeset"));
 		const tool = pi.tools.get("annotate_changeset");
 		assert.ok(tool);
-		assert.match(tool.description, /once, when the work is complete/);
+		assert.match(tool.description, /[Aa]nnotate as you work/);
+		assert.match(tool.description, /remove_annotation/);
 	});
 
 	it("does not register the tool in a subagent process", (t) => {
@@ -165,6 +167,9 @@ describe("annotate_changeset execution", () => {
 		const text = result.content[0]?.text ?? "";
 		assert.match(text, /3 annotations/);
 		assert.match(text, /2 files/);
+		// Keys must reach the model — remove_annotation is unusable otherwise.
+		assert.match(text, /[0-9a-f]{12} pi\/diff\/sidecar\.ts:1-10 — writer/);
+		assert.match(text, /remove_annotation/);
 
 		const details = result.details as { sidecarPath: string; files: number; annotations: number };
 		assert.equal(details.annotations, 3);
@@ -175,7 +180,7 @@ describe("annotate_changeset execution", () => {
 			files: { annotations: { newRange: [number, number] }[] }[];
 		};
 		assert.equal(written.version, 1);
-		assert.equal(written.basecampBase, STUB_BASE, "the sidecar records the base it was anchored against");
+		assert.equal(written.basecampBase, STUB_HEAD, "with no checkpoint the sidecar anchors to HEAD");
 		// The wire format hunk reads is a tuple, whatever shape the tool accepts.
 		assert.deepEqual(written.files[0]?.annotations[0]?.newRange, [1, 10]);
 	});
@@ -208,5 +213,44 @@ describe("annotate_changeset execution", () => {
 		});
 
 		assert.ok(fs.existsSync((result.details as { sidecarPath: string }).sidecarPath));
+	});
+
+	it("anchors to the recorded checkpoint instead of HEAD when one exists", async (t) => {
+		const worktree = "/wt/checkpointed";
+		const tool = toolFor(t, worktree);
+		recordCheckpoint(worktree, { base: "abc1234", last: "c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ff" });
+		t.after(() => forgetCheckpoint(worktree));
+
+		const result = await tool.execute("call-1", {
+			summary: "S.",
+			files: [{ path: "a.ts", annotations: [{ startLine: 1, endLine: 1, summary: "x" }] }],
+		});
+
+		const written = JSON.parse(fs.readFileSync((result.details as { sidecarPath: string }).sidecarPath, "utf8")) as {
+			basecampBase: string;
+		};
+		assert.equal(written.basecampBase, "c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ff");
+	});
+
+	it("accumulates across calls within a review span", async (t) => {
+		const tool = toolFor(t, "/wt/accumulate");
+
+		await tool.execute("call-1", {
+			summary: "First.",
+			files: [{ path: "a.ts", annotations: [{ startLine: 1, endLine: 5, summary: "one" }] }],
+		});
+		const result = await tool.execute("call-2", {
+			summary: "Second.",
+			files: [{ path: "b.ts", annotations: [{ startLine: 1, endLine: 3, summary: "two" }] }],
+		});
+
+		const written = JSON.parse(fs.readFileSync((result.details as { sidecarPath: string }).sidecarPath, "utf8")) as {
+			files: { path: string }[];
+		};
+		assert.deepEqual(
+			written.files.map((f) => f.path),
+			["a.ts", "b.ts"],
+			"the second call must not lose the first call's annotations",
+		);
 	});
 });
