@@ -8,35 +8,8 @@ import {
 	resolveForcedToolChoice,
 	resolvePortableReasoningEffort,
 } from "#core/model/resolution.ts";
+import { buildRubric, offeredCategories } from "./rubric.ts";
 import { type ContinuationVerdict, type JudgeInput, RUBRIC_CATEGORIES, type RubricCategory } from "./types.ts";
-
-// Q is vetoed for subagents by withholding it from the tool schema entirely —
-// the model cannot emit a verdict the parser would then have to distrust.
-const PRIMARY_CATEGORIES = RUBRIC_CATEGORIES;
-const SUBAGENT_CATEGORIES = RUBRIC_CATEGORIES.filter((category) => category !== "Q");
-
-const SUBAGENT_VARIANT = `Subagent divergence: this agent was dispatched by another agent and has no user, so a question is unanswerable and stopping on one wastes the run. Veto Q does not apply here: a question in the final message is NOT a reason to stop. If the agent found itself facing a question or choice, it should decide and proceed, or report the blocker as its deliverable (veto D). Vetoes D and H still apply.`;
-
-// The rubric is the sole authority on stop legitimacy; the wording is an
-// agreed design artifact — categories and the tie-break must keep their meaning verbatim.
-export const CONTINUATION_RUBRIC = `You are judging whether a coding agent's stop was premature. The agent has stopped producing tool calls and returned control. Decide whether it should be nudged to continue. Call the continuation_verdict tool exactly once. Keep the reason to one short sentence.
-
-Do NOT retrigger (retrigger: false) if any of these hold:
-- Q (Asked): the final message asks the user anything — a question, a choice, a confirmation, or permission. ANY question counts, including one whose answer looks obvious.
-- D (Delivered): the requested work appears done — the goal is satisfied, or in analysis/planning mode findings, a synthesis, or a plan has been presented for review.
-- H (Held): it is waiting on a human action or an external event it cannot progress itself.
-
-Otherwise retrigger (retrigger: true), specifically when:
-- I (Intent): the final message states or implies a next action that was not performed.
-- R (Remaining): the goal or task state shows work left, and the message neither asks nor claims completion.
-- E (Error): it stopped at an unresolved error without either recovering or delivering a conclusion.
-
-Tie-break: when uncertain, do NOT retrigger. A wrong stop costs the user one keystroke; a wrong continue burns a whole agent run.
-
-{{SUBAGENT_CLAUSE}}Input arrives as JSON with goal, task_snapshot, mode, read_only, final_assistant_message, and recent_user_messages (most-recent-last) fields.`;
-
-// Line prefix identifying the Q veto bullet so it can be stripped for subagents.
-const Q_VETO_LINE = "- Q (Asked):";
 
 function categorySchema(categories: readonly RubricCategory[]) {
 	return Type.Union(categories.map((category) => Type.Literal(category)));
@@ -51,14 +24,20 @@ export const ContinuationVerdictSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
-function judgeTool(subagent: boolean): Tool {
+/**
+ * Q is withheld from the subagent schema, not merely de-emphasized in the prompt:
+ * left selectable, it is the obvious label for a question-shaped stop, and the
+ * resulting `{retrigger: false, category: "Q"}` would strand a run that has no
+ * user to answer it.
+ */
+export function buildJudgeTool(subagent: boolean): Tool {
 	return {
 		name: "continuation_verdict",
 		description: "Reports whether the agent's stop was premature, the rubric category, and a short reason.",
 		parameters: Type.Object(
 			{
 				retrigger: Type.Boolean(),
-				category: categorySchema(subagent ? SUBAGENT_CATEGORIES : PRIMARY_CATEGORIES),
+				category: categorySchema(offeredCategories(subagent)),
 				reason: Type.String(),
 			},
 			{ additionalProperties: false },
@@ -66,12 +45,7 @@ function judgeTool(subagent: boolean): Tool {
 	};
 }
 
-export const JUDGE_TOOL: Tool = judgeTool(false);
-
 export function buildJudgeContext(input: JudgeInput): Context {
-	// Subagents have no user, so veto Q must be removed from the rubric rather
-	// than merely de-prioritized — a question would otherwise look like a clean stop.
-	const subagentClause = input.subagent ? `${SUBAGENT_VARIANT}\n\n` : "";
 	const payload = JSON.stringify(
 		{
 			goal: input.goal,
@@ -84,14 +58,8 @@ export function buildJudgeContext(input: JudgeInput): Context {
 		null,
 		2,
 	);
-	const systemPrompt = input.subagent
-		? CONTINUATION_RUBRIC.split("\n")
-				.filter((line) => !line.startsWith(Q_VETO_LINE))
-				.join("\n")
-				.replace("{{SUBAGENT_CLAUSE}}", subagentClause)
-		: CONTINUATION_RUBRIC.replace("{{SUBAGENT_CLAUSE}}", "");
 	return {
-		systemPrompt,
+		systemPrompt: buildRubric(input.subagent),
 		messages: [
 			{
 				role: "user",
@@ -99,7 +67,7 @@ export function buildJudgeContext(input: JudgeInput): Context {
 				timestamp: Date.now(),
 			},
 		],
-		tools: [judgeTool(input.subagent)],
+		tools: [buildJudgeTool(input.subagent)],
 	};
 }
 

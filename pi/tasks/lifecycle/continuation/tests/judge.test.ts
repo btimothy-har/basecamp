@@ -5,14 +5,14 @@ import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Value } from "@sinclair/typebox/value";
 import {
 	buildJudgeContext,
-	CONTINUATION_RUBRIC,
+	buildJudgeTool,
 	ContinuationVerdictSchema,
-	JUDGE_TOOL,
 	parseJudgeResponse,
 	recentUserMessages,
 	resolveJudgeModel,
 	runJudge,
 } from "#tasks/lifecycle/continuation/judge.ts";
+import { buildRubric, CONTINUATION_RUBRIC, offeredCategories } from "#tasks/lifecycle/continuation/rubric.ts";
 import type { ContinuationVerdict, JudgeInput } from "#tasks/lifecycle/continuation/types.ts";
 
 const fakeModel: Model<any> = {
@@ -206,7 +206,7 @@ describe("buildJudgeContext", () => {
 		const input = judgeInput();
 		const context = buildJudgeContext(input);
 		assert.ok(!(context.systemPrompt ?? "").includes("{{"));
-		assert.deepEqual(context.tools, [JUDGE_TOOL]);
+		assert.deepEqual(context.tools, [buildJudgeTool(false)]);
 		assert.equal(context.messages.length, 1);
 		const content = context.messages[0]?.content;
 		assert.equal(typeof content, "string");
@@ -254,6 +254,19 @@ describe("CONTINUATION_RUBRIC", () => {
 		}
 		assert.match(CONTINUATION_RUBRIC, /when uncertain, do NOT retrigger/);
 		assert.match(CONTINUATION_RUBRIC, /one keystroke/);
+	});
+
+	it("is a usable prompt rather than a template", () => {
+		assert.equal(CONTINUATION_RUBRIC, buildRubric(false));
+		assert.ok(!CONTINUATION_RUBRIC.includes("{{"));
+	});
+
+	// The stated vetoes and the offered categories are one decision; drift between
+	// them is what silently re-enables Q for runs that have no user to answer it.
+	it("keeps the stated Q veto and the offered Q category in lockstep", () => {
+		for (const subagent of [false, true]) {
+			assert.equal(buildRubric(subagent).includes("Q (Asked)"), offeredCategories(subagent).includes("Q"));
+		}
 	});
 });
 
