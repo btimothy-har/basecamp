@@ -190,10 +190,12 @@ describe("assemblePrompt", () => {
 			agentItems: [],
 			contextFiles: [],
 		};
+		// Assert on rule text rather than headings: the rules are the contract, their formatting is not.
 		const assertVoice = (prompt: string): void => {
 			assert.equal(prompt.match(/# Voice/g)?.length, 1);
 			assert.match(prompt, /Start with the answer\. Stop when the answer is done\./);
-			assert.match(prompt, /## No estimates/);
+			assert.match(prompt, /Never predict how long anything will take/);
+			assert.match(prompt, /Forbidden openers/);
 		};
 
 		for (const mode of ["work", "analysis", "planning", "copilot"] as const) {
