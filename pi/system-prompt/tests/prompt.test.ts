@@ -5,7 +5,7 @@ import { describe, it } from "node:test";
 import { setAgentMode } from "#core/agent-mode/index.ts";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import { assemblePrompt } from "#system-prompt/prompt.ts";
-import { useDefaultAgentMode, useTempHome } from "./helpers.ts";
+import { useAgentDepth, useDefaultAgentMode, useTempHome } from "./helpers.ts";
 
 describe("assemblePrompt", () => {
 	it("includes restored default engineering, mode, and environment prompts", async (t) => {
@@ -210,6 +210,26 @@ describe("assemblePrompt", () => {
 		const personaPrompt = assemblePrompt({ ...options, agentPrompt: "custom worker prompt" });
 		assert.doesNotMatch(personaPrompt, /# Voice/);
 		assert.match(personaPrompt, /# Code Craft/);
+	});
+
+	it("excludes voice from an ad-hoc dispatch, which carries no persona to key off", async (t) => {
+		useDefaultAgentMode(t);
+		await useTempHome(t);
+		// `dispatch_agent({ task })` with no `agent` gets no --agent-prompt, so agentPrompt is unset and
+		// only the depth the daemon stamps on the child distinguishes it from a primary session.
+		useAgentDepth(t, 1);
+		const prompt = assemblePrompt({
+			workspace: null,
+			project: null,
+			effectiveCwd: "/repo",
+			toolItems: [],
+			skillItems: [],
+			agentItems: [],
+			contextFiles: [],
+		});
+
+		assert.doesNotMatch(prompt, /# Voice/);
+		assert.match(prompt, /# Code Craft/);
 	});
 
 	it("orders the role style before voice and voice before code craft", async (t) => {

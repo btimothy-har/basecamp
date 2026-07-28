@@ -6,6 +6,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/copilot.ts";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { type CatalogItem, listCatalogItemsByType } from "#core/catalog/index.ts";
+import { isSubagent } from "#core/host/env.ts";
 import { basecampRoot } from "#core/host/paths.ts";
 import { getProjectState, type ProjectState } from "#core/project/config.ts";
 import { type ContextFile, discoverContextFiles } from "#core/project/context.ts";
@@ -152,10 +153,12 @@ export function assemblePrompt(opts: AssembleOptions): string {
 		if (style) parts.push(style);
 	}
 
-	// Voice shapes output for a user reading a conversation, so personas are excluded: their reader
-	// is the primary agent parsing one artifact, and each persona's own template owns its shape.
-	// Copilot is included — it loads no style file, so voice is its only manner guidance.
-	if (!opts.agentPrompt) {
+	// Voice shapes output for a user reading a conversation, so every dispatched agent is excluded:
+	// its reader is the agent that dispatched it, parsing one artifact. Both conditions are needed --
+	// a persona is excluded by its own template owning its shape, but an ad-hoc dispatch carries no
+	// persona and so no `agentPrompt`, and depth is the only thing that reveals it.
+	// Copilot is included: it loads no style file, so voice is its only manner guidance.
+	if (!opts.agentPrompt && !isSubagent()) {
 		const voice = loadPromptFile("voice.md").trim();
 		if (voice) parts.push(voice);
 	}
