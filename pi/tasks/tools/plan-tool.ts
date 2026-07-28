@@ -20,12 +20,11 @@ import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
 import type { PlanDraft } from "#tasks/schemas/plan.ts";
 import type { GoalCycle } from "#tasks/schemas/task.ts";
 import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "#tasks/workflows/draft.ts";
+import { createHandoffLatch, dispatchImplementationHandoff } from "#tasks/workflows/handoff/dispatch.ts";
 import {
-	buildHandoffCompactionInstructions,
 	buildHandoffMessage,
 	buildPendingImplementationHandoff,
 	buildWorktreeActivationFailedResult,
-	HANDOFF_COMPACTION_THRESHOLD_PERCENT,
 	type PendingImplementationHandoff,
 	runHandoff,
 } from "#tasks/workflows/handoff/index.ts";
@@ -34,6 +33,8 @@ import { renderPartial, renderSuccess } from "./render.ts";
 
 export interface PlanAccess {
 	getDraft(): PlanDraft | null;
+	/** True while an approved implementation handoff still owes the session a restart. */
+	isHandoffActive(): boolean;
 }
 
 function cancelledResult(next_step: string) {
@@ -46,6 +47,7 @@ function cancelledResult(next_step: string) {
 export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAccess {
 	let draft: PlanDraft | null = null;
 	let pendingImplementationHandoff: PendingImplementationHandoff | null = null;
+	const handoffLatch = createHandoffLatch();
 
 	pi.on("agent_end", async (_event, ctx) => {
 		if (!pendingImplementationHandoff) return;
@@ -54,30 +56,15 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 
 		// Pi clears isStreaming after awaited agent_end handlers finish; defer to the next macrotask.
 		setTimeout(() => {
-			let handoffSent = false;
-			const sendHandoff = () => {
-				if (handoffSent) return;
-				handoffSent = true;
-				pi.sendUserMessage(buildHandoffMessage());
-			};
-
-			const usagePercent = ctx.getContextUsage()?.percent;
-			const shouldCompact = typeof usagePercent === "number" && usagePercent > HANDOFF_COMPACTION_THRESHOLD_PERCENT;
-
-			if (!shouldCompact) {
-				sendHandoff();
-				return;
-			}
-
-			try {
-				ctx.compact({
-					customInstructions: buildHandoffCompactionInstructions(handoff),
-					onComplete: sendHandoff,
-					onError: sendHandoff,
-				});
-			} catch {
-				sendHandoff();
-			}
+			dispatchImplementationHandoff({
+				handoff,
+				contextUsagePercent: ctx.getContextUsage()?.percent,
+				compact: (request) => ctx.compact(request),
+				send: () => {
+					handoffLatch.disarm();
+					pi.sendUserMessage(buildHandoffMessage());
+				},
+			});
 		}, 0);
 	});
 
@@ -189,6 +176,7 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 				agentMode: "work",
 			});
 			pendingImplementationHandoff = buildPendingImplementationHandoff(draft, outcome.worktree);
+			handoffLatch.arm();
 
 			const result = buildApprovedResult(draft, "implementation", outcome.worktree, outcome.setupSummary);
 			draft = null;
@@ -246,5 +234,6 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime): PlanAcces
 
 	return {
 		getDraft: () => draft,
+		isHandoffActive: () => handoffLatch.active,
 	};
 }
