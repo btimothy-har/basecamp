@@ -36,7 +36,9 @@ def test_ws_duplicate_register_live_incumbent_rejected(tmp_path: Path) -> None:
                         "cwd": "/tmp/project",
                     }
                 )
-                assert first.receive_json()["type"] == "ping"
+                probe = first.receive_json()
+                assert probe["type"] == "ping"
+                assert probe["nonce"] == "liveness-probe"
                 reply = second.receive_json()
                 assert reply["type"] == "error"
                 assert reply["code"] == "duplicate_node_connection"

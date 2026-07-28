@@ -344,15 +344,15 @@ async def _incumbent_is_live(incumbent: WebSocket) -> bool:
     the write, while a live one — including one merely busy in a long wait,
     whose buffer drains fine — accepts it. A failed classification must close
     the incumbent (via takeover), so the payload must be valid yet inert on
-    every receiver: v28 ping frames are answered (harmless); pre-v28 peers
-    error-close on the unknown type — which a failed probe was going to do
-    anyway.
+    every receiver: a v28 peer answers the ping with a pong (harmless), and a
+    pre-v28 peer error-closes on the unknown type — which a failed probe was
+    going to do anyway.
     """
 
-    probe = {"type": "ping", "v": PROTOCOL_VERSION, "nonce": ""}
+    probe = PingFrame(type="ping", nonce="liveness-probe")
     try:
         async with asyncio.timeout(_INCUMBENT_PROBE_TIMEOUT_S):
-            await incumbent.send_json(probe)
+            await incumbent.send_json(serialize_frame(probe))
     except Exception:  # noqa: BLE001 — any send failure reads as a dead incumbent
         return False
     return True

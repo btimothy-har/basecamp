@@ -13,6 +13,16 @@ The dashboard query always returns live roots plus a five-at-a-time, 24-hour dis
 
 Run the daemon through the `basecamp` CLI (entry point in `src/basecamp/cli.py`). Tests live in `tests/hub/`; dashboard model tests also run under `npm test`.
 
+## Connection liveness and takeover
+
+A node id admits one connection at a time, but that guard cannot be a bare rejection: a session that died uncleanly (kill, sleep/wake) leaves a half-open socket whose handler only notices the close on its next read or write, and a reconnect refused with `duplicate_node_connection` locked the user out until the daemon restarted. Three things resolve it together.
+
+Uvicorn is configured with `ws_ping_interval`/`ws_ping_timeout` (20s/20s) so a silent peer's socket dies on its own within roughly forty seconds. A duplicate register does not wait for that: it **probes the incumbent** first. Starlette's `WebSocket` cannot send a protocol-level ping, so the probe is a v28 `ping` frame written down the incumbent's send path — a dead peer fails the write, a live one accepts it (including a peer merely busy in a long wait, whose buffer drains fine). A live incumbent keeps its session and the newcomer gets the same `duplicate_node_connection` rejection as before; only a provably unresponsive socket is closed and yields its node id. **Blind takeover is deliberately not implemented** — an accidental resume against a working session must never displace it.
+
+Because a replacement can now register while the old handler is still unwinding, registry entries carry a monotonic **generation**. Every cleanup path (`remove_connection`, `touch_agent`, `schedule_disconnect_reaper`) is generation-guarded, so a stale handler cannot remove or reap the connection that replaced it.
+
+The probe is only trustworthy if the read loop is responsive, which is why `wait` and `message_status(wait_until_delivery)` execute as tracked `asyncio` tasks rather than inline: previously a wait blocked its own socket for the full timeout, starving telemetry, dispatch, peer messages, and cancel, and delaying close discovery by exactly as long. `wait` therefore carries a `request_id` that the result echoes (v28), which also makes concurrent waits on one socket unambiguous for the client.
+
 ## Agents dashboard architecture
 
 `basecamp agents` opens the global read-only browser dashboard. It first runs a Python port of the TypeScript hub ensure contract: the same `daemon.spawn.lock` path, exclusive `0600` `{pid, ts}` file, 30-second stale rule, protocol health gate, PID command validation, detached `basecamp hub` command, and timeout behavior. The daemon independently holds `daemon.server.lock` with nonblocking `flock` for its entire lifetime **before** touching the socket, so the one-hub invariant remains authoritative even if clients race or someone launches `basecamp hub` manually. Both TypeScript and Python spawn-lock owners verify the acquired file's inode before unlinking it.
