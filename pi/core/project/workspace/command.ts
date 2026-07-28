@@ -3,6 +3,7 @@
  */
 
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { listWorktrees, resolveAvailableWorktreeLabel, type WorktreeSummary } from "#core/git/worktrees/crud.ts";
 import { executionWorktreeTarget } from "#core/git/worktrees/target.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
@@ -130,6 +131,12 @@ export async function createWorktreeFlow(
 export function registerWorktreeCommand(pi: ExtensionAPI): void {
 	pi.registerCommand("worktree", {
 		description: "Create or switch the active workspace worktree, or `/worktree prune` to reclaim dormant ones",
+		getArgumentCompletions: (argumentPrefix: string): AutocompleteItem[] | null => {
+			const prefix = argumentPrefix.toLowerCase();
+			const items: AutocompleteItem[] = [{ value: "prune", label: "prune", description: "Reclaim dormant worktrees" }];
+			const filtered = items.filter((item) => item.value.startsWith(prefix));
+			return filtered.length > 0 ? filtered : null;
+		},
 		handler: async (args, ctx) => {
 			const trimmed = args?.trim() ?? "";
 			if (trimmed === "prune") {

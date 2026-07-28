@@ -6,6 +6,7 @@ import {
 	CREATE_CHOICE,
 	createWorktreeFlow,
 	promptWorktreeChoice,
+	registerWorktreeCommand,
 	type WorktreeSelection,
 } from "#core/project/workspace/command.ts";
 import type { WorkspaceRuntimeService } from "#core/project/workspace/runtime.ts";
@@ -113,5 +114,38 @@ describe("createWorktreeFlow", () => {
 		await createWorktreeFlow(listPi(), ctx, workspace, repo);
 
 		assert.equal(activated(), null);
+	});
+});
+
+describe("registerWorktreeCommand", () => {
+	/** Capture the options passed to registerCommand so getArgumentCompletions is testable. */
+	function captureCommand(): { pi: ExtensionAPI; options: { value: Record<string, unknown> } } {
+		const holder = { value: {} as Record<string, unknown> };
+		const pi = {
+			registerCommand: (_name: string, opts: Record<string, unknown>) => {
+				holder.value = opts;
+			},
+		} as unknown as ExtensionAPI;
+		return { pi, options: holder };
+	}
+
+	it("surfaces prune in getArgumentCompletions", () => {
+		const { pi, options } = captureCommand();
+		registerWorktreeCommand(pi);
+		const completions = options.value.getArgumentCompletions as (prefix: string) => unknown;
+		const expected = [{ value: "prune", label: "prune", description: "Reclaim dormant worktrees" }];
+
+		assert.deepEqual(completions(""), expected);
+		assert.deepEqual(completions("pr"), expected);
+		// Mixed-case prefix still matches (the filter lowercases the prefix).
+		assert.deepEqual(completions("PR"), expected);
+	});
+
+	it("returns null for an unrecognized argument prefix", () => {
+		const { pi, options } = captureCommand();
+		registerWorktreeCommand(pi);
+		const completions = options.value.getArgumentCompletions as (prefix: string) => unknown;
+
+		assert.equal(completions("x"), null);
 	});
 });
