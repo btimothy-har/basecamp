@@ -8,10 +8,10 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { shellQuote } from "#core/host/shell.ts";
 import {
 	checkHerdrEligibility,
-	closeHerdrTab,
+	closeHerdrPane,
 	type HerdrEnv,
-	openHerdrTab,
 	runInHerdrPane,
+	splitHerdrPane,
 } from "#core/ui/herdr-pane.ts";
 
 interface ExecCall {
@@ -39,12 +39,11 @@ const eligibleEnv: HerdrEnv = {
 	HERDR_WORKSPACE_ID: "w1",
 };
 
-const TAB_CREATED = JSON.stringify({
-	id: "cli:tab:create",
+const PANE_SPLIT = JSON.stringify({
+	id: "cli:pane:split",
 	result: {
-		root_pane: { pane_id: "w38:p6", tab_id: "w38:t5" },
-		tab: { tab_id: "w38:t5", label: "diff: basecamp", workspace_id: "w38" },
-		type: "tab_created",
+		pane: { pane_id: "w38:p6", tab_id: "w38:t5", workspace_id: "w38", cwd: "/repo" },
+		type: "pane_info",
 	},
 });
 
@@ -85,14 +84,13 @@ describe("checkHerdrEligibility", () => {
 	});
 });
 
-describe("openHerdrTab", () => {
-	it("always sends --workspace and parses the created pane and tab ids", async () => {
-		const pi = mockPi(() => ok(TAB_CREATED));
+describe("splitHerdrPane", () => {
+	it("splits the given pane rightward at 50% and parses the new pane and tab ids", async () => {
+		const pi = mockPi(() => ok(PANE_SPLIT));
 
-		const result = await openHerdrTab(pi, {
-			workspaceId: "w38",
+		const result = await splitHerdrPane(pi, {
+			paneId: "w38:p1",
 			cwd: "/repo",
-			label: "diff: basecamp",
 			env: { HUNK_DISABLE_UPDATE_NOTICE: "1" },
 		});
 
@@ -101,14 +99,15 @@ describe("openHerdrTab", () => {
 		assert.deepEqual(pi.calls[0], {
 			command: "herdr",
 			args: [
-				"tab",
-				"create",
-				"--workspace",
-				"w38",
+				"pane",
+				"split",
+				"w38:p1",
+				"--direction",
+				"right",
+				"--ratio",
+				"0.5",
 				"--cwd",
 				"/repo",
-				"--label",
-				"diff: basecamp",
 				"--no-focus",
 				"--env",
 				"HUNK_DISABLE_UPDATE_NOTICE=1",
@@ -117,36 +116,28 @@ describe("openHerdrTab", () => {
 	});
 
 	it("fails without throwing on nonzero exit, unparsable output, and exec errors", async () => {
-		const nonzero = await openHerdrTab(
+		const nonzero = await splitHerdrPane(
 			mockPi(() => Promise.resolve({ code: 2, stdout: "", stderr: "x", killed: false })),
-			{
-				workspaceId: "w1",
-				cwd: "/repo",
-				label: "l",
-			},
+			{ paneId: "w1:p1", cwd: "/repo" },
 		);
 		assert.equal(nonzero.status, "failed");
 		assert.equal(nonzero.status === "failed" ? nonzero.exitCode : null, 2);
 
-		const garbage = await openHerdrTab(
+		const garbage = await splitHerdrPane(
 			mockPi(() => ok("not json")),
-			{ workspaceId: "w1", cwd: "/repo", label: "l" },
+			{ paneId: "w1:p1", cwd: "/repo" },
 		);
 		assert.equal(garbage.status, "failed");
 
-		const missingIds = await openHerdrTab(
+		const missingIds = await splitHerdrPane(
 			mockPi(() => ok('{"result":{}}')),
-			{
-				workspaceId: "w1",
-				cwd: "/repo",
-				label: "l",
-			},
+			{ paneId: "w1:p1", cwd: "/repo" },
 		);
 		assert.equal(missingIds.status, "failed");
 
-		const threw = await openHerdrTab(
+		const threw = await splitHerdrPane(
 			mockPi(() => Promise.reject(new Error("herdr not found"))),
-			{ workspaceId: "w1", cwd: "/repo", label: "l" },
+			{ paneId: "w1:p1", cwd: "/repo" },
 		);
 		assert.equal(threw.status, "failed");
 		assert.match(threw.status === "failed" ? (threw.error ?? "") : "", /herdr not found/);
@@ -194,13 +185,13 @@ describe("shellQuote", () => {
 	});
 });
 
-describe("closeHerdrTab", () => {
-	it("closes by tab id", async () => {
+describe("closeHerdrPane", () => {
+	it("closes by pane id", async () => {
 		const pi = mockPi(() => ok('{"result":{"type":"ok"}}'));
 
-		const result = await closeHerdrTab(pi, "w38:t5");
+		const result = await closeHerdrPane(pi, "w38:p6");
 
 		assert.equal(result.status, "ok");
-		assert.deepEqual(pi.calls[0]?.args, ["tab", "close", "w38:t5"]);
+		assert.deepEqual(pi.calls[0]?.args, ["pane", "close", "w38:p6"]);
 	});
 });

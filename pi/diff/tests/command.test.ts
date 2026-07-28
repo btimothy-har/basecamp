@@ -4,7 +4,7 @@ import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { registerDiffCommand } from "#diff/command.ts";
-import { attachSession, ownedReview, rememberTab } from "#diff/session-state.ts";
+import { attachSession, ownedReview, rememberPane } from "#diff/session-state.ts";
 import { sidecarPath } from "#diff/sidecar.ts";
 import { BASE, harness, herdrEnv, NEW_SESSION, STALE_SESSION, WORKTREE } from "./support/diff-harness.ts";
 
@@ -34,37 +34,38 @@ describe("/diff", () => {
 		assert.match(h.notices[0]?.message ?? "", /not running in Herdr/);
 	});
 
-	it("refuses when hunk is missing, before opening a tab", async (t) => {
+	it("refuses when hunk is missing, before splitting a pane", async (t) => {
 		herdrEnv(t);
 		const h = harness({ hunkAvailable: false });
 
 		await h.run();
 
 		assert.equal(h.notices[0]?.type, "error");
-		assert.equal(argsFor(h.calls, "herdr", "tab create"), undefined);
+		assert.equal(argsFor(h.calls, "herdr", "pane split"), undefined);
 	});
 
-	it("opens a labelled tab in this workspace and launches hunk on the merge-base", async (t) => {
+	it("splits a pane in this tab and launches hunk on the merge-base", async (t) => {
 		herdrEnv(t);
 		const h = harness();
 
 		await h.run();
 
-		assert.deepEqual(argsFor(h.calls, "herdr", "tab create"), [
-			"tab",
-			"create",
-			"--workspace",
-			"w9",
+		assert.deepEqual(argsFor(h.calls, "herdr", "pane split"), [
+			"pane",
+			"split",
+			"w9:p1",
+			"--direction",
+			"right",
+			"--ratio",
+			"0.5",
 			"--cwd",
 			WORKTREE,
-			"--label",
-			"diff: feature",
 			"--no-focus",
 			"--env",
 			"HUNK_DISABLE_UPDATE_NOTICE=1",
 		]);
 		assert.deepEqual(argsFor(h.calls, "herdr", "pane run"), ["pane", "run", "w9:p2", "'hunk'", "'diff'", `'${BASE}'`]);
-		assert.deepEqual(argsFor(h.calls, "herdr", "tab close"), ["tab", "close", "w9:t2"]);
+		assert.deepEqual(argsFor(h.calls, "herdr", "pane close"), ["pane", "close", "w9:p2"]);
 	});
 
 	it("reads notes by the launched session id, never by repo", async (t) => {
@@ -137,9 +138,9 @@ describe("/diff", () => {
 
 		await h.run();
 
-		assert.equal(argsFor(h.calls, "herdr", "tab close"), undefined, "a failed read must not destroy the notes");
+		assert.equal(argsFor(h.calls, "herdr", "pane close"), undefined, "a failed read must not destroy the notes");
 		assert.match(h.notices.at(-1)?.message ?? "", /still open/);
-		assert.equal(ownedReview(WORKTREE)?.tabId, "w9:t2", "the tab must stay reclaimable");
+		assert.equal(ownedReview(WORKTREE)?.paneId, "w9:p2", "the pane must stay reclaimable");
 	});
 
 	it("reports rather than blocking when hunk never registers a session", async (t) => {
@@ -152,35 +153,35 @@ describe("/diff", () => {
 		assert.equal(h.sent.length, 0);
 	});
 
-	it("delivers carried notes when the tab fails to open", async (t) => {
+	it("delivers carried notes when the pane fails to split", async (t) => {
 		herdrEnv(t);
-		rememberTab(WORKTREE, "w9:tStale");
+		rememberPane(WORKTREE, "w9:pStale");
 		attachSession(WORKTREE, STALE_SESSION);
 		const h = harness({
 			preexisting: [STALE_SESSION],
-			tabCreateCode: 3,
+			paneSplitCode: 3,
 			noteReads: [[{ filePath: "old.ts", newRange: [4, 4], body: "earlier" }]],
 		});
 
 		await h.run();
 
-		assert.match(h.notices.at(-1)?.message ?? "", /could not open a Herdr tab/);
+		assert.match(h.notices.at(-1)?.message ?? "", /could not split a Herdr pane/);
 		assert.match(h.sent[0]?.content ?? "", /earlier/, "drained notes must not be discarded on failure");
 	});
 
-	it("closes the tab and delivers carried notes when hunk fails to launch", async (t) => {
+	it("closes the pane and delivers carried notes when hunk fails to launch", async (t) => {
 		herdrEnv(t);
 		const h = harness({ paneRunCode: 4 });
 
 		await h.run();
 
-		assert.deepEqual(argsFor(h.calls, "herdr", "tab close"), ["tab", "close", "w9:t2"]);
+		assert.deepEqual(argsFor(h.calls, "herdr", "pane close"), ["pane", "close", "w9:p2"]);
 		assert.match(h.notices.at(-1)?.message ?? "", /could not start hunk/);
 	});
 
 	it("drains an owned stale review by session id before replacing it", async (t) => {
 		herdrEnv(t);
-		rememberTab(WORKTREE, "w9:tStale");
+		rememberPane(WORKTREE, "w9:pStale");
 		attachSession(WORKTREE, STALE_SESSION);
 		const h = harness({
 			preexisting: [STALE_SESSION],
@@ -194,42 +195,42 @@ describe("/diff", () => {
 
 		const seq = order(h.calls);
 		const staleRead = seq.findIndex((c) => c.includes(STALE_SESSION));
-		const staleClose = seq.indexOf("herdr tab close w9:tStale");
-		const create = seq.findIndex((c) => c.startsWith("herdr tab create"));
-		assert.ok(staleRead >= 0 && staleClose >= 0, "the stale review must be read and its tab closed");
-		assert.ok(staleRead < staleClose, "notes must be read before the window that holds them is closed");
-		assert.ok(staleClose < create, "the stale tab must go before a replacement opens");
+		const staleClose = seq.indexOf("herdr pane close w9:pStale");
+		const split = seq.findIndex((c) => c.startsWith("herdr pane split"));
+		assert.ok(staleRead >= 0 && staleClose >= 0, "the stale review must be read and its pane closed");
+		assert.ok(staleRead < staleClose, "notes must be read before the pane that holds them is closed");
+		assert.ok(staleClose < split, "the stale pane must go before a replacement opens");
 		assert.match(h.sent[0]?.content ?? "", /from the abandoned review/);
 		assert.match(h.sent[0]?.content ?? "", /from this review/);
 	});
 
-	it("recovers when the remembered session died with its window", async (t) => {
+	it("recovers when the remembered session died with its pane", async (t) => {
 		// Quitting hunk without confirming loses that review; the id left behind must
 		// not then fail every future /diff for the lifetime of the process.
 		herdrEnv(t);
-		rememberTab(WORKTREE, "w9:tDead");
+		rememberPane(WORKTREE, "w9:pDead");
 		attachSession(WORKTREE, STALE_SESSION);
 		const h = harness({ preexisting: [], noteReads: [{ fail: "No active session matches sessionId" }, []] });
 
 		await h.run();
 
-		assert.deepEqual(argsFor(h.calls, "herdr", "tab create")?.slice(0, 2), ["tab", "create"], "must still open a diff");
+		assert.deepEqual(argsFor(h.calls, "herdr", "pane split")?.slice(0, 2), ["pane", "split"], "must still open a diff");
 		assert.match(h.notices[0]?.message ?? "", /previous review/);
 		assert.equal(ownedReview(WORKTREE)?.sessionId, NEW_SESSION, "the dead id must be replaced, not retained");
 	});
 
-	it("recovers when a tab that never registered a session can no longer be closed", async (t) => {
-		// `herdr tab close` exits 1 for a tab that is already gone, so retrying it
+	it("recovers when a pane that never registered a session can no longer be closed", async (t) => {
+		// `herdr pane close` exits 1 for a pane that is already gone, so retrying it
 		// forever would strand /diff exactly as the dead-session case did. No session
 		// ever attached here, so there are no notes to protect by stopping.
 		herdrEnv(t);
-		rememberTab(WORKTREE, "w9:tGone");
-		const h = harness({ tabCloseCode: 7, noteReads: [[]] });
+		rememberPane(WORKTREE, "w9:pGone");
+		const h = harness({ paneCloseCode: 7, noteReads: [[]] });
 
 		await h.run();
 
-		assert.deepEqual(argsFor(h.calls, "herdr", "tab create")?.slice(0, 2), ["tab", "create"], "must still open a diff");
-		assert.equal(ownedReview(WORKTREE)?.tabId, "w9:t2", "the unclosable tab must not keep displacing new ones");
+		assert.deepEqual(argsFor(h.calls, "herdr", "pane split")?.slice(0, 2), ["pane", "split"], "must still open a diff");
+		assert.equal(ownedReview(WORKTREE)?.paneId, "w9:p2", "the unclosable pane must not keep displacing new ones");
 	});
 
 	it("leaves a foreign hunk session alone", async (t) => {
@@ -240,16 +241,16 @@ describe("/diff", () => {
 
 		const reads = h.calls.filter((c) => c.args.join(" ").startsWith("session comment list"));
 		assert.equal(reads.length, 1, "only the session /diff launched may be read");
-		assert.deepEqual(argsFor(h.calls, "herdr", "tab close"), ["tab", "close", "w9:t2"]);
+		assert.deepEqual(argsFor(h.calls, "herdr", "pane close"), ["pane", "close", "w9:p2"]);
 	});
 
-	it("keeps the tab id when the close fails so a later run can reclaim it", async (t) => {
+	it("keeps the pane id when the close fails so a later run can reclaim it", async (t) => {
 		herdrEnv(t);
-		const h = harness({ tabCloseCode: 7, noteReads: [[]] });
+		const h = harness({ paneCloseCode: 7, noteReads: [[]] });
 
 		await h.run();
 
-		assert.equal(ownedReview(WORKTREE)?.tabId, "w9:t2");
+		assert.equal(ownedReview(WORKTREE)?.paneId, "w9:p2");
 	});
 
 	it("is not registered in a subagent process", async (t) => {

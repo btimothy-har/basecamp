@@ -8,7 +8,7 @@ import type { TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { forgetCheckpoint, recordCheckpoint } from "#diff/checkpoints.ts";
 import { registerDiffCommand } from "#diff/command.ts";
-import { forgetTab } from "#diff/session-state.ts";
+import { forgetPane } from "#diff/session-state.ts";
 
 type ExecResult = { code: number; stdout: string; stderr: string; killed: boolean };
 type CommandHandler = (args: string, ctx: unknown) => Promise<void>;
@@ -21,7 +21,9 @@ export const PREV_SHA = "99bb99bb99bb99bb99bb99bb99bb99bb99bb99bb";
 export const NEW_SESSION = "11111111-1111-1111-1111-111111111111";
 export const STALE_SESSION = "22222222-2222-2222-2222-222222222222";
 
-const TAB_CREATED = JSON.stringify({ result: { root_pane: { pane_id: "w9:p2" }, tab: { tab_id: "w9:t2" } } });
+const PANE_SPLIT = JSON.stringify({
+	result: { pane: { pane_id: "w9:p2", tab_id: "w9:t2", workspace_id: "w9" }, type: "pane_info" },
+});
 
 function ok(stdout = ""): ExecResult {
 	return { code: 0, stdout, stderr: "", killed: false };
@@ -48,9 +50,9 @@ export interface HarnessOptions {
 	noteReads?: (Note[] | { fail: string })[];
 	confirm?: boolean;
 	hasUI?: boolean;
-	tabCreateCode?: number;
+	paneSplitCode?: number;
 	paneRunCode?: number;
-	tabCloseCode?: number;
+	paneCloseCode?: number;
 	/** Arguments the run is invoked with, e.g. "last". */
 	args?: string;
 	/** Checkpoint recorded before the run, as if an earlier /diff completed. */
@@ -90,17 +92,17 @@ export function harness(options: HarnessOptions = {}): Harness {
 			if (!Array.isArray(next)) return { code: 1, stdout: "", stderr: next.fail, killed: false };
 			return ok(JSON.stringify({ comments: next.map((n) => ({ source: "user", ...n })) }));
 		}
-		if (command === "herdr" && joined.startsWith("tab create")) {
-			const code = options.tabCreateCode ?? 0;
-			return code === 0 ? ok(TAB_CREATED) : { ...ok(), code };
+		if (command === "herdr" && joined.startsWith("pane split")) {
+			const code = options.paneSplitCode ?? 0;
+			return code === 0 ? ok(PANE_SPLIT) : { ...ok(), code };
 		}
 		if (command === "herdr" && joined.startsWith("pane run")) {
 			const code = options.paneRunCode ?? 0;
 			if (code === 0) launched = true;
 			return code === 0 ? ok() : { ...ok(), code };
 		}
-		if (command === "herdr" && joined.startsWith("tab close")) {
-			const code = options.tabCloseCode ?? 0;
+		if (command === "herdr" && joined.startsWith("pane close")) {
+			const code = options.paneCloseCode ?? 0;
 			return code === 0 ? ok('{"result":{"type":"ok"}}') : { ...ok(), code };
 		}
 		throw new Error(`unexpected exec: ${command} ${joined}`);
@@ -162,10 +164,10 @@ export function herdrEnv(t: TestContext, overrides: Record<string, string | unde
 		else process.env[key] = value;
 	}
 	// Surviving state outlives a single test, so every case starts from empty.
-	forgetTab(WORKTREE);
+	forgetPane(WORKTREE);
 	forgetCheckpoint(WORKTREE);
 	t.after(() => {
-		forgetTab(WORKTREE);
+		forgetPane(WORKTREE);
 		forgetCheckpoint(WORKTREE);
 		fs.rmSync(scratch, { recursive: true, force: true });
 		for (const [key, value] of originals) {

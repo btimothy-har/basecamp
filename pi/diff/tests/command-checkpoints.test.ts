@@ -60,7 +60,6 @@ describe("/diff checkpoints", () => {
 		await h.run();
 
 		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${PREV_SHA}'`]);
-		assert.deepEqual(argsFor(h.calls, "herdr", "tab create")?.slice(6, 8), ["--label", "diff: feature (last)"]);
 		assert.deepEqual(getCheckpoint(WORKTREE), { base: BASE, last: PREV_SHA }, "last never advances");
 	});
 
@@ -73,9 +72,6 @@ describe("/diff checkpoints", () => {
 		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${BASE}'`]);
 		assert.ok(h.notices.some((n) => /no checkpoint recorded yet/.test(n.message)));
 		assert.deepEqual(getCheckpoint(WORKTREE), { base: BASE, last: HEAD_SHA });
-		// The label names the command the user ran, so a degraded run is still
-		// distinguishable from a plain /diff tab opened beside it.
-		assert.deepEqual(argsFor(h.calls, "herdr", "tab create")?.slice(6, 8), ["--label", "diff: feature (last)"]);
 	});
 
 	it("drops a checkpoint whose base no longer resolves, then /diff last falls back", async (t) => {
