@@ -162,7 +162,7 @@ export function registerTaskTools(pi: ExtensionAPI, runtime: TasksRuntime): void
 		renderCall(args, theme) {
 			return renderIndexedTaskCall("complete_task", args, theme, runtime);
 		},
-		renderResult(result, { isPartial }, theme) {
+		renderResult(_result, { isPartial }, theme) {
 			if (isPartial) return renderPartial(theme);
 			return renderSuccess("task completed", theme);
 		},

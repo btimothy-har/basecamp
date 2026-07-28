@@ -27,6 +27,8 @@ import { createNudgeBudget, evaluatePreconditions } from "./policy.ts";
 import { type ContinuationAuditEntry, type ContinuationVerdict, MAX_CONSECUTIVE_NUDGES } from "./types.ts";
 
 export const CONTINUATION_NUDGE_TYPE = "basecamp-continuation-nudge";
+/** Bounds the judge call, which holds run settlement open while it is in flight. */
+const JUDGE_TIMEOUT_MS = 20_000;
 const AUDIT_ENTRY_TYPE = "continuation-guard";
 
 type ResolvedJudgeModel = { model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string> } };
@@ -40,6 +42,7 @@ export interface ContinuationGuardDeps {
 		model: Model<Api>;
 		auth: ResolvedJudgeModel["auth"];
 		context: Context;
+		signal: AbortSignal;
 	}) => Promise<ContinuationVerdict | null>;
 }
 
@@ -122,8 +125,6 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 				return;
 			}
 
-			// Deliberately unsignalled: `ctx.signal` may already be aborted as the turn
-			// winds down, which would abort every judge call and silently disable the guard.
 			const context = buildJudgeContext({
 				goal: runtime.state.goal,
 				// buildStateSnapshot returns JSON.stringify output, so this cannot throw.
@@ -135,9 +136,15 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 				recentUserMessages: recentUserMessages(ctx.sessionManager),
 			});
 
+			// The run is still streaming here, so the session cannot settle until this
+			// resolves. An unbounded call would wedge every stop with no way out, and
+			// ctx.signal alone is not enough because it only fires on an explicit abort.
+			const deadline = AbortSignal.timeout(JUDGE_TIMEOUT_MS);
+			const signal = ctx.signal ? AbortSignal.any([ctx.signal, deadline]) : deadline;
+
 			let verdict: ContinuationVerdict | null;
 			try {
-				verdict = await judge({ model: resolved.model, auth: resolved.auth, context });
+				verdict = await judge({ model: resolved.model, auth: resolved.auth, context, signal });
 			} catch (error) {
 				record({ outcome: "no_verdict", reason: errorMessage(error) });
 				return;
@@ -151,12 +158,25 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 				return;
 			}
 
+			// Both checks are re-read because the pre-await samples are stale, and the judge
+			// window is exactly when a user aborts or types: the queues are drained immediately
+			// before agent_end, so almost nothing arrives before the await.
+			if (ctx.signal?.aborted) {
+				// Pi resumes on any queued message without checking for an abort, so nudging
+				// here would restart the run the user just cancelled.
+				record({ outcome: "blocked", block: "aborted" });
+				return;
+			}
+			if (ctx.hasPendingMessages()) {
+				record({ outcome: "blocked", block: "pending_user_messages" });
+				return;
+			}
+
 			budget.recordNudge();
 			pi.sendMessage(
 				{ customType: CONTINUATION_NUDGE_TYPE, content: nudgeContent(subagent), display: false },
 				{ deliverAs: "followUp" },
 			);
-			if (ctx.hasUI) ctx.ui.notify(`↻ continuing — ${verdict.reason}`, "info");
 			audit({
 				outcome: "nudged",
 				subagent,
@@ -164,6 +184,9 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 				category: verdict.category,
 				reason: verdict.reason,
 			});
+			// Best-effort UI comes last: a throwing notify must not lose the record of a nudge
+			// that has already been delivered.
+			if (ctx.hasUI) ctx.ui.notify(`↻ continuing — ${verdict.reason}`, "info");
 		} catch {
 			// The guard is advisory: a failure here must never disturb the run that just ended.
 		}

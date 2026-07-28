@@ -27,8 +27,17 @@ export interface ContinuationVerdict {
 	reason: string;
 }
 
-/** Why the guard declined to act without consulting the rubric. */
-export type PreconditionBlock = "provider_error" | "plan_handoff_active" | "pending_user_messages" | "cap_reached";
+/**
+ * Why the guard declined to act. All but `aborted` are decided before the judge
+ * runs; `aborted` and a second `pending_user_messages` check are re-read after it,
+ * because both go stale across that await.
+ */
+export type PreconditionBlock =
+	| "provider_error"
+	| "plan_handoff_active"
+	| "pending_user_messages"
+	| "cap_reached"
+	| "aborted";
 
 export type PolicyOutcome = { act: true } | { act: false; block: PreconditionBlock };
 
