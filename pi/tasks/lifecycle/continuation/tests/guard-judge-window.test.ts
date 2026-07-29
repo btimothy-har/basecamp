@@ -100,7 +100,7 @@ describe("continuation guard fail-open behavior", () => {
 
 		assert.deepEqual(pi.sent, []);
 		assert.equal(pi.entries.at(-1)?.outcome, "no_verdict");
-		assert.match(pi.entries.at(-1)?.reason ?? "", /fast model unavailable/);
+		assert.match(pi.entries.at(-1)?.reason ?? "", /session model unavailable/);
 	});
 
 	it("does not nudge when the judge returns no decision", async () => {

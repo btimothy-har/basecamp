@@ -123,7 +123,7 @@ export function registerContinuationGuard(pi: ExtensionAPI, runtime: TasksRuntim
 
 			const resolved = await resolveModel(ctx);
 			if (!resolved) {
-				record({ outcome: "no_verdict", reason: "fast model unavailable" });
+				record({ outcome: "no_verdict", reason: "session model unavailable" });
 				return;
 			}
 
