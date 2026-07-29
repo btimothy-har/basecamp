@@ -1,0 +1,272 @@
+name: Terminal-Bench Evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Which model(s) to evaluate
+        type: choice
+        options:
+        - both
+        - glm-5.2
+        - kimi-k3
+        default: both
+      task-set:
+        description: Task selection preset
+        type: choice
+        options:
+        - ci
+        - all
+        default: ci
+      attempts:
+        description: Attempts per task
+        type: string
+        default: "3"
+      concurrency:
+        description: Concurrent tasks
+        type: string
+        default: "4"
+      thinking:
+        description: Thinking level
+        type: choice
+        options:
+        - off
+        - minimal
+        - low
+        - medium
+        - high
+        - xhigh
+        default: xhigh
+      pi-version:
+        description: Pi version under evaluation
+        type: string
+        default: "0.80.7"
+  schedule:
+  # Weekly, Monday 06:00 UTC, running the dispatch defaults (both models, ci, 3 attempts, xhigh, 0.80.7).
+  - cron: "0 6 * * 1"
+
+concurrency:
+  group: terminal-bench-evals
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Compute eval matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      task-set: ${{ steps.inputs.outputs.task-set }}
+      attempts: ${{ steps.inputs.outputs.attempts }}
+      concurrency: ${{ steps.inputs.outputs.concurrency }}
+      thinking: ${{ steps.inputs.outputs.thinking }}
+      pi-version: ${{ steps.inputs.outputs.pi-version }}
+    steps:
+    - name: Resolve inputs
+      id: inputs
+      env:
+        GH_EVENT: ${{ github.event_name }}
+      run: |
+        set -euo pipefail
+        # Scheduled runs have no dispatch inputs; resolve defaults here.
+        if [ "$GH_EVENT" = "workflow_dispatch" ]; then
+          models='${{ inputs.models }}'
+          task_set='${{ inputs.task-set }}'
+          attempts='${{ inputs.attempts }}'
+          concurrency='${{ inputs.concurrency }}'
+          thinking='${{ inputs.thinking }}'
+          pi_version='${{ inputs.pi-version }}'
+        else
+          models='both'
+          task_set='ci'
+          attempts='3'
+          concurrency='4'
+          thinking='xhigh'
+          pi_version='0.80.7'
+        fi
+        {
+          echo "models=${models}"
+          echo "task-set=${task_set}"
+          echo "attempts=${attempts}"
+          echo "concurrency=${concurrency}"
+          echo "thinking=${thinking}"
+          echo "pi-version=${pi_version}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Build model matrix
+      id: matrix
+      env:
+        MODELS: ${{ steps.inputs.outputs.models }}
+      run: |
+        set -euo pipefail
+        # Each leg carries a slug because artifact names disallow '/'.
+        case "$MODELS" in
+          glm-5.2)
+            entries='[{"model":"openrouter/z-ai/glm-5.2","slug":"glm-5.2"}]'
+            ;;
+          kimi-k3)
+            entries='[{"model":"openrouter/moonshotai/kimi-k3","slug":"kimi-k3"}]'
+            ;;
+          both)
+            entries='[{"model":"openrouter/z-ai/glm-5.2","slug":"glm-5.2"},{"model":"openrouter/moonshotai/kimi-k3","slug":"kimi-k3"}]'
+            ;;
+          *)
+            echo "Unknown models input: $MODELS" >&2
+            exit 1
+            ;;
+        esac
+        matrix="$(jq -cn --argjson entries "$entries" '{include: $entries}')"
+        echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+
+  eval:
+    name: Eval ${{ matrix.slug }}
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    env:
+      BIFROST_BASE_URL: ${{ secrets.BIFROST_BASE_URL }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Join tailnet
+      uses: tailscale/github-action@v3
+      with:
+        oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+        tags: tag:ci
+
+    - name: Configure Docker DNS for MagicDNS
+      run: |
+        set -euo pipefail
+        # Docker containers on GHA runners cannot resolve tailscale MagicDNS
+        # names with the default resolver; point them at the tailnet resolver.
+        echo '{ "dns": ["100.100.100.100", "1.1.1.1"] }' | sudo tee /etc/docker/daemon.json > /dev/null
+        sudo systemctl restart docker
+
+    - name: Bifrost canary
+      run: |
+        set -euo pipefail
+        # Fail before any paid eval work if the proxy or tailnet is broken.
+        # Tailnet route propagation can lag, so retry briefly.
+        for attempt in 1 2 3; do
+          if curl -fsS -H "Authorization: Bearer ${LLM_API_KEY}" "${BIFROST_BASE_URL}/v1/models" > /dev/null; then
+            echo "Bifrost proxy reachable (attempt ${attempt})"
+            exit 0
+          fi
+          echo "Canary attempt ${attempt} failed" >&2
+          sleep 10
+        done
+        echo "Bifrost proxy unreachable after 3 attempts" >&2
+        exit 1
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+
+    - name: Install harbor
+      run: |
+        set -euo pipefail
+        # Newest stable harbor release on PyPI as of 2026-07-29 is 0.20.0
+        # (later releases are dev builds only, e.g. 0.20.1.dev*).
+        uv tool install harbor==0.20.0
+
+    - name: Sync Python environment
+      run: |
+        set -euo pipefail
+        uv sync
+
+    - name: Render models file
+      run: |
+        set -euo pipefail
+        # pi does not interpolate baseUrl in models.json, so render a resolved
+        # copy outside the repo tree (the launcher requires a clean git status).
+        python3 - <<'EOF'
+        import os
+        import pathlib
+
+        base_url = os.environ["BIFROST_BASE_URL"]
+        src = pathlib.Path("evals/terminal_bench/models.ci.json")
+        dst = pathlib.Path(os.environ["RUNNER_TEMP"]) / "models.ci.resolved.json"
+        dst.write_text(src.read_text().replace("$BIFROST_BASE_URL", base_url))
+        print(f"Rendered {src} -> {dst}")
+        EOF
+
+    - name: Run Terminal-Bench eval
+      run: |
+        set -euo pipefail
+        uv run python -m evals.terminal_bench.run \
+          '${{ needs.setup.outputs.task-set }}' \
+          --engine docker \
+          --model '${{ matrix.model }}' \
+          --thinking '${{ needs.setup.outputs.thinking }}' \
+          --pi-version '${{ needs.setup.outputs.pi-version }}' \
+          --models-file "${RUNNER_TEMP}/models.ci.resolved.json" \
+          --attempts '${{ needs.setup.outputs.attempts }}' \
+          --concurrency '${{ needs.setup.outputs.concurrency }}' \
+          --jobs-dir "${RUNNER_TEMP}/jobs" \
+          --yes
+
+    - name: Upload eval jobs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: eval-jobs-${{ matrix.slug }}
+        path: ${{ runner.temp }}/jobs
+        if-no-files-found: warn
+
+    - name: Summarize scores
+      if: always()
+      run: |
+        set -euo pipefail
+        python3 - <<'EOF'
+        import json
+        import os
+        import pathlib
+
+        jobs_dir = pathlib.Path(os.environ["RUNNER_TEMP"]) / "jobs"
+        summary = os.environ["GITHUB_STEP_SUMMARY"]
+
+        lines = ["## Terminal-Bench results", ""]
+        results = []
+        if jobs_dir.is_dir():
+            candidates = sorted(
+                (p for p in jobs_dir.rglob("result.json") if p.is_file()),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            if candidates:
+                try:
+                    data = json.loads(candidates[0].read_text())
+                except (OSError, json.JSONDecodeError) as exc:
+                    lines.append(f"Could not parse {candidates[0]}: {exc}")
+                else:
+                    if isinstance(data, dict):
+                        for key in sorted(data):
+                            value = data[key]
+                            if isinstance(value, (int, float, str, bool)):
+                                results.append((key, value))
+                        if isinstance(data.get("scores"), dict):
+                            for key in sorted(data["scores"]):
+                                results.append((f"scores.{key}", data["scores"][key]))
+                    if not results:
+                        lines.append("result.json contained no printable score fields.")
+            else:
+                lines.append("No result.json found under the jobs directory.")
+        else:
+            lines.append("No jobs directory found.")
+
+        if results:
+            lines.append("| Metric | Value |")
+            lines.append("| --- | --- |")
+            for key, value in results:
+                lines.append(f"| {key} | {value} |")
+
+        with open(summary, "a") as fh:
+            fh.write("\n".join(lines) + "\n")
+        EOF
