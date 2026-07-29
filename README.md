@@ -353,6 +353,12 @@ Useful overrides:
 # Include the fourth native-arm64 task (8 GiB limit)
 make eval EVAL_SELECTION=podman-arm64-all
 
+# The amd64 preset used by the GitHub Actions workflow (34 tasks, Docker only)
+make eval EVAL_SELECTION=docker-amd64 EVAL_ENGINE=docker
+
+# The full terminal-bench-2-1 dataset (cannot be combined with other selections)
+make eval EVAL_SELECTION=all EVAL_ENGINE=docker
+
 # Choose arbitrary tasks
 make eval EVAL_SELECTION="hf-model-inference pytorch-model-recovery"
 
@@ -390,7 +396,17 @@ Browse completed jobs with:
 harbor view "$HOME/evals/basecamp-terminal-bench/jobs"
 ```
 
-Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
+Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants, while `docker-amd64` and `all` assume an amd64 Docker host. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
+
+The launcher reconciles each finished run: when Harbor silently drops a task filter that matches nothing (dataset drift), the trial count no longer equals tasks x attempts and the launch fails with an explicit error instead of reporting a silently smaller result.
+
+### GitHub Actions
+
+`.github/workflows/terminal-bench.yml` runs the same launcher on GitHub-hosted runners, routing model traffic through a tailscale-hosted Bifrost proxy. It triggers manually (`workflow_dispatch`); a weekly Monday 06:00 UTC cron is prepared but intentionally disabled until dispatched runs prove the pipeline (restore note in the workflow). Matrix legs are (model, thinking) pairs: ad hoc dispatches default to a single `openrouter/z-ai/glm-5.2` leg, while the weekly run — once re-enabled — executes both `openrouter/z-ai/glm-5.2` and `openrouter/moonshotai/kimi-k3` at their per-model thinking defaults (xhigh), the `docker-amd64` preset, 3 attempts. Dispatch inputs cover the model(s), task-set, attempts, concurrency, a thinking override (or `per-model`, which uses each model's default — xhigh for Anthropic/OpenAI legs, provider-max effort for the others via their `thinkingLevelMap`), and the Pi version.
+
+Each matrix leg joins the tailnet with an OAuth client (`tag:github-actions`), points container DNS at the tailnet resolver, verifies proxy reachability from inside a container before any paid work, renders `evals/terminal_bench/models.ci.json` (a secret-free template whose `$BIFROST_BASE_URL` placeholder is resolved at run time; `LLM_API_KEY` stays an environment reference), and publishes a score summary plus a curated artifact containing only job-level result and config files.
+
+Required repository secrets: `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET` (tailnet OAuth client scoped to `tag:github-actions`), `LLM_API_KEY` (a dedicated, eval-scoped Bifrost key), and `BIFROST_BASE_URL` (the proxy's tailnet base URL, without a path suffix).
 
 ## Package Layout
 

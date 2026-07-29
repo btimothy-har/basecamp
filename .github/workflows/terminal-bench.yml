@@ -1,0 +1,302 @@
+name: Terminal-Bench Evals
+
+on:
+  workflow_dispatch:
+    inputs:
+      models:
+        description: Which model(s) to evaluate (ad hoc runs default to one leg)
+        type: choice
+        options:
+        - glm-5.2
+        - kimi-k3
+        - both
+        default: glm-5.2
+      task-set:
+        description: Task selection preset
+        type: choice
+        options:
+        - docker-amd64
+        - all
+        default: docker-amd64
+      attempts:
+        description: Attempts per task
+        type: string
+        default: "3"
+      concurrency:
+        description: Concurrent tasks
+        type: string
+        default: "4"
+      thinking:
+        description: Thinking level override (per-model uses each model's default; a specific level overrides it)
+        type: choice
+        options:
+        - per-model
+        - off
+        - minimal
+        - low
+        - medium
+        - high
+        - xhigh
+        default: per-model
+      pi-version:
+        description: Pi version under evaluation
+        type: string
+        default: "0.80.7"
+  # Weekly cron (Monday 06:00 UTC) intentionally disabled until the first
+  # dispatched runs prove the pipeline. Re-enable by restoring:
+  # schedule:
+  # - cron: "0 6 * * 1"
+  # Scheduled runs fall back via the || expressions in the setup job
+  # (inputs.* are empty): both models at per-model defaults.
+
+# Keyed by event so a queued weekly run is never dropped behind manual
+# dispatches; within a trigger type, runs serialize.
+concurrency:
+  group: terminal-bench-evals-${{ github.event_name }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  setup:
+    name: Compute eval matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      task-set: ${{ steps.inputs.outputs.task-set }}
+      attempts: ${{ steps.inputs.outputs.attempts }}
+      concurrency: ${{ steps.inputs.outputs.concurrency }}
+      pi-version: ${{ steps.inputs.outputs.pi-version }}
+      config: ${{ steps.inputs.outputs.config }}
+    steps:
+    - name: Resolve and validate inputs
+      id: inputs
+      env:
+        # Scheduled runs see empty inputs.*; the fallbacks give the weekly run
+        # both models at per-model thinking defaults, while ad hoc dispatches
+        # default to a single glm-5.2 leg via the input defaults above.
+        MODELS: ${{ inputs.models || 'both' }}
+        TASK_SET: ${{ inputs.task-set || 'docker-amd64' }}
+        ATTEMPTS: ${{ inputs.attempts || '3' }}
+        CONCURRENCY: ${{ inputs.concurrency || '4' }}
+        THINKING: ${{ inputs.thinking || 'per-model' }}
+        PI_VERSION: ${{ inputs.pi-version || '0.80.7' }}
+      run: |
+        set -euo pipefail
+        [[ "$ATTEMPTS" =~ ^[0-9]+$ ]] || { echo "attempts must be a positive integer: $ATTEMPTS" >&2; exit 1; }
+        [[ "$CONCURRENCY" =~ ^[0-9]+$ ]] || { echo "concurrency must be a positive integer: $CONCURRENCY" >&2; exit 1; }
+        [[ "$PI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "pi-version must be x.y.z: $PI_VERSION" >&2; exit 1; }
+        {
+          echo "models=${MODELS}"
+          echo "task-set=${TASK_SET}"
+          echo "attempts=${ATTEMPTS}"
+          echo "concurrency=${CONCURRENCY}"
+          echo "thinking=${THINKING}"
+          echo "pi-version=${PI_VERSION}"
+          echo "config=${TASK_SET} x${ATTEMPTS} attempts, concurrency ${CONCURRENCY}, pi ${PI_VERSION}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Build model matrix
+      id: matrix
+      env:
+        MODELS: ${{ steps.inputs.outputs.models }}
+        THINKING: ${{ steps.inputs.outputs.thinking }}
+      run: |
+        set -euo pipefail
+        # One legs table: model slug -> full model id and default thinking level.
+        # One level per model: opus/gpt legs default to xhigh (mapped xhigh->xhigh
+        # in models.ci.json), other models default to xhigh mapped to provider max.
+        # Each leg carries a slug because artifact names disallow '/'.
+        model_for() {
+          case "$1" in
+            glm-5.2) echo "openrouter/z-ai/glm-5.2" ;;
+            kimi-k3) echo "openrouter/moonshotai/kimi-k3" ;;
+            *) return 1 ;;
+          esac
+        }
+        default_thinking_for() {
+          case "$1" in
+            glm-5.2) echo "xhigh" ;;
+            kimi-k3) echo "xhigh" ;;
+            *) return 1 ;;
+          esac
+        }
+
+        declare -a slugs
+        case "$MODELS" in
+          glm-5.2) slugs=(glm-5.2) ;;
+          kimi-k3) slugs=(kimi-k3) ;;
+          both) slugs=(glm-5.2 kimi-k3) ;;
+          *)
+            echo "Unknown models input: $MODELS" >&2
+            exit 1
+            ;;
+        esac
+
+        entries='[]'
+        for slug in "${slugs[@]}"; do
+          model="$(model_for "$slug")"
+          if [ "$THINKING" = "per-model" ]; then
+            levels="$(default_thinking_for "$slug")"
+          else
+            levels="$THINKING"
+          fi
+          for level in $levels; do
+            entries="$(jq -c \
+              --arg model "$model" --arg slug "$slug" --arg thinking "$level" \
+              '. + [{model: $model, slug: $slug, thinking: $thinking}]' <<<"$entries")"
+          done
+        done
+        entries="$(jq -c 'unique_by(.model)' <<<"$entries")"
+        matrix="$(jq -cn --argjson entries "$entries" '{include: $entries}')"
+        echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+
+  eval:
+    name: Eval ${{ matrix.slug }} (${{ matrix.thinking }})
+    needs: setup
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
+    env:
+      BIFROST_BASE_URL: ${{ secrets.BIFROST_BASE_URL }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      TASK_SET: ${{ needs.setup.outputs.task-set }}
+      ATTEMPTS: ${{ needs.setup.outputs.attempts }}
+      CONCURRENCY: ${{ needs.setup.outputs.concurrency }}
+      THINKING: ${{ matrix.thinking }}
+      PI_VERSION: ${{ needs.setup.outputs.pi-version }}
+      MODEL: ${{ matrix.model }}
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Join tailnet
+      # Pinned to the v3 commit; this action receives the tailnet OAuth secret.
+      uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade
+      with:
+        oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+        oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+        tags: tag:github-actions
+
+    - name: Configure Docker DNS for MagicDNS
+      run: |
+        set -euo pipefail
+        # Docker containers on GHA runners cannot resolve tailscale MagicDNS
+        # names with the default resolver; merge the tailnet resolver into the
+        # existing daemon configuration rather than replacing it.
+        if [ -f /etc/docker/daemon.json ]; then
+          jq '. + {dns: ["100.100.100.100", "1.1.1.1"]}' /etc/docker/daemon.json | sudo tee /etc/docker/daemon.json.new > /dev/null
+        else
+          echo '{ "dns": ["100.100.100.100", "1.1.1.1"] }' | sudo tee /etc/docker/daemon.json.new > /dev/null
+        fi
+        sudo mv /etc/docker/daemon.json.new /etc/docker/daemon.json
+        sudo systemctl restart docker
+
+    - name: Bifrost canary (container path)
+      run: |
+        set -euo pipefail
+        # The eval's LLM traffic originates inside task containers, so the
+        # canary must prove the container DNS/route path, not the host's.
+        # Fail before any paid work; tailnet propagation can lag, so retry.
+        for attempt in 1 2 3; do
+          if docker run --rm \
+            -e BIFROST_BASE_URL -e LLM_API_KEY \
+            curlimages/curl:8.10.1 -fsS -o /dev/null \
+            -H "Authorization: Bearer ${LLM_API_KEY}" \
+            "${BIFROST_BASE_URL}/v1/models"; then
+            echo "Bifrost proxy reachable from a container (attempt ${attempt})"
+            exit 0
+          fi
+          echo "Canary attempt ${attempt} failed" >&2
+          sleep 10
+        done
+        echo "Bifrost proxy unreachable from containers after 3 attempts" >&2
+        exit 1
+
+    - name: Free disk space
+      run: |
+        set -euo pipefail
+        # The docker-amd64 preset pulls dozens of task images; reclaim the
+        # preinstalled toolchain caches the eval never uses.
+        sudo rm -rf /usr/local/lib/android /opt/hostedtoolcache /usr/share/dotnet
+        docker system prune -af
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+
+    - name: Install harbor
+      run: |
+        set -euo pipefail
+        # Must match the pinned harness stack documented in README.md
+        # (Terminal-Bench Evaluation); change both together.
+        uv tool install --force --prerelease explicit \
+          --with 'litellm==1.90.2' \
+          'harbor==0.20.1.dev202607210139'
+
+    - name: Sync Python environment
+      run: |
+        set -euo pipefail
+        uv sync
+
+    - name: Render models file
+      run: |
+        set -euo pipefail
+        # Pi interpolates apiKey/headers but not baseUrl, so the committed
+        # template's $BIFROST_BASE_URL is resolved here, outside the repo tree
+        # (the launcher requires a clean git status).
+        uv run python -m evals.terminal_bench.models \
+          evals/terminal_bench/models.ci.json \
+          "${RUNNER_TEMP}/models.ci.resolved.json"
+
+    - name: Run Terminal-Bench eval
+      run: |
+        set -euo pipefail
+        uv run python -m evals.terminal_bench.run \
+          "${TASK_SET}" \
+          --engine docker \
+          --model "${MODEL}" \
+          --thinking "${THINKING}" \
+          --pi-version "${PI_VERSION}" \
+          --models-file "${RUNNER_TEMP}/models.ci.resolved.json" \
+          --attempts "${ATTEMPTS}" \
+          --concurrency "${CONCURRENCY}" \
+          --jobs-dir "${RUNNER_TEMP}/jobs" \
+          --yes
+
+    - name: Upload eval results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: eval-jobs-${{ matrix.slug }}-${{ matrix.thinking }}
+        # The repository is public: upload only job-level result/config files.
+        # The raw jobs tree is deliberately excluded — harbor bind-mounts agent
+        # transcripts into it and its per-trial scrubber does not cover
+        # BIFROST_BASE_URL (and never runs for cancelled trials).
+        path: |
+          ${{ runner.temp }}/jobs/*/result.json
+          ${{ runner.temp }}/jobs/*/config.json
+        if-no-files-found: warn
+
+    - name: Summarize scores
+      if: always()
+      env:
+        CONFIG: ${{ needs.setup.outputs.config }}
+        MODEL_NAME: ${{ matrix.model }}
+        LEVEL: ${{ matrix.thinking }}
+      run: |
+        set -uo pipefail
+        {
+          echo "### \`${MODEL_NAME}\` @ ${LEVEL} — ${CONFIG}"
+          echo ""
+          uv run python -m evals.terminal_bench.summarize "${RUNNER_TEMP}/jobs"
+        } >> "$GITHUB_STEP_SUMMARY"
+        # summarize exits nonzero on incomplete jobs; preserve the summary but
+        # keep the step red so truncation is visible.
+        rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "Summarize reported an incomplete or missing result (exit ${rc})" >&2
+          exit "$rc"
+        fi
