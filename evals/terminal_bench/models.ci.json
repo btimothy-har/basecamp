@@ -20,10 +20,10 @@
 					},
 					"thinkingLevelMap": {
 						"off": "none",
-						"minimal": "high",
-						"low": "high",
-						"medium": "high",
-						"high": "max",
+						"minimal": "low",
+						"low": "low",
+						"medium": "low",
+						"high": "high",
 						"xhigh": "max"
 					}
 				},
@@ -42,10 +42,10 @@
 					},
 					"thinkingLevelMap": {
 						"off": "none",
-						"minimal": "high",
-						"low": "high",
-						"medium": "high",
-						"high": "max",
+						"minimal": "low",
+						"low": "low",
+						"medium": "low",
+						"high": "high",
 						"xhigh": "max"
 					}
 				}
