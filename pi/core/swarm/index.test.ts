@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { listCatalogItemsByType } from "#core/catalog/index.ts";
 import registerSwarm from "./index.ts";
@@ -55,6 +55,15 @@ function createMockPi(): MockPi {
 	};
 }
 
+function setRunId(t: TestContext, runId: string): void {
+	const prior = process.env.BASECAMP_RUN_ID;
+	process.env.BASECAMP_RUN_ID = runId;
+	t.after(() => {
+		if (prior === undefined) delete process.env.BASECAMP_RUN_ID;
+		else process.env.BASECAMP_RUN_ID = prior;
+	});
+}
+
 describe("core/swarm primitive entrypoint", () => {
 	let priorDepth: string | undefined;
 
@@ -96,5 +105,22 @@ describe("core/swarm primitive entrypoint", () => {
 				"testing-specialist",
 			]),
 		);
+	});
+
+	it("registerSwarm withholds the dispatch trio from a dispatched agent", (t) => {
+		process.env.BASECAMP_AGENT_DEPTH = "1";
+		// A run id is what makes this a daemon-spawned agent rather than a stray subagent:
+		// without it registerAgentSurfaces returns early, so the absence assertions below
+		// would hold without the primary-only gate ever being exercised.
+		setRunId(t, "run-test");
+		const pi = createMockPi();
+
+		registerSwarm(pi as unknown as ExtensionAPI);
+
+		const toolNames = new Set(pi.tools.map((tool) => tool.name));
+		for (const primaryOnly of ["dispatch_agent", "list_agents", "wait_for_agent"]) {
+			assert.equal(toolNames.has(primaryOnly), false, `${primaryOnly} must not reach a subagent`);
+		}
+		assert.equal(toolNames.has("ask_agent"), true);
 	});
 });
