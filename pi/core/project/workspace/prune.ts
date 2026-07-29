@@ -3,15 +3,15 @@
  *
  * Branch GC is not automated in Phase 2: this picker is how a user reclaims session worktrees
  * (`wt-*`, `copilot/*`, direct labels) and, on explicit opt-in, their branches. Agent worktrees
- * are daemon-owned and never listed. A dirty worktree — or one holding a live lease or foreign
- * lock — is only force-removed after an explicit confirmation, so neither uncommitted work nor
- * another live session's workspace is discarded by surprise.
+ * are daemon-owned and never listed. A dirty worktree — or one holding a live lease, a fresh
+ * staged lock, or a foreign lock — is only force-removed after an explicit confirmation, so
+ * neither uncommitted work nor another live session's workspace is discarded by surprise.
  */
 
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { findWorktreeRecord, gitWorktreeRecords, listWorktrees } from "#core/git/worktrees/crud.ts";
-import { classifySessionWorktree, isWorktreeClean } from "#core/git/worktrees/lease.ts";
+import { classifySessionWorktree, isWorktreeClean, parseStagedLock } from "#core/git/worktrees/lease.ts";
 import { deleteBranch, removeWorktree } from "#core/git/worktrees/lifecycle.ts";
 import { requireWorkspaceRuntime } from "./runtime.ts";
 
@@ -22,8 +22,10 @@ export interface PruneCandidate {
 	path: string;
 	branch: string | null;
 	dirty: boolean;
-	/** Fresh session lease or foreign lock — likely another live session's; confirm before removal. */
+	/** Fresh session lease, fresh staged lock, or foreign lock — confirm before removal. */
 	inUse: boolean;
+	/** Fresh staged lock — staged for a workstream launch, not (yet) a live session's. */
+	staged: boolean;
 }
 
 /** Session worktrees eligible for manual prune: under the repo's root, not agent-owned, not active. */
@@ -41,13 +43,15 @@ export async function collectPruneCandidates(
 		if (activePath && path.resolve(summary.path) === path.resolve(activePath)) continue;
 		const record = findWorktreeRecord(records, summary.path);
 		const dirty = !(await isWorktreeClean(pi, summary.path));
+		// The automated sweep only ever reaps "cold"; the picker may override, but never silently.
+		const cold = record === null || classifySessionWorktree(record) === "cold";
 		candidates.push({
 			label: summary.label,
 			path: summary.path,
 			branch: summary.branch === "detached" ? null : summary.branch,
 			dirty,
-			// The automated sweep only ever reaps "cold"; the picker may override, but never silently.
-			inUse: record !== null && classifySessionWorktree(record) !== "cold",
+			inUse: !cold,
+			staged: !cold && parseStagedLock(record?.lockReason) !== null,
 		});
 	}
 	return candidates;
@@ -66,15 +70,17 @@ export async function pruneWorktree(
 
 function formatCandidate(candidate: PruneCandidate): string {
 	const branch = candidate.branch ?? "detached";
-	const marks = `${candidate.inUse ? "  (in use)" : ""}${candidate.dirty ? "  (uncommitted changes)" : ""}`;
+	const inUseMark = candidate.staged ? "  (staged, awaiting launch)" : candidate.inUse ? "  (in use)" : "";
+	const marks = `${inUseMark}${candidate.dirty ? "  (uncommitted changes)" : ""}`;
 	return `${candidate.label} — ${branch}${marks}`;
 }
 
 /**
- * Confirm and remove a chosen candidate. An in-use worktree (live lease or foreign lock) and a
- * dirty worktree are each force-removed only after an explicit confirmation (the guards against
- * yanking another live session's workspace or discarding uncommitted work via the picker);
- * the branch is deleted only on a further opt-in. Returns whether the worktree was removed.
+ * Confirm and remove a chosen candidate. An in-use worktree (live lease, fresh staged lock, or
+ * foreign lock) and a dirty worktree are each force-removed only after an explicit confirmation
+ * (the guards against yanking another live session's workspace or discarding uncommitted work
+ * via the picker); the branch is deleted only on a further opt-in. Returns whether the worktree
+ * was removed.
  */
 export async function confirmAndPrune(
 	pi: ExtensionAPI,
@@ -84,8 +90,10 @@ export async function confirmAndPrune(
 ): Promise<boolean> {
 	if (target.inUse) {
 		const proceed = await ctx.ui.confirm(
-			"Worktree in use",
-			`${target.label} appears to be in use by a live session. Remove it anyway?`,
+			target.staged ? "Staged worktree" : "Worktree in use",
+			target.staged
+				? `${target.label} is staged for a workstream launch and has no session yet. Remove it anyway?`
+				: `${target.label} appears to be in use by a live session. Remove it anyway?`,
 		);
 		if (!proceed) {
 			ctx.ui.notify("Prune cancelled", "info");

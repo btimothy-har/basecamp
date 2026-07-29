@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WorktreeResult } from "#core/git/worktrees/crud.ts";
+import { stagedLockReason } from "#core/git/worktrees/lease.ts";
 import { shouldRunWorktreeSetup, type WorktreeSetupResult } from "#core/project/workspace/setup.ts";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import {
@@ -36,15 +37,29 @@ export async function provisionWorktree(
 	repo: string,
 	worktreeLabel: string,
 	branchName: string | null,
-): Promise<{ worktree: WorktreeResult; error?: string }> {
+): Promise<{ worktree: WorktreeResult; error?: string; stagingError?: string }> {
+	let worktree: WorktreeResult;
 	try {
-		const worktree = await deps.getOrCreateWorktree(pi, repoRoot, repo, worktreeLabel, branchName);
-		return { worktree };
+		// The staged lock keeps the cold session-start sweep from reaping this worktree before
+		// `pi --workstream` launches in it; creation takes it atomically (--lock --reason) so no
+		// concurrent sweep can observe the new tree unlocked.
+		worktree = await deps.getOrCreateWorktree(pi, repoRoot, repo, worktreeLabel, branchName, stagedLockReason());
 	} catch (err) {
 		return {
 			worktree: { worktreeDir: "", label: worktreeLabel, branch: branchName ?? "", created: false },
 			error: errorMessage(err),
 		};
+	}
+	// On the create path the fresh staged lock reads as live and this is a no-op; on the reuse
+	// path it re-stamps a lock that has gone cold. A failure here is NOT fatal to provisioning:
+	// aborting would strand a created worktree whose retry skips the setup hook (the reuse path
+	// reports created: false), so the launch continues and the failure rides along as
+	// stagingError for the caller to surface.
+	try {
+		await deps.stageWorktreeLock(pi, repoRoot, worktree.worktreeDir);
+		return { worktree };
+	} catch (err) {
+		return { worktree, stagingError: errorMessage(err) };
 	}
 }
 

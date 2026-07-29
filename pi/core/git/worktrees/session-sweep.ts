@@ -4,7 +4,10 @@
  * The primary teardown is exit-reap at `session_shutdown`. This session-start sweep is the
  * backstop for the crash case (no graceful quit fired) and for leaseless legacy residue: it
  * reclaims session worktrees (`wt-*`, `copilot/*`, direct labels) that are cold — a session
- * lease past the TTL, or unlocked/leaseless — AND clean. Dirty-cold worktrees are surfaced,
+ * lease past the TTL, a staged lock past its shorter TTL (staged but never launched), or
+ * unlocked/leaseless — AND clean. A fresh `basecamp staged` lock (copilot's
+ * `launch_workstream` provisioning) reads as live: the worktree is awaiting the
+ * `pi --workstream` session that will take the lock over. Dirty-cold worktrees are surfaced,
  * never removed; the branch is always kept. Agent worktrees are the daemon's, never touched
  * here. Strictly local (git status only, no network).
  */

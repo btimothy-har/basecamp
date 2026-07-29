@@ -199,12 +199,19 @@ export async function attachWorktreeDir(
 	return { worktreeDir: resolvedDir, label, branch: branchName(record), created: false };
 }
 
+/**
+ * When `lockReason` is set, a newly created worktree is locked atomically (`git worktree add
+ * --lock --reason`), so no cleanup process can observe it unlocked between creation and a
+ * later lock call — the createAgentWorktree precedent. Ignored on the reuse path: refreshing
+ * an existing worktree's lock is the caller's job.
+ */
 export async function getOrCreateWorktree(
 	pi: ExtensionAPI,
 	repoRoot: string,
 	repoName: string,
 	label: string,
 	branchOverride?: string | null,
+	lockReason?: string,
 ): Promise<WorktreeResult> {
 	ensureWorktreeLabel(label);
 	const defaultBranch = await validateProtectedCheckout(pi, repoRoot);
@@ -232,9 +239,10 @@ export async function getOrCreateWorktree(
 
 	fs.mkdirSync(path.dirname(worktreeDir), { recursive: true });
 
+	const lockArgs = lockReason ? ["--lock", "--reason", lockReason] : [];
 	const args = (await branchExists(pi, repoRoot, branch))
-		? ["-C", repoRoot, "worktree", "add", worktreeDir, branch]
-		: ["-C", repoRoot, "worktree", "add", "-b", branch, worktreeDir, defaultBranch];
+		? ["-C", repoRoot, "worktree", "add", ...lockArgs, worktreeDir, branch]
+		: ["-C", repoRoot, "worktree", "add", ...lockArgs, "-b", branch, worktreeDir, defaultBranch];
 	const result = await pi.exec("git", args, { timeout: 30_000 });
 	if (result.code !== 0) {
 		throw new Error(`Failed to create worktree: ${result.stderr}`);

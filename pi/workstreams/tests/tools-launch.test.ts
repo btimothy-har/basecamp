@@ -168,3 +168,38 @@ describe("launch_workstream provisioning", () => {
 		assert.equal(details.worktree?.created, false);
 	});
 });
+
+describe("launch_workstream staged lock", () => {
+	it("stamps the staged lock on the provisioned worktree (atomic on create)", async () => {
+		const harness = makeDeps(new FakeDaemonClient());
+		seedWorkstream(harness, "steady-amber-otter", { label: "Alpha" });
+
+		const { details } = await runLaunch(launchParams("steady-amber-otter"), harness.deps);
+
+		assert.equal(details.status, "launched");
+		assert.match(
+			harness.provisionCalls[0]?.lockReason ?? "",
+			/^basecamp staged /,
+			"creation receives the staged reason for an atomic --lock --reason add",
+		);
+		assert.deepEqual(harness.stagingCalls, [
+			{ repoRoot: "/repo", worktreeDir: "/worktrees/org/repo/copilot/steady-amber-otter" },
+		]);
+	});
+
+	it("continues with a warning when the staged lock cannot be taken (setup and Herdr still run)", async () => {
+		const harness = makeDeps(new FakeDaemonClient());
+		seedWorkstream(harness, "steady-amber-otter");
+		harness.setSetupCommand("make setup");
+		harness.setStagingError(new Error("cannot lock"));
+
+		const { result, details } = await runLaunch(launchParams("steady-amber-otter"), harness.deps);
+
+		assert.equal(result.isError ?? false, false);
+		assert.equal(details.status, "launched");
+		assert.match(details.message, /staged lock could not be taken \(cannot lock\)/);
+		assert.equal(harness.setupCalls.length, 1, "the setup hook still runs on the created worktree");
+		assert.equal(harness.herdrCalls.length, 1, "the Herdr pane still opens");
+		assert.match(details.next_step, /pi --workstream/);
+	});
+});

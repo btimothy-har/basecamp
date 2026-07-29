@@ -3,7 +3,12 @@ import * as path from "node:path";
 import { describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { worktreesRoot } from "#core/git/constants.ts";
-import { SESSION_COLD_TTL_MS, sessionLeaseReason } from "#core/git/worktrees/lease.ts";
+import {
+	SESSION_COLD_TTL_MS,
+	SESSION_STAGED_TTL_MS,
+	sessionLeaseReason,
+	stagedLockReason,
+} from "#core/git/worktrees/lease.ts";
 import { sweepSessionWorktrees } from "#core/git/worktrees/session-sweep.ts";
 import { useTempWorktreesRoot } from "./worktree-root.ts";
 
@@ -73,6 +78,24 @@ describe("sweepSessionWorktrees", () => {
 
 	it("reclaims a leaseless (unlocked) legacy worktree when clean", async () => {
 		const { pi, removed } = sweepPi([{ label: "copilot/slug", branch: "bt/slug", lockReason: undefined }]);
+		const result = await sweepSessionWorktrees(pi, REPO_ROOT, IDENTITY, NOW);
+		assert.deepEqual(result.reclaimed, [wtPath("copilot/slug")]);
+		assert.deepEqual(removed, [wtPath("copilot/slug")]);
+	});
+
+	it("keeps a freshly staged copilot worktree awaiting its session", async () => {
+		const { pi, removed } = sweepPi([
+			{ label: "copilot/slug", branch: "bt/slug", lockReason: stagedLockReason(new Date(NOW - 1000)) },
+		]);
+		const result = await sweepSessionWorktrees(pi, REPO_ROOT, IDENTITY, NOW);
+		assert.equal(result.kept, 1);
+		assert.equal(result.reclaimed.length, 0);
+		assert.equal(removed.length, 0);
+	});
+
+	it("reclaims a staged worktree never launched past its TTL", async () => {
+		const staleStaged = stagedLockReason(new Date(NOW - SESSION_STAGED_TTL_MS - 1));
+		const { pi, removed } = sweepPi([{ label: "copilot/slug", branch: "bt/slug", lockReason: staleStaged }]);
 		const result = await sweepSessionWorktrees(pi, REPO_ROOT, IDENTITY, NOW);
 		assert.deepEqual(result.reclaimed, [wtPath("copilot/slug")]);
 		assert.deepEqual(removed, [wtPath("copilot/slug")]);

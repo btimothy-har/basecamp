@@ -96,14 +96,11 @@ export async function executeLaunchWorkstream(
 	}
 
 	// getOrCreateWorktree is idempotent — reuses if present.
-	const { worktree, error: provisionError } = await provisionWorktree(
-		deps,
-		pi,
-		repoRoot,
-		repo,
-		worktreeTarget.worktreeLabel,
-		worktreeTarget.branchName,
-	);
+	const {
+		worktree,
+		error: provisionError,
+		stagingError,
+	} = await provisionWorktree(deps, pi, repoRoot, repo, worktreeTarget.worktreeLabel, worktreeTarget.branchName);
 	if (provisionError) {
 		return toolResult(
 			failedDetails(
@@ -117,10 +114,13 @@ export async function executeLaunchWorkstream(
 	const setupSummary = await runSetup(deps, pi, repoRoot, repo, worktree);
 	const herdrResult = await openHerdr(deps, pi, workspace, ctx, worktree);
 	const nextStep = buildNextStep(herdrResult, worktree, slug);
+	const stagingWarning = stagingError
+		? ` Warning: the staged lock could not be taken (${stagingError}) — the worktree is unprotected and the session-start sweep may reclaim it; re-run launch_workstream to re-stage.`
+		: "";
 
 	return toolResult({
 		status: "launched",
-		message: `Workstream "${detail.label ?? slug}" launched in ${repo}.`,
+		message: `Workstream "${detail.label ?? slug}" launched in ${repo}.${stagingWarning}`,
 		id: detail.id ?? undefined,
 		slug,
 		worktree: resultWorktree(worktree),

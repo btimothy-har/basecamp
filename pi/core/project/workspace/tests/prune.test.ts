@@ -88,6 +88,27 @@ describe("collectPruneCandidates", () => {
 		assert.equal(inUseByLabel.get("wt-bt/expired"), false, "an expired lease is cold — plain candidate");
 		assert.equal(inUseByLabel.get("wt-bt/manual"), true, "a foreign lock is not ours to break silently");
 		assert.equal(inUseByLabel.get("wt-bt/unlocked"), false);
+		assert.ok(
+			candidates.every((c) => !c.staged),
+			"no staged lock present — nothing marked staged",
+		);
+	});
+
+	it("marks a freshly staged worktree as staged; a stale staged lock as a plain candidate", async () => {
+		const freshStaged = `basecamp staged ${new Date().toISOString()}`;
+		const staleStaged = `basecamp staged ${new Date(Date.now() - 61 * 60 * 1000).toISOString()}`;
+		const { pi } = listPi([
+			{ label: "copilot/fresh", branch: "bt/fresh", lock: freshStaged },
+			{ label: "copilot/stale", branch: "bt/stale", lock: staleStaged },
+		]);
+
+		const candidates = await collectPruneCandidates(pi, REPO_ROOT, IDENTITY, null);
+		const byLabel = new Map(candidates.map((c) => [c.label, c]));
+
+		assert.equal(byLabel.get("copilot/fresh")?.inUse, true, "a fresh staged lock is confirmed before removal");
+		assert.equal(byLabel.get("copilot/fresh")?.staged, true);
+		assert.equal(byLabel.get("copilot/stale")?.inUse, false, "a stale staged lock is cold — plain candidate");
+		assert.equal(byLabel.get("copilot/stale")?.staged, false);
 	});
 });
 
@@ -98,6 +119,7 @@ describe("pruneWorktree", () => {
 		branch: "bt/feature",
 		dirty: false,
 		inUse: false,
+		staged: false,
 	};
 
 	it("removes the worktree and keeps the branch by default", async () => {
@@ -129,6 +151,7 @@ describe("confirmAndPrune dirty-confirmation gate", () => {
 		branch: "bt/wip",
 		dirty: true,
 		inUse: false,
+		staged: false,
 	};
 
 	function ctxWithConfirms(answers: boolean[]): { ctx: ExtensionContext; notes: string[] } {
@@ -168,6 +191,7 @@ describe("confirmAndPrune dirty-confirmation gate", () => {
 		branch: "bt/other",
 		dirty: false,
 		inUse: true,
+		staged: false,
 	};
 
 	it("does not remove a clean in-use worktree when the confirmation is declined", async () => {
@@ -186,5 +210,35 @@ describe("confirmAndPrune dirty-confirmation gate", () => {
 		const removed = await confirmAndPrune(pi, ctx, REPO_ROOT, inUse);
 		assert.equal(removed, true);
 		assert.ok(calls.some((c) => c.includes("remove") && c.includes("--force")));
+	});
+
+	it("confirms a staged worktree as staged, not as a live session's", async () => {
+		const stagedTarget: PruneCandidate = {
+			label: "copilot/slug",
+			path: wt("copilot/slug"),
+			branch: "bt/slug",
+			dirty: false,
+			inUse: true,
+			staged: true,
+		};
+		const { pi, calls } = listPi([]);
+		const confirms: { title: string; message: string }[] = [];
+		const ctx = {
+			ui: {
+				confirm: async (title: string, message: string) => {
+					confirms.push({ title, message });
+					return false;
+				},
+				notify: () => {},
+			},
+		} as unknown as ExtensionContext;
+
+		const removed = await confirmAndPrune(pi, ctx, REPO_ROOT, stagedTarget);
+
+		assert.equal(removed, false);
+		assert.ok(!calls.some((c) => c.includes("remove")), "declined staged prune must not remove");
+		assert.equal(confirms[0]?.title, "Staged worktree");
+		assert.match(confirms[0]?.message ?? "", /staged for a workstream launch/);
+		assert.doesNotMatch(confirms[0]?.message ?? "", /live session/);
 	});
 });
