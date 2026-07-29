@@ -91,5 +91,4 @@ describe("bash triage segment splitting", () => {
 		assertTriage("7z x archive.7z", allow);
 		assertTriage("git status 2>/dev/null", allow);
 	});
-
 });
