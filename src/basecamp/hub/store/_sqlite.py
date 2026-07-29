@@ -21,12 +21,31 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
+# How long a contended connection retries (ms) before raising "database is
+# locked". The daemon serves many concurrent readers/writers (agent telemetry,
+# result reports, waits); without this, sqlite's default busy_timeout=0 fails a
+# query the instant it cannot acquire a lock.
+_BUSY_TIMEOUT_MS = 5000
+
+
+def _configure(connection: sqlite3.Connection) -> None:
+    """Apply the concurrency pragmas every hub-store connection needs.
+
+    WAL lets readers run alongside a writer (the read-during-write contention that
+    surfaced as `database is locked` in the wait path). ``busy_timeout`` makes a
+    contended connection retry instead of failing immediately. WAL is a file-level
+    property; once ``Store.__init__`` flips the DB to WAL this is a no-op read.
+    """
+    connection.execute("PRAGMA journal_mode=WAL")
+    connection.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+
 
 @contextmanager
 def reading(db_path: Path) -> Iterator[sqlite3.Connection]:
     """A read connection with the ``sqlite3.Row`` factory, always closed on exit."""
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
+    _configure(connection)
     try:
         yield connection
     finally:
@@ -41,6 +60,7 @@ def writing(db_path: Path, *, immediate: bool = False) -> Iterator[sqlite3.Conne
     read-modify-write guards that must not race a concurrent writer.
     """
     connection = sqlite3.connect(db_path)
+    _configure(connection)
     try:
         if immediate:
             connection.execute("BEGIN IMMEDIATE")
