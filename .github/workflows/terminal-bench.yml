@@ -12,10 +12,11 @@ on:
         - both
         default: glm-5.2
       task-set:
-        description: Task selection preset
+        description: Task selection preset (docker-smoke proves the pipeline with one short task)
         type: choice
         options:
         - docker-amd64
+        - docker-smoke
         - all
         default: docker-amd64
       attempts:

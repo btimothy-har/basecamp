@@ -260,7 +260,19 @@ def test_shard_plan_leaves_unshardable_selections_alone() -> None:
     assert run.shard_plan("podman-arm64") == (run.ShardProfile("podman-arm64", "podman-arm64", None, 360),)
 
 
+def test_smoke_preset_is_one_task_on_a_tight_budget() -> None:
+    assert run.resolve_tasks(("docker-smoke",)) == ("terminal-bench/hf-model-inference",)
+    assert run.shard_plan("docker-smoke") == (run.ShardProfile("docker-smoke", "docker-smoke", 1, 60),)
+
+
 def test_preset_names_cover_every_preset_for_matrix_validation() -> None:
-    for name in ("docker-amd64", "docker-amd64-1", "docker-amd64-long", "docker-amd64-mem", "podman-arm64"):
+    for name in (
+        "docker-amd64",
+        "docker-amd64-1",
+        "docker-amd64-long",
+        "docker-amd64-mem",
+        "docker-smoke",
+        "podman-arm64",
+    ):
         assert name in run.PRESET_NAMES
     assert "all" not in run.PRESET_NAMES

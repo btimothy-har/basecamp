@@ -94,6 +94,9 @@ _PRESETS: Final = {
     "docker-amd64-long": _DOCKER_AMD64_LONG_TAIL,
     "docker-amd64-mem": _DOCKER_AMD64_MEM,
     **_SHORT_SHARDS,
+    # One short, reliable task to prove the CI pipeline end to end (tailnet,
+    # canary, harbor, models file, scoring) without paying for a full run.
+    "docker-smoke": ("terminal-bench/hf-model-inference",),
     "podman-smoke": ("terminal-bench/hf-model-inference",),
     "podman-arm64": (
         "terminal-bench/hf-model-inference",
@@ -223,6 +226,8 @@ _AMD64_SHARD_PROFILES: Final = (
 # Unsharded selections carry a whole preset in one job, so they get the
 # GitHub-hosted maximum rather than a per-shard budget.
 _UNSHARDED_TIMEOUT_MINUTES: Final = 360
+# A smoke run exists to fail fast; its one short task fits well inside an hour.
+_SMOKE_TIMEOUT_MINUTES: Final = 60
 
 
 def shard_plan(task_set: str) -> tuple[ShardProfile, ...]:
@@ -231,6 +236,8 @@ def shard_plan(task_set: str) -> tuple[ShardProfile, ...]:
     Only the amd64 preset is sharded; `all` passes no task filter and so cannot
     be split by preset name.
     """
+    if task_set == "docker-smoke":
+        return (ShardProfile(task_set, task_set, 1, _SMOKE_TIMEOUT_MINUTES),)
     if task_set != "docker-amd64":
         return (ShardProfile(task_set, task_set, None, _UNSHARDED_TIMEOUT_MINUTES),)
     return _AMD64_SHARD_PROFILES

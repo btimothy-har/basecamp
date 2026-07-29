@@ -82,6 +82,15 @@ def test_full_dataset_is_not_sharded() -> None:
     assert entries[0]["timeout"] == 360
 
 
+def test_smoke_run_is_one_serial_job_on_a_tight_budget() -> None:
+    entries = include(task_set="docker-smoke", attempts="1")
+
+    assert [entry["shard"] for entry in entries] == ["docker-smoke"]
+    assert entries[0]["preset"] == "docker-smoke"
+    assert entries[0]["concurrency"] == 1
+    assert entries[0]["timeout"] == 60
+
+
 def test_per_model_thinking_resolves_defaults_and_explicit_level_overrides() -> None:
     assert {entry["thinking"] for entry in include(models="both")} == {"xhigh"}
     assert {entry["thinking"] for entry in include(models="both", thinking="low")} == {"low"}
