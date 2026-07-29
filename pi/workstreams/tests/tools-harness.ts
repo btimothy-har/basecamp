@@ -194,7 +194,13 @@ export function editParams(workstream = "steady-amber-otter", overrides: Record<
 }
 
 export function makeDeps(client: FakeDaemonClient, overrides: Partial<WorkstreamToolsDeps> = {}) {
-	const provisionCalls: { repoRoot: string; repoName: string; label: string; branchName: string | null }[] = [];
+	const provisionCalls: {
+		repoRoot: string;
+		repoName: string;
+		label: string;
+		branchName: string | null;
+		lockReason?: string;
+	}[] = [];
 	const stagingCalls: { repoRoot: string; worktreeDir: string }[] = [];
 	const setupCalls: { command: string; worktreeDir: string; repoRoot: string }[] = [];
 	const herdrCalls: { workspace: unknown; worktree: { path: string; label: string } }[] = [];
@@ -202,8 +208,15 @@ export function makeDeps(client: FakeDaemonClient, overrides: Partial<Workstream
 	let listedWorktrees: WorkspaceWorktree[] = [];
 	let setupCommand: string | null = null;
 	let created = true;
-	let provision: WorkstreamToolsDeps["getOrCreateWorktree"] = async (_pi, repoRoot, repoName, label, branchName) => {
-		provisionCalls.push({ repoRoot, repoName, label, branchName });
+	let provision: WorkstreamToolsDeps["getOrCreateWorktree"] = async (
+		_pi,
+		repoRoot,
+		repoName,
+		label,
+		branchName,
+		lockReason,
+	) => {
+		provisionCalls.push({ repoRoot, repoName, label, branchName, lockReason });
 		return {
 			worktreeDir: `/worktrees/org/repo/${label}`,
 			label,
@@ -222,8 +235,8 @@ export function makeDeps(client: FakeDaemonClient, overrides: Partial<Workstream
 	const deps: WorkstreamToolsDeps = {
 		getWorkspaceState: () => workspace,
 		listWorkspaceWorktrees: async () => listedWorktrees,
-		getOrCreateWorktree: (pi, repoRoot, repoName, label, branchName) =>
-			provision(pi, repoRoot, repoName, label, branchName),
+		getOrCreateWorktree: (pi, repoRoot, repoName, label, branchName, lockReason) =>
+			provision(pi, repoRoot, repoName, label, branchName, lockReason),
 		stageWorktreeLock: async (_pi, repoRoot, worktreeDir) => {
 			stagingCalls.push({ repoRoot, worktreeDir });
 			if (stagingError) throw stagingError;

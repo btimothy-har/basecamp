@@ -83,6 +83,36 @@ describe("getOrCreateWorktree", () => {
 		assert.ok(calls.some((args) => argsEqual(args, expectedAddArgs)));
 	});
 
+	it("locks a newly created worktree atomically when a lock reason is given", async (t) => {
+		const repoRoot = "/repo";
+		const repoName = `repo-lock-${process.pid}-${Date.now()}`;
+		const label = "copilot/steady-otter";
+		const branch = "bt/steady-otter";
+		const reason = "basecamp staged 2026-07-29T00:00:00.000Z";
+		const worktreeDir = path.join(worktreesRoot(), repoName, "copilot", "steady-otter");
+		t.after(() => fs.rmSync(path.join(worktreesRoot(), repoName), { recursive: true, force: true }));
+
+		const expectedAddArgs = [
+			"-C",
+			repoRoot,
+			"worktree",
+			"add",
+			"--lock",
+			"--reason",
+			reason,
+			"-b",
+			branch,
+			worktreeDir,
+			"main",
+		];
+		const { pi, calls } = createWorktreePi(repoRoot, expectedAddArgs);
+
+		const result = await getOrCreateWorktree(pi, repoRoot, repoName, label, branch, reason);
+
+		assert.deepEqual(result, { worktreeDir, label, branch, created: true });
+		assert.ok(calls.some((args) => argsEqual(args, expectedAddArgs)));
+	});
+
 	it("refuses to derive a branch for a namespaced label when the worktree is gone", async (t) => {
 		const repoRoot = "/repo";
 		const repoName = `repo-adopt-${process.pid}-${Date.now()}`;

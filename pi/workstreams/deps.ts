@@ -30,6 +30,7 @@ export interface WorkstreamToolsDeps {
 		repoName: string,
 		label: string,
 		branchName: string | null,
+		lockReason?: string,
 	): Promise<WorktreeResult>;
 	stageWorktreeLock(pi: ExtensionAPI, repoRoot: string, worktreeDir: string): Promise<void>;
 	readWorktreeSetupCommand(repoName: string): string | null;

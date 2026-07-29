@@ -170,13 +170,18 @@ describe("launch_workstream provisioning", () => {
 });
 
 describe("launch_workstream staged lock", () => {
-	it("stamps the staged lock on the provisioned worktree", async () => {
+	it("stamps the staged lock on the provisioned worktree (atomic on create)", async () => {
 		const harness = makeDeps(new FakeDaemonClient());
 		seedWorkstream(harness, "steady-amber-otter", { label: "Alpha" });
 
 		const { details } = await runLaunch(launchParams("steady-amber-otter"), harness.deps);
 
 		assert.equal(details.status, "launched");
+		assert.match(
+			harness.provisionCalls[0]?.lockReason ?? "",
+			/^basecamp staged /,
+			"creation receives the staged reason for an atomic --lock --reason add",
+		);
 		assert.deepEqual(harness.stagingCalls, [
 			{ repoRoot: "/repo", worktreeDir: "/worktrees/org/repo/copilot/steady-amber-otter" },
 		]);
