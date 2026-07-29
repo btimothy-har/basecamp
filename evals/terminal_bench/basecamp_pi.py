@@ -282,8 +282,9 @@ class BasecampPiSingle(Pi):
             "external_sandbox": True,
             "subagents_enabled": False,
             "bash_reviewer_enabled": False,
-            # Fail-open on an unresolvable alias, so it never nudges in a trial.
-            "continuation_guard_active": False,
+            # The judge rides the active session model, which the installed
+            # models.json provides, so the guard is live in trials.
+            "continuation_guard_active": True,
         }
         if self._pi_models:
             metadata["models_config"] = {

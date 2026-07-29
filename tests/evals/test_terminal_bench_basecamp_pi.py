@@ -328,7 +328,7 @@ async def test_install_uploads_auditable_source_and_uses_task_user(
         "basecamp_archive_sha256": hashlib.sha256(archive_bytes).hexdigest(),
         "basecamp_commit": commit,
         "bash_reviewer_enabled": False,
-        "continuation_guard_active": False,
+        "continuation_guard_active": True,
         "credential_environment_names": ["OPENAI_API_KEY"],
         "external_sandbox": True,
         "model": "openai/gpt-5.6-sol",
