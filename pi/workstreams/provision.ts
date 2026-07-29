@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WorktreeResult } from "#core/git/worktrees/crud.ts";
+import { stageWorktreeLock } from "#core/git/worktrees/lease.ts";
 import { shouldRunWorktreeSetup, type WorktreeSetupResult } from "#core/project/workspace/setup.ts";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import {
@@ -39,6 +40,12 @@ export async function provisionWorktree(
 ): Promise<{ worktree: WorktreeResult; error?: string }> {
 	try {
 		const worktree = await deps.getOrCreateWorktree(pi, repoRoot, repo, worktreeLabel, branchName);
+		// The staged lock is what keeps the cold session-start sweep from reaping this worktree
+		// before `pi --workstream` launches in it; without it the tree reads as leaseless residue.
+		// On idempotent reuse this refreshes the TTL unless a session or daemon lock already holds
+		// the tree. A lock failure surfaces as a provisioning error — an unlocked staged worktree
+		// would silently recreate the reaping bug.
+		await stageWorktreeLock(pi, repoRoot, worktree.worktreeDir);
 		return { worktree };
 	} catch (err) {
 		return {

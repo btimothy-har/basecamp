@@ -159,7 +159,7 @@ export function makeWorkspace(overrides: Partial<WorkspaceState> = {}): Workspac
 	} as unknown as WorkspaceState;
 }
 
-function makeContext(): ExtensionContext {
+export function makeContext(): ExtensionContext {
 	return {
 		hasUI: true,
 		sessionManager: {
