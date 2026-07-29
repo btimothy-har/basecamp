@@ -11,7 +11,7 @@ import type { ReviewState, TaskStatus } from "#tasks/schemas/task.ts";
 import type { HandoffWorktreeResult } from "./handoff/index.ts";
 import type { WorktreeSetupSummary } from "./handoff/worktree-setup.ts";
 
-export type ApprovedPlanMode = "analysis" | "implementation";
+export type ApprovedPlanMode = "analysis" | "implementation" | "in_place";
 
 export interface TaskInput {
 	label: string;
@@ -131,6 +131,20 @@ export function buildDraft(
 	};
 }
 
+/** Every section and the task list marked approved — the subagent auto-approval path. */
+export function approveDraft(draft: PlanDraft): PlanDraft {
+	const approved = (): ReviewState => ({ approved: true, feedback: null });
+	return {
+		...draft,
+		goal: { ...draft.goal, review: approved() },
+		context: { ...draft.context, review: approved() },
+		design: { ...draft.design, review: approved() },
+		success: { ...draft.success, review: approved() },
+		boundaries: { ...draft.boundaries, review: approved() },
+		tasksReview: approved(),
+	};
+}
+
 export function isAllApproved(draft: PlanDraft): boolean {
 	for (const name of SECTION_NAMES) {
 		if (!draft[name].review.approved) return false;
@@ -214,6 +228,10 @@ export function buildApprovedResult(
 	if (mode === "analysis") {
 		result.plan_mode = "analysis";
 		result.next_step = "Analysis plan approved, you may begin executing the analysis tasks.";
+	} else if (mode === "in_place") {
+		result.plan_mode = "implementation";
+		result.next_step =
+			"Plan approved. Begin executing the tasks now in the current workspace; no worktree handoff occurs in this session.";
 	} else {
 		result.handoff_status = "scheduled";
 		result.next_step =

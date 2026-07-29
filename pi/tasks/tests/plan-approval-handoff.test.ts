@@ -127,6 +127,8 @@ function approveEverything(draft: PlanDraft): void {
 function setup(overrides: Partial<PlanDeps> = {}): { pi: FakePi; tool: RegisteredTool; plan: PlanAccess } {
 	const pi = new FakePi();
 	const plan = registerPlan(pi as unknown as ExtensionAPI, tasksRuntime(), {
+		// Pinned so the suite is deterministic even when run inside a dispatched agent.
+		isSubagent: () => false,
 		review: async (draft) => {
 			approveEverything(draft);
 			return "submit";

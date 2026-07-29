@@ -2,11 +2,14 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { PlanSection } from "#tasks/schemas/plan.ts";
 import {
+	approveDraft,
+	buildDraft,
 	computeGoalContextReview,
 	computeSectionReview,
 	type DraftGoalContext,
 	deriveGoalContextReviewState,
 	freshReview,
+	isAllApproved,
 	type TaskInput,
 	tasksMatch,
 } from "#tasks/workflows/draft.ts";
@@ -279,5 +282,36 @@ describe("freshReview", () => {
 		const review = freshReview();
 		assert.equal(review.approved, null);
 		assert.equal(review.feedback, null);
+	});
+});
+
+describe("approveDraft — subagent auto-approval", () => {
+	const fresh = () =>
+		buildDraft(
+			{ goal: "g", context: "c", design: "d", success: "s", boundaries: "b", worktreeSlug: "slug" },
+			[{ label: "t1", description: "desc", criteria: "done" }],
+			null,
+		);
+
+	it("marks every section and the task list approved", () => {
+		const approved = approveDraft(fresh());
+		assert.equal(isAllApproved(approved), true);
+		assert.deepEqual(approved.tasksReview, { approved: true, feedback: null });
+	});
+
+	it("preserves content, tasks, and the worktree slug", () => {
+		const draft = fresh();
+		const approved = approveDraft(draft);
+		assert.equal(approved.goal.content, "g");
+		assert.equal(approved.boundaries.content, "b");
+		assert.equal(approved.worktreeSlug, "slug");
+		assert.deepEqual(approved.tasks, draft.tasks);
+	});
+
+	it("does not mutate the source draft", () => {
+		const draft = fresh();
+		approveDraft(draft);
+		assert.equal(isAllApproved(draft), false);
+		assert.equal(draft.goal.review.approved, null);
 	});
 });
