@@ -18,7 +18,7 @@
 
 ## Searching
 
-- Keep filesystem searches targeted to the project. Recursive searches (`grep -r`, `rg`, `find`, `fd`, `ag`, `ack`) rooted at a system or home directory (`/`, `~`, `$HOME`, `/usr`, `/etc`, `/Users`, …) are blocked because whole-system scans are slow; search from the project directory (`.`) or a subpath instead.
+- Keep filesystem searches targeted to the project. Recursive searches (`grep -r`, `rg`, `find`, `fd`, `ag`, `ack`) rooted at a system or home directory (`/`, `~`, `$HOME`, `/usr`, `/etc`, `/Users`, …) are usually denied by the reviewer because whole-system scans are slow; search from the project directory (`.`) or a subpath instead.
 
 ## Python Environment
 
