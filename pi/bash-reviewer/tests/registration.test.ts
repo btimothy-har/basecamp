@@ -90,8 +90,8 @@ describe("bash-reviewer per-call gate", () => {
 		setEnv("BASECAMP_BASH_REVIEWER", "off");
 		setEnv("BASECAMP_EXTERNAL_SANDBOX", "1");
 
-		// `bq query` is a deterministic triage block, so the enabled path is
-		// observable without a reviewer model.
+		// Not fast-path safe, and this context resolves no reviewer model, so the enabled path lands
+		// in the no-UI failsafe and blocks — observable without wiring up a model.
 		const command = "bq query 'select 1'";
 
 		const disabled = fakePi(true);

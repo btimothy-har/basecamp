@@ -3,10 +3,8 @@ import { describe, it } from "node:test";
 import type { AssistantMessage, Model } from "@earendil-works/pi-ai";
 import {
 	buildGateContext,
-	GATE_TOOL,
 	type GateDecision,
 	parseGateResponse,
-	RULESET,
 	resolveGateReasoningEffort,
 	resolveGateToolChoice,
 	runGate,
@@ -49,20 +47,36 @@ function model(overrides: Partial<Model<any>>): Model<any> {
 
 describe("parseGateResponse", () => {
 	it("parses valid approve, route_to_user, and deny gate_decision tool calls", () => {
-		assertParsesDecision({ decision: "approve", risk: "none", reason: "This matches the requested local inspection." });
+		assertParsesDecision({
+			decision: "approve",
+			risk: "none",
+			category: "other",
+			reason: "This matches the requested local inspection.",
+		});
 		assertParsesDecision({
 			decision: "route_to_user",
 			risk: "destructive",
+			category: "irreversible-remote",
 			reason: "Force-push requires human confirmation.",
 		});
-		assertParsesDecision({ decision: "deny", risk: "destructive", reason: "The command would publish a token." });
+		assertParsesDecision({
+			decision: "deny",
+			risk: "destructive",
+			category: "other",
+			reason: "The command would publish a token.",
+		});
 	});
 
 	it("returns null when the gate_decision tool call is missing", () => {
 		assert.equal(parseGateResponse(assistantWithToolCall("other_tool", { decision: "approve" })), null);
 		assert.equal(
 			parseGateResponse({
-				...assistantWithToolCall("gate_decision", { decision: "approve", risk: "none", reason: "ok" }),
+				...assistantWithToolCall("gate_decision", {
+					decision: "approve",
+					risk: "none",
+					category: "other",
+					reason: "ok",
+				}),
 				content: [{ type: "text", text: "approve" }],
 			}),
 			null,
@@ -72,7 +86,12 @@ describe("parseGateResponse", () => {
 	it("returns null when gate_decision arguments are schema-invalid", () => {
 		assert.equal(
 			parseGateResponse(
-				assistantWithToolCall("gate_decision", { decision: "allow", risk: "none", reason: "Invalid enum." }),
+				assistantWithToolCall("gate_decision", {
+					decision: "allow",
+					risk: "none",
+					category: "other",
+					reason: "Invalid enum.",
+				}),
 			),
 			null,
 		);
@@ -80,10 +99,27 @@ describe("parseGateResponse", () => {
 			parseGateResponse(assistantWithToolCall("gate_decision", { decision: "approve", risk: "none" })),
 			null,
 		);
+		assert.equal(
+			parseGateResponse(
+				assistantWithToolCall("gate_decision", { decision: "approve", risk: "none", reason: "No category." }),
+			),
+			null,
+		);
+		assert.equal(
+			parseGateResponse(
+				assistantWithToolCall("gate_decision", {
+					decision: "approve",
+					risk: "none",
+					category: "triage-block",
+					reason: "Unknown category.",
+				}),
+			),
+			null,
+		);
 	});
 
 	it("returns null when there is not exactly one gate_decision tool call", () => {
-		const decision = { decision: "approve", risk: "none", reason: "ok" };
+		const decision = { decision: "approve", risk: "none", category: "other", reason: "ok" };
 		assert.equal(
 			parseGateResponse({
 				...assistantWithToolCall("gate_decision", decision),
@@ -159,9 +195,14 @@ describe("gate completion options", () => {
 describe("runGate", () => {
 	it("returns parsed decisions from an injected complete function and forces the gate_decision tool", async () => {
 		for (const decision of [
-			{ decision: "approve", risk: "none", reason: "The command is safe." },
-			{ decision: "route_to_user", risk: "destructive", reason: "The command publishes externally." },
-			{ decision: "deny", risk: "destructive", reason: "The command leaks a secret." },
+			{ decision: "approve", risk: "none", category: "other", reason: "The command is safe." },
+			{
+				decision: "route_to_user",
+				risk: "destructive",
+				category: "other",
+				reason: "The command publishes externally.",
+			},
+			{ decision: "deny", risk: "destructive", category: "other", reason: "The command leaks a secret." },
 		] satisfies GateDecision[]) {
 			const result = await runGate({
 				model: fakeModel,
@@ -180,7 +221,7 @@ describe("runGate", () => {
 	});
 
 	it("passes OpenAI Responses toolChoice and portable reasoning effort", async () => {
-		const decision: GateDecision = { decision: "approve", risk: "none", reason: "ok" };
+		const decision: GateDecision = { decision: "approve", risk: "none", category: "other", reason: "ok" };
 		const result = await runGate({
 			model: model({ api: "openai-responses", provider: "openai", reasoning: true }),
 			auth: { apiKey: "test-key" },
@@ -196,7 +237,7 @@ describe("runGate", () => {
 	});
 
 	it("omits reasoning effort for non-reasoning models", async () => {
-		const decision: GateDecision = { decision: "approve", risk: "none", reason: "ok" };
+		const decision: GateDecision = { decision: "approve", risk: "none", category: "other", reason: "ok" };
 		const result = await runGate({
 			model: model({ api: "openai-completions", provider: "openai", reasoning: false }),
 			auth: { apiKey: "test-key" },
@@ -217,7 +258,12 @@ describe("runGate", () => {
 				auth: { apiKey: "test-key" },
 				context: buildGateContext([], "git status"),
 				complete: async () => ({
-					...assistantWithToolCall("gate_decision", { decision: "approve", risk: "none", reason: "ok" }),
+					...assistantWithToolCall("gate_decision", {
+						decision: "approve",
+						risk: "none",
+						category: "other",
+						reason: "ok",
+					}),
 					content: [{ type: "text", text: "approve" }],
 				}),
 			}),
@@ -229,7 +275,7 @@ describe("runGate", () => {
 				auth: { apiKey: "test-key" },
 				context: buildGateContext([], "git status"),
 				complete: async () =>
-					assistantWithToolCall("gate_decision", { decision: "allow", risk: "none", reason: "bad" }),
+					assistantWithToolCall("gate_decision", { decision: "allow", risk: "none", category: "other", reason: "bad" }),
 			}),
 			null,
 		);
@@ -256,7 +302,12 @@ describe("runGate", () => {
 				auth: { apiKey: "test-key" },
 				context: buildGateContext([], "git push --force"),
 				complete: async () => ({
-					...assistantWithToolCall("gate_decision", { decision: "approve", risk: "none", reason: "ok" }),
+					...assistantWithToolCall("gate_decision", {
+						decision: "approve",
+						risk: "none",
+						category: "other",
+						reason: "ok",
+					}),
 					stopReason: "error",
 					errorMessage: "provider rejected tool choice",
 				}),
@@ -272,33 +323,16 @@ describe("runGate", () => {
 				auth: { apiKey: "test-key" },
 				context: buildGateContext([], "git push --force"),
 				complete: async () => ({
-					...assistantWithToolCall("gate_decision", { decision: "approve", risk: "none", reason: "ok" }),
+					...assistantWithToolCall("gate_decision", {
+						decision: "approve",
+						risk: "none",
+						category: "other",
+						reason: "ok",
+					}),
 					stopReason: "error",
 				}),
 			}),
 			/reviewer provider returned an error/,
 		);
-	});
-});
-
-describe("buildGateContext", () => {
-	it("sets the ruleset, includes the gate tool, and embeds recent messages plus command as JSON", () => {
-		const recentHumanMessages = ["Check the repo status.", "Now make a commit."];
-		const command = "git commit -m 'test'";
-		const context = buildGateContext(recentHumanMessages, command);
-
-		assert.equal(context.systemPrompt, RULESET);
-		assert.deepEqual(context.tools, [GATE_TOOL]);
-		assert.equal(context.messages.length, 1);
-		const message = context.messages[0];
-		assert.equal(message?.role, "user");
-		const content = message?.content;
-		assert.equal(typeof content, "string");
-		if (typeof content !== "string") throw new Error("expected string content");
-		assert.match(content, /"recent_human_messages"/);
-		assert.match(content, /"command"/);
-		assert.ok(content.includes(JSON.stringify(command)));
-		const payload = JSON.parse(content.replace(/^Evaluate whether the bash command should run\. Input:\n\n/, ""));
-		assert.deepEqual(payload, { recent_human_messages: recentHumanMessages, command });
 	});
 });

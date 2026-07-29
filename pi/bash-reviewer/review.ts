@@ -1,10 +1,10 @@
 import type { Context, Model } from "@earendil-works/pi-ai";
+import { isTriviallySafe } from "./fast-path.ts";
 import { buildGateContext, type GateDecision } from "./llm.ts";
-import { type Triage, triageCommand } from "./triage/index.ts";
 
 export type ReviewAuth = { apiKey?: string; headers?: Record<string, string> };
 
-const SUBAGENT_APPROVE_CATEGORIES = new Set(["git-mutation"]);
+const SUBAGENT_APPROVE_CATEGORIES = new Set<GateDecision["category"]>(["git-mutation"]);
 
 export interface ReviewDeps {
 	resolveModel: () => Promise<{ model: Model<any>; auth: ReviewAuth } | null>;
@@ -26,10 +26,10 @@ export interface ReviewDeps {
 export type ReviewOutcome = { block: true; reason: string } | undefined;
 
 export interface ReviewAuditEntry {
-	phase: "triage" | "gate" | "failsafe";
-	action: "allow" | "approve" | "block" | "deny";
-	category: string;
+	phase: "gate" | "failsafe";
+	action: "approve" | "deny";
 	command: string;
+	category?: GateDecision["category"];
 	reason?: string;
 	risk?: GateDecision["risk"];
 	note?: string;
@@ -39,20 +39,18 @@ function truncateCommand(command: string): string {
 	return command.length <= 500 ? command : `${command.slice(0, 497)}...`;
 }
 
-const SEARCH_TOOL_PATTERN = /(?:^|[\s;&|(])(?:grep|egrep|fgrep|rg|ag|ack|find|fd|fdfind)\b/;
-
-function blockCategory(command: string): string {
-	if (/^\s*bq\b/.test(command)) return "bq-query";
-	if (SEARCH_TOOL_PATTERN.test(command)) return "wide-search";
-	return "triage-block";
-}
-
 function confirmationBody(command: string, decision: GateDecision): string {
 	return `Command:\n${command}\n\nRisk: ${decision.risk}\nReason: ${decision.reason}`;
 }
 
+/**
+ * Every path out of here either matched the fast path, carries a gate verdict, or went through the
+ * failsafe. Nothing else may return undefined: a static check that grants permission is exactly the
+ * shape of bug this reviewer was rebuilt to make impossible.
+ */
 export async function reviewBashCommand(command: string, deps: ReviewDeps): Promise<ReviewOutcome> {
-	const t = triageCommand(command);
+	if (isTriviallySafe(command)) return undefined;
+
 	const auditCommand = truncateCommand(command);
 	const audit = (entry: Omit<ReviewAuditEntry, "command">) => {
 		try {
@@ -68,7 +66,7 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 			// Notifications are best-effort UI feedback and must not change the gate outcome.
 		}
 	};
-	const failSafe = async (triage: Extract<Triage, { kind: "gate" }>, why: string): Promise<ReviewOutcome> => {
+	const failSafe = async (why: string): Promise<ReviewOutcome> => {
 		if (deps.hasUI) {
 			let ok = false;
 			try {
@@ -80,43 +78,23 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 				ok = false;
 			}
 
-			audit({
-				phase: "failsafe",
-				action: ok ? "approve" : "deny",
-				category: triage.category,
-				reason: why,
-				note: "escalated",
-			});
+			audit({ phase: "failsafe", action: ok ? "approve" : "deny", reason: why, note: "escalated" });
 
 			return ok
 				? undefined
 				: { block: true, reason: `Command blocked: reviewer unavailable (${why}) and user declined.` };
 		}
 
-		audit({
-			phase: "failsafe",
-			action: "deny",
-			category: triage.category,
-			reason: why,
-			note: "no-ui",
-		});
+		audit({ phase: "failsafe", action: "deny", reason: why, note: "no-ui" });
 		return {
 			block: true,
 			reason: `Reviewer unavailable (${why}); blocked because there is no interactive UI to confirm. Run it yourself if intended.`,
 		};
 	};
 
-	if (t.kind === "allow") return undefined;
-
-	if (t.kind === "block") {
-		audit({ phase: "triage", action: "block", category: blockCategory(command), reason: t.reason });
-		notify(`🛡 reviewer blocked: ${t.reason}`, "warning");
-		return { block: true, reason: t.reason };
-	}
-
 	try {
 		const resolved = await deps.resolveModel();
-		if (resolved === null) return await failSafe(t, "reviewer model unavailable");
+		if (resolved === null) return await failSafe("reviewer model unavailable");
 
 		const context = buildGateContext(deps.recentMessages(), command);
 		const decision = await deps.runGate({
@@ -125,30 +103,20 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 			context,
 			signal: deps.signal,
 		});
-		if (decision === null) return await failSafe(t, "reviewer returned no decision");
+		if (decision === null) return await failSafe("reviewer returned no decision");
 
+		const category = decision.category;
 		let effective = decision.decision;
-		if (t.failClosed && effective === "approve") effective = "route_to_user";
+		// Defence in depth: a single model slip toward approve must not carry an irreversible command.
+		if (effective === "approve" && decision.risk === "destructive") effective = "route_to_user";
 
 		switch (effective) {
 			case "approve":
-				audit({
-					phase: "gate",
-					action: "approve",
-					category: t.category,
-					reason: decision.reason,
-					risk: decision.risk,
-				});
+				audit({ phase: "gate", action: "approve", category, reason: decision.reason, risk: decision.risk });
 				notify(`🛡 reviewer approved · ${decision.risk}: ${decision.reason}`, "info");
 				return undefined;
 			case "deny":
-				audit({
-					phase: "gate",
-					action: "deny",
-					category: t.category,
-					reason: decision.reason,
-					risk: decision.risk,
-				});
+				audit({ phase: "gate", action: "deny", category, reason: decision.reason, risk: decision.risk });
 				notify(`🛡 reviewer blocked: ${decision.reason}`, "warning");
 				return { block: true, reason: decision.reason };
 			case "route_to_user": {
@@ -157,7 +125,7 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 					audit({
 						phase: "gate",
 						action: ok ? "approve" : "deny",
-						category: t.category,
+						category,
 						reason: decision.reason,
 						risk: decision.risk,
 						note: "route_to_user",
@@ -166,11 +134,11 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 				}
 
 				if (deps.isSubagent) {
-					const permit = SUBAGENT_APPROVE_CATEGORIES.has(t.category);
+					const permit = SUBAGENT_APPROVE_CATEGORIES.has(category);
 					audit({
 						phase: "gate",
 						action: permit ? "approve" : "deny",
-						category: t.category,
+						category,
 						reason: decision.reason,
 						risk: decision.risk,
 						note: "subagent-collapse",
@@ -186,7 +154,7 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 				audit({
 					phase: "gate",
 					action: "deny",
-					category: t.category,
+					category,
 					reason: decision.reason,
 					risk: decision.risk,
 					note: "no-ui",
@@ -199,6 +167,6 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 		}
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : "unexpected reviewer error";
-		return await failSafe(t, reason);
+		return await failSafe(reason);
 	}
 }

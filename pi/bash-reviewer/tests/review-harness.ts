@@ -28,8 +28,17 @@ export interface FakeReviewHarness {
 	runGateCalls: () => number;
 }
 
-export function makeDecision(decision: GateDecision["decision"], reason = "Looks safe."): GateDecision {
-	return { decision, risk: decision === "approve" ? "local" : "destructive", reason };
+export function makeDecision(
+	decision: GateDecision["decision"],
+	reason = "Looks safe.",
+	overrides: Partial<Pick<GateDecision, "risk" | "category">> = {},
+): GateDecision {
+	return {
+		decision,
+		risk: overrides.risk ?? (decision === "approve" ? "local" : "destructive"),
+		category: overrides.category ?? "other",
+		reason,
+	};
 }
 
 export function makeDeps(
@@ -84,7 +93,7 @@ export function makeDeps(
 	};
 }
 
-export async function assertAuditedNonAllow(
+export async function assertAuditedGated(
 	command: string,
 	deps: ReviewDeps,
 	auditEntries: ReviewAuditEntry[],
