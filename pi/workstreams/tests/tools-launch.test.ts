@@ -1,12 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { WorkspaceWorktree } from "#core/project/workspace/state.ts";
-import { executeLaunchWorkstream, type LaunchWorkstreamResultDetails } from "#workstreams/tools.ts";
 import {
 	FakeDaemonClient,
 	launchParams,
-	makeContext,
 	makeDeps,
 	makeWorkspace,
 	makeWorkstreamDetail,
@@ -173,59 +170,31 @@ describe("launch_workstream provisioning", () => {
 });
 
 describe("launch_workstream staged lock", () => {
-	const worktreeDir = "/worktrees/org/repo/copilot/steady-amber-otter";
-
-	function recordingPi(listStdout: string, lockFails = false): { pi: ExtensionAPI; calls: string[][] } {
-		const calls: string[][] = [];
-		const pi = {
-			async exec(_command: string, args: string[]) {
-				calls.push(args);
-				if (args.includes("list")) return { code: 0, stdout: listStdout, stderr: "" };
-				if (lockFails && args.includes("lock")) return { code: 1, stdout: "", stderr: "fatal: cannot lock" };
-				return { code: 0, stdout: "", stderr: "" };
-			},
-		} as unknown as ExtensionAPI;
-		return { pi, calls };
-	}
-
-	it("stamps a fresh staged lock on the provisioned worktree", async () => {
+	it("stamps the staged lock on the provisioned worktree", async () => {
 		const harness = makeDeps(new FakeDaemonClient());
 		seedWorkstream(harness, "steady-amber-otter", { label: "Alpha" });
-		const listOut = `worktree /repo\nbranch refs/heads/main\n\nworktree ${worktreeDir}\nbranch refs/heads/bt/alpha\n\n`;
-		const { pi, calls } = recordingPi(listOut);
 
-		const result = await executeLaunchWorkstream(
-			launchParams("steady-amber-otter"),
-			pi,
-			makeContext(),
-			undefined,
-			harness.deps,
-		);
+		const { details } = await runLaunch(launchParams("steady-amber-otter"), harness.deps);
 
-		assert.equal(result.isError ?? false, false);
-		const lock = calls.find((c) => c.includes("lock") && c.includes("--reason"));
-		assert.ok(lock, "expected a worktree lock call");
-		const reason = lock[lock.indexOf("--reason") + 1] ?? "";
-		assert.ok(reason.startsWith("basecamp staged "), `expected a staged lock reason, got: ${reason}`);
-		assert.equal(lock[lock.length - 1], worktreeDir);
+		assert.equal(details.status, "launched");
+		assert.deepEqual(harness.stagingCalls, [
+			{ repoRoot: "/repo", worktreeDir: "/worktrees/org/repo/copilot/steady-amber-otter" },
+		]);
 	});
 
-	it("fails provisioning when the staged lock cannot be taken", async () => {
+	it("continues with a warning when the staged lock cannot be taken (setup and Herdr still run)", async () => {
 		const harness = makeDeps(new FakeDaemonClient());
 		seedWorkstream(harness, "steady-amber-otter");
-		const { pi } = recordingPi("", true);
+		harness.setSetupCommand("make setup");
+		harness.setStagingError(new Error("cannot lock"));
 
-		const result = await executeLaunchWorkstream(
-			launchParams("steady-amber-otter"),
-			pi,
-			makeContext(),
-			undefined,
-			harness.deps,
-		);
-		const details = result.details as LaunchWorkstreamResultDetails;
+		const { result, details } = await runLaunch(launchParams("steady-amber-otter"), harness.deps);
 
-		assert.equal(result.isError, true);
-		assert.equal(details.status, "failed");
-		assert.match(details.message, /Failed to provision worktree/);
+		assert.equal(result.isError ?? false, false);
+		assert.equal(details.status, "launched");
+		assert.match(details.message, /staged lock could not be taken \(cannot lock\)/);
+		assert.equal(harness.setupCalls.length, 1, "the setup hook still runs on the created worktree");
+		assert.equal(harness.herdrCalls.length, 1, "the Herdr pane still opens");
+		assert.match(details.next_step, /pi --workstream/);
 	});
 });

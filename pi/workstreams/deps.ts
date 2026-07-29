@@ -1,5 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { getOrCreateWorktree, type WorktreeResult } from "#core/git/worktrees/crud.ts";
+import { stageWorktreeLock } from "#core/git/worktrees/lease.ts";
 import { readWorktreeSetupCommand } from "#core/host/config.ts";
 import { shellQuote } from "#core/host/shell.ts";
 import { resolveDaemonPaths } from "#core/hub/index.ts";
@@ -30,6 +31,7 @@ export interface WorkstreamToolsDeps {
 		label: string,
 		branchName: string | null,
 	): Promise<WorktreeResult>;
+	stageWorktreeLock(pi: ExtensionAPI, repoRoot: string, worktreeDir: string): Promise<void>;
 	readWorktreeSetupCommand(repoName: string): string | null;
 	runWorktreeSetup(
 		pi: ExtensionAPI,
@@ -56,6 +58,7 @@ export function defaultWorkstreamToolsDeps(getConnection: () => Promise<unknown>
 		getWorkspaceState,
 		listWorkspaceWorktrees,
 		getOrCreateWorktree,
+		stageWorktreeLock,
 		readWorktreeSetupCommand,
 		runWorktreeSetup,
 		openWorkstreamInHerdr,

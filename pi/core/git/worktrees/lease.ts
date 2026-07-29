@@ -102,11 +102,15 @@ export async function acquireSessionLease(
 }
 
 /**
- * Stamp or refresh the staged lock on a worktree awaiting its session. A worktree already
- * held by a session lease or a foreign lock (e.g. the daemon's) is left untouched —
- * re-staging an adopted worktree must not clobber its owner's lease. Like re-leasing, the
- * unlock→lock refresh leaves a brief window in which a concurrent sweep could reap a clean
- * tree; bounded to one tool call and recoverable by re-running `launch_workstream`.
+ * Stamp or refresh the staged lock on a worktree awaiting its session. A worktree whose lock
+ * reads as live (fresh session lease or fresh staged lock) or foreign (e.g. the daemon's) is
+ * left untouched — re-staging must not clobber an owner's lease — but a *cold* lock (a stale
+ * session lease left by a killed session, or a staged lock past its TTL) classifies as
+ * reapable residue, so it is re-stamped rather than skipped: skipping it would report a
+ * successful stage while the sweep still reads the tree as cold. The unlock→lock refresh
+ * leaves a brief window in which a concurrent sweep could reap a clean tree; bounded to one
+ * tool call and recoverable by re-running `launch_workstream`. Throws when the stamp cannot
+ * be confirmed — a silent no-op stage would recreate the reaping bug.
  */
 export async function stageWorktreeLock(
 	pi: ExtensionAPI,
@@ -115,9 +119,16 @@ export async function stageWorktreeLock(
 	now: Date = new Date(),
 ): Promise<void> {
 	const record = findWorktreeRecord(await gitWorktreeRecords(pi, repoRoot), worktreeDir);
-	if (record?.locked && parseStagedLock(record.lockReason) === null) return;
+	if (record?.locked && classifySessionWorktree(record, now.getTime()) !== "cold") return;
+	const reason = stagedLockReason(now);
 	await unlockWorktree(pi, repoRoot, worktreeDir).catch(() => {});
-	await lockWorktree(pi, repoRoot, worktreeDir, stagedLockReason(now));
+	await lockWorktree(pi, repoRoot, worktreeDir, reason);
+	// lockWorktree tolerates git's "already locked", which masks a failed unlock and leaves the
+	// old reason in place; confirm the stamp landed so a stale lock never reads as refreshed.
+	const stamped = findWorktreeRecord(await gitWorktreeRecords(pi, repoRoot), worktreeDir);
+	if (stamped?.lockReason !== reason) {
+		throw new Error(`Failed to take the staged lock on ${worktreeDir}`);
+	}
 }
 
 /** How the backstop sweep classifies a session worktree by its lease state. */

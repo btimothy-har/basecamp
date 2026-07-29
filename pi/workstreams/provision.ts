@@ -1,6 +1,5 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { WorktreeResult } from "#core/git/worktrees/crud.ts";
-import { stageWorktreeLock } from "#core/git/worktrees/lease.ts";
 import { shouldRunWorktreeSetup, type WorktreeSetupResult } from "#core/project/workspace/setup.ts";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import {
@@ -37,21 +36,26 @@ export async function provisionWorktree(
 	repo: string,
 	worktreeLabel: string,
 	branchName: string | null,
-): Promise<{ worktree: WorktreeResult; error?: string }> {
+): Promise<{ worktree: WorktreeResult; error?: string; stagingError?: string }> {
+	let worktree: WorktreeResult;
 	try {
-		const worktree = await deps.getOrCreateWorktree(pi, repoRoot, repo, worktreeLabel, branchName);
-		// The staged lock is what keeps the cold session-start sweep from reaping this worktree
-		// before `pi --workstream` launches in it; without it the tree reads as leaseless residue.
-		// On idempotent reuse this refreshes the TTL unless a session or daemon lock already holds
-		// the tree. A lock failure surfaces as a provisioning error — an unlocked staged worktree
-		// would silently recreate the reaping bug.
-		await stageWorktreeLock(pi, repoRoot, worktree.worktreeDir);
-		return { worktree };
+		worktree = await deps.getOrCreateWorktree(pi, repoRoot, repo, worktreeLabel, branchName);
 	} catch (err) {
 		return {
 			worktree: { worktreeDir: "", label: worktreeLabel, branch: branchName ?? "", created: false },
 			error: errorMessage(err),
 		};
+	}
+	// The staged lock is what keeps the cold session-start sweep from reaping this worktree
+	// before `pi --workstream` launches in it; without it the tree reads as leaseless residue.
+	// A staging failure is NOT fatal to provisioning: aborting here would strand a created
+	// worktree whose retry skips the setup hook (the reuse path reports created: false), so the
+	// launch continues and the failure rides along as stagingError for the caller to surface.
+	try {
+		await deps.stageWorktreeLock(pi, repoRoot, worktree.worktreeDir);
+		return { worktree };
+	} catch (err) {
+		return { worktree, stagingError: errorMessage(err) };
 	}
 }
 
