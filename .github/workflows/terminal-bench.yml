@@ -46,10 +46,12 @@ on:
         description: Pi version under evaluation
         type: string
         default: "0.80.7"
-  schedule:
-  # Weekly, Monday 06:00 UTC. Scheduled runs fall back via the || expressions
-  # in the setup job (inputs.* are empty): both models at per-model defaults.
-  - cron: "0 6 * * 1"
+  # Weekly cron (Monday 06:00 UTC) intentionally disabled until the first
+  # dispatched runs prove the pipeline. Re-enable by restoring:
+  # schedule:
+  # - cron: "0 6 * * 1"
+  # Scheduled runs fall back via the || expressions in the setup job
+  # (inputs.* are empty): both models at per-model defaults.
 
 # Keyed by event so a queued weekly run is never dropped behind manual
 # dispatches; within a trigger type, runs serialize.
