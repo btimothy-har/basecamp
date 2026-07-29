@@ -34,9 +34,11 @@ There is no triage phase and no deterministic block phase.
 `isTriviallySafe(command: string): boolean` in `fast-path.ts` is the only permission-granting code in the reviewer. It is true only when **both** hold:
 
 - every character is in `[A-Za-z0-9 \t\-_./,:@+]`;
-- the first whitespace-delimited word is on a read-only allowlist (`ls`, `pwd`, `cat`, `head`, `tail`, `wc`, `stat`, `file`, `which`), or is `git` with a read-only subcommand as word two.
+- the first whitespace-delimited word is on a read-only allowlist (`ls`, `pwd`, `cat`, `head`, `tail`, `wc`, `stat`, `file`, `which`), or is `git` with a read-only subcommand as word two **and** no unrecognized option.
 
-Both lists admit only commands that cannot write whatever their flags say, which is stricter than it first looks: `date` is absent because `date -s` sets the system clock, and `git bugreport`, `git diagnose` and `git fsck --lost-found` are absent because they create files despite reading like queries.
+The executable allowlist admits only commands with no file-writing flag at all: `date` is absent because `date -s` sets the system clock, and `git bugreport`, `git diagnose` and `git fsck --lost-found` are absent because they create files despite reading like queries.
+
+Git needs the extra option check because one option surface is shared across its read-only plumbing. `--output <file>` turns `git log`, `git show` and every `diff-*` subcommand into an arbitrary-file writer, and it needs no `=`, so nothing in the character test catches it; `git grep -O<pager>` launches a program. Enumerating the dangerous options would be the same losing game as parsing the shell, so the options are allowlisted instead — `--oneline`, `--stat`, `--porcelain`, `-5` and a dozen similar — and an unrecognized option gates. Being incomplete costs a round trip, never a bypass.
 
 The character test is what removes the need for a parser. Everything a shell could use to hide a second command — `|`, `&`, `;`, `<`, `>`, `(`, `)`, `{`, `}`, `$`, backtick, backslash, quotes, glob characters, `!`, `~`, `#`, `=`, and newline — is outside the set, so a string that passes is provably one simple command of literal words: no expansion, substitution, redirection, separator, glob, or quote can hide in it. The allowlist then decides what that one command is allowed to be.
 

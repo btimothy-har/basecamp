@@ -85,6 +85,10 @@ describe("isTriviallySafe", () => {
 			"rm>file -rf /x",
 			"bash<<EOF\nrm -rf /x\nEOF",
 			"< /dev/null rm -rf /x",
+			"rm <&0 -rf /x",
+			"rm<&0 -rf /x",
+			"rm >|/tmp/x -rf /y",
+			"rm >| out -rf /y",
 		]);
 	});
 
@@ -146,6 +150,34 @@ describe("isTriviallySafe", () => {
 
 	it("refuses git subcommands that write despite reading like queries", () => {
 		assertGated(["git bugreport", "git diagnose", "git fsck", "git fsck --lost-found"]);
+	});
+
+	// `--output <file>` is shared plumbing across git's diff/log machinery and needs no `=`, so a
+	// read-only subcommand plus an unrecognized option is an arbitrary-file writer.
+	it("refuses read-only git subcommands carrying an unrecognized option", () => {
+		assertGated([
+			"git log --output /etc/foo",
+			"git diff --output important.txt",
+			"git show --output x",
+			"git diff-tree --output x HEAD",
+			"git diff-index --output x HEAD",
+			"git diff-files --output x",
+			"git grep -O/bin/sh pattern",
+			"git merge-tree --write-tree main feature",
+			"git log -o out.txt",
+		]);
+	});
+
+	it("still allows the read-only git options worth a fast path", () => {
+		assertSafe([
+			"git log --oneline -5",
+			"git log --oneline --graph --decorate -20",
+			"git status --porcelain",
+			"git diff --stat --cached",
+			"git diff --name-only",
+			"git rev-parse --abbrev-ref HEAD",
+			"git log -- pi/bash-reviewer",
+		]);
 	});
 
 	it("refuses git without a recognizable subcommand", () => {

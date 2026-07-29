@@ -15,6 +15,32 @@
 
 const SAFE_CHARACTERS = /^[A-Za-z0-9 \t\-_./,:@+]+$/;
 
+/**
+ * Options are allowlisted rather than denylisted because git shares one option surface across its
+ * read-only plumbing: `--output <file>` turns `git log`, `git show` and every `diff-*` subcommand
+ * into an arbitrary-file writer, and `git grep -O<pager>` launches a program. Enumerating those
+ * would be the same losing game as parsing the shell, so an unrecognized option gates instead.
+ */
+const SAFE_GIT_OPTIONS = new Set([
+	"--",
+	"--abbrev-ref",
+	"--all",
+	"--cached",
+	"--decorate",
+	"--graph",
+	"--name-only",
+	"--name-status",
+	"--numstat",
+	"--oneline",
+	"--porcelain",
+	"--short",
+	"--staged",
+	"--stat",
+	"--summary",
+]);
+
+const COUNT_OPTION = /^-\d+$/;
+
 const READ_ONLY_EXECUTABLES = new Set(["cat", "file", "head", "ls", "pwd", "stat", "tail", "wc", "which"]);
 
 /**
@@ -74,7 +100,10 @@ export function isTriviallySafe(command: string): boolean {
 
 	if (executable === "git") {
 		const subcommand = words[1];
-		return subcommand !== undefined && READ_ONLY_GIT_SUBCOMMANDS.has(subcommand);
+		if (subcommand === undefined || !READ_ONLY_GIT_SUBCOMMANDS.has(subcommand)) return false;
+		return words
+			.slice(2)
+			.every((word) => !word.startsWith("-") || SAFE_GIT_OPTIONS.has(word) || COUNT_OPTION.test(word));
 	}
 
 	return READ_ONLY_EXECUTABLES.has(executable);
