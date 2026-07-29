@@ -14,18 +14,24 @@ import { type AgentConfig, getAgentToolAllowlist, getWorkspacelessAgentToolAllow
 const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
 const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
-const RESTRICTED_AGENT_REPORT_ENV_VARS = new Set([
+// Daemon report identity must be minted per run, and the bash-reviewer opt-out
+// pair must never reach a daemon-spawned agent: children do not inherit the
+// launch flags that complete the opt-out, so propagating the env half alone
+// would be dead weight at best and a partial disable signal at worst.
+const RESTRICTED_AGENT_SPAWN_ENV_VARS = new Set([
 	"BASECAMP_RUN_ID",
 	"BASECAMP_REPORT_TOKEN",
 	"BASECAMP_AGENT_ID",
 	"BASECAMP_AGENT_HANDLE",
 	"BASECAMP_DAEMON_UDS",
+	"BASECAMP_BASH_REVIEWER",
+	"BASECAMP_EXTERNAL_SANDBOX",
 ]);
 
 export function sanitizeAgentSpawnEnv(input: Record<string, string>): Record<string, string> {
 	const output: Record<string, string> = {};
 	for (const [key, value] of Object.entries(input)) {
-		if (RESTRICTED_AGENT_REPORT_ENV_VARS.has(key)) continue;
+		if (RESTRICTED_AGENT_SPAWN_ENV_VARS.has(key)) continue;
 		output[key] = value;
 	}
 	return output;

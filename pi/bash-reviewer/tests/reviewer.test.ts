@@ -26,6 +26,10 @@ class FakePi {
 
 	appendEntry(): void {}
 
+	getFlag(): unknown {
+		return undefined;
+	}
+
 	getToolCallHandler(): ToolCallHandler {
 		assert.ok(this.toolCallHandler, "bash reviewer tool_call handler should be registered");
 		return this.toolCallHandler;

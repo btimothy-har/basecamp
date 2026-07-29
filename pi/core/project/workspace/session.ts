@@ -167,7 +167,7 @@ async function sweepSessionWorktreesForSession(
 	}
 }
 
-function loadDotenv(root: string): void {
+export function loadDotenv(root: string): void {
 	const dotenvPath = path.join(root, ".env");
 	try {
 		const content = fsSync.readFileSync(dotenvPath, "utf8");
@@ -179,6 +179,7 @@ function loadDotenv(root: string): void {
 				.slice(eq + 1)
 				.trim()
 				.replace(/^["']|["']$/g, "");
+			if (key.startsWith("BASECAMP_")) continue; // a repo .env must not set basecamp posture/identity
 			if (key && /^[A-Za-z_]\w*$/.test(key)) {
 				process.env[key] = value;
 			}

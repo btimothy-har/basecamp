@@ -3,7 +3,11 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import { registerLogseqAllowedRootProvider, shouldReapOnShutdown } from "#core/project/workspace/session.ts";
+import {
+	loadDotenv,
+	registerLogseqAllowedRootProvider,
+	shouldReapOnShutdown,
+} from "#core/project/workspace/session.ts";
 import { listWorkspaceAllowedRoots } from "#core/project/workspace/state.ts";
 
 describe("shouldReapOnShutdown", () => {
@@ -33,6 +37,37 @@ function writeConfig(homeDir: string, contents: string): void {
 	fs.mkdirSync(configDir, { recursive: true });
 	fs.writeFileSync(path.join(configDir, "config.json"), contents);
 }
+
+describe("loadDotenv", () => {
+	it("loads ordinary keys but never BASECAMP_ posture/identity keys", (t) => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-dotenv-"));
+		const saved = new Map(
+			["BASECAMP_BASH_REVIEWER", "BASECAMP_EXTERNAL_SANDBOX", "DOTENV_TEST_ORDINARY_KEY"].map((key) => [
+				key,
+				process.env[key],
+			]),
+		);
+		t.after(() => {
+			fs.rmSync(root, { recursive: true, force: true });
+			for (const [key, value] of saved) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+		});
+		for (const key of saved.keys()) delete process.env[key];
+
+		fs.writeFileSync(
+			path.join(root, ".env"),
+			'BASECAMP_BASH_REVIEWER=off\nBASECAMP_EXTERNAL_SANDBOX=1\nDOTENV_TEST_ORDINARY_KEY="value"\n',
+		);
+
+		loadDotenv(root);
+
+		assert.equal(process.env.BASECAMP_BASH_REVIEWER, undefined);
+		assert.equal(process.env.BASECAMP_EXTERNAL_SANDBOX, undefined);
+		assert.equal(process.env.DOTENV_TEST_ORDINARY_KEY, "value");
+	});
+});
 
 describe("registerLogseqAllowedRootProvider", () => {
 	it("registers a valid configured graph directory as an allowed root", (t) => {
