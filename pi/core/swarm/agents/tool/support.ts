@@ -180,7 +180,7 @@ export function formatWaitItemText(item: WaitHandleResult): string {
 	}
 	if (item.status === "unknown") {
 		return hasText(item.error)
-			? `? ${item.agentHandle} wait failed: ${item.error}`
+			? `? ${item.agentHandle} wait failed: ${preview(item.error)}`
 			: `? ${item.agentHandle} not awaitable or unavailable`;
 	}
 	return `… ${item.agentHandle} still running (timed out)`;

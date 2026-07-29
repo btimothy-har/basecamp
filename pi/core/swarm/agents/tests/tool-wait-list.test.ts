@@ -17,22 +17,7 @@ describe("wait_for_agent and list_agents", () => {
 	installDaemonToolTestHooks();
 
 	it("wait_for_agent sends wait and returns per-handle results", async () => {
-		trackSkillInvocation("agents");
-		const connection = new MockConnection();
-		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => connection, daemonToolDeps);
-		const waitTool = toolByName(tools, "wait_for_agent");
-
-		const executePromise = waitTool.execute(
-			"1",
-			{ agent_handles: ["amber-fox-a1b2c3", "mossy-lynx-d4e5f6"], timeout_s: 30 },
-			new AbortController().signal,
-			() => {},
-			{},
-		);
-
-		await new Promise((resolve) => setImmediate(resolve));
-		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
+		const { connection, outbound, resultPromise } = await dispatchWait(["amber-fox-a1b2c3", "mossy-lynx-d4e5f6"]);
 		assert.equal(outbound.type, "wait");
 		assert.deepEqual(outbound.agent_ids, []);
 		assert.deepEqual(outbound.agent_handles, ["amber-fox-a1b2c3", "mossy-lynx-d4e5f6"]);
@@ -62,7 +47,7 @@ describe("wait_for_agent and list_agents", () => {
 			],
 		});
 
-		const result = await executePromise;
+		const result = await resultPromise;
 		assert.equal(result.isError, undefined);
 		assert.equal(result.details.items[0].status, "completed");
 		assert.equal(result.details.items[1].status, "failed");
@@ -113,37 +98,54 @@ describe("wait_for_agent and list_agents", () => {
 		assert.match(result.content[0].text, /\? scout-missing not awaitable or unavailable/);
 	});
 
-	it("wait_for_agent surfaces daemon error on unknown items carrying one", async () => {
+	async function dispatchWait(handles: string[]) {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection, daemonToolDeps);
 		const waitTool = toolByName(tools, "wait_for_agent");
-
-		const executePromise = waitTool.execute(
+		const resultPromise = waitTool.execute(
 			"1",
-			{ agent_handles: ["jade-tiger-9z8y7x"], timeout_s: 30 },
+			{ agent_handles: handles, timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
 		);
-
 		await new Promise((resolve) => setImmediate(resolve));
 		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
-		assert.equal(outbound.type, "wait");
+		return { connection, outbound, resultPromise };
+	}
 
+	it("wait_for_agent surfaces daemon error on unknown items carrying one", async () => {
+		const { connection, outbound, resultPromise } = await dispatchWait(["jade-tiger-9z8y7x"]);
 		connection.emit({
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
 			request_id: outbound.request_id,
 			results: [{ agent_handle: "jade-tiger-9z8y7x", status: "unknown", result: null, error: "boom" }],
 		});
-
-		const result = await executePromise;
-		assert.equal(result.isError, undefined);
+		const result = await resultPromise;
 		assert.equal(result.details.items[0].status, "unknown");
 		// The daemon sends the raw cause; the renderer adds the single "wait failed:" prefix.
 		assert.equal(result.content[0].text, "? jade-tiger-9z8y7x wait failed: boom");
+	});
+
+	it("wait_for_agent collapses and truncates a long multi-line wait error", async () => {
+		const { connection, outbound, resultPromise } = await dispatchWait(["jade-tiger-9z8y7x"]);
+		// A server exception can be long and multi-line (chained repr, embedded SQL).
+		const longError = ` OperationalError:\n  database is locked\n  ${"x".repeat(120)}`;
+		connection.emit({
+			type: "wait_result",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			results: [{ agent_handle: "jade-tiger-9z8y7x", status: "unknown", result: null, error: longError }],
+		});
+		const result = await resultPromise;
+		const line = result.content[0].text;
+		assert.equal(result.details.items[0].status, "unknown");
+		// One line per item: whitespace collapsed (no newlines), truncated to the preview cap.
+		assert.doesNotMatch(line, /\n/);
+		assert.match(line, /^\? jade-tiger-9z8y7x wait failed: .{0,80}…$/);
 	});
 
 	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {

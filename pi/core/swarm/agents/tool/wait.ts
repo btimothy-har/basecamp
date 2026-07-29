@@ -129,7 +129,7 @@ export function registerWaitForAgentTool(
 				}
 				if (item.status === "unknown") {
 					if (hasText(item.error)) {
-						return `${theme.fg("error", "?")} ${item.agentHandle} ${theme.fg("error", `wait failed: ${item.error}`)}`;
+						return `${theme.fg("error", "?")} ${item.agentHandle} ${theme.fg("error", `wait failed: ${preview(item.error)}`)}`;
 					}
 					return `${theme.fg("warning", "?")} ${item.agentHandle} ${theme.fg("muted", "not awaitable or unavailable")}`;
 				}
