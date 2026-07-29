@@ -16,19 +16,40 @@ import {
 
 type ExecResult = { code: number; stdout: string; stderr: string };
 
-function recordingPi(handler: (args: string[]) => ExecResult): { pi: ExtensionAPI; calls: string[][] } {
+const OK: ExecResult = { code: 0, stdout: "", stderr: "" };
+
+// Models git lock state across calls: lock/unlock mutate it, list reports it. With
+// failUnlock the unlock leg errors (swallowed by the SUT) and the lock leg hits git's
+// tolerated "already locked", so the old reason survives — the masked-refresh case.
+function lockStatePi(lockReason: string | null, failUnlock = false): { pi: ExtensionAPI; calls: string[][] } {
+	let current = lockReason;
 	const calls: string[][] = [];
 	const pi = {
 		async exec(command: string, args: string[]): Promise<ExecResult> {
 			assert.equal(command, "git");
 			calls.push(args);
-			return handler(args);
+			if (args.includes("list")) {
+				const lockLine = current === null ? "" : `locked ${current}\n`;
+				return {
+					code: 0,
+					stdout: `worktree /repo\nbranch refs/heads/main\n\nworktree /repo/wt\nbranch refs/heads/wt/x\n${lockLine}\n`,
+					stderr: "",
+				};
+			}
+			if (args.includes("unlock")) {
+				if (failUnlock) return { code: 1, stdout: "", stderr: "fatal: cannot unlock" };
+				current = null;
+				return OK;
+			}
+			if (args.includes("lock") && args.includes("--reason")) {
+				if (failUnlock) return { code: 1, stdout: "", stderr: "fatal: '/repo/wt' is already locked" };
+				current = args[args.indexOf("--reason") + 1] ?? null;
+			}
+			return OK;
 		},
 	} as ExtensionAPI;
 	return { pi, calls };
 }
-
-const OK: ExecResult = { code: 0, stdout: "", stderr: "" };
 
 describe("session lease reason", () => {
 	it("round-trips sessionId and timestamp", () => {
@@ -111,12 +132,6 @@ describe("classifySessionWorktree", () => {
 });
 
 describe("acquireSessionLease", () => {
-	function lockStatePi(lockReason: string | null): { pi: ExtensionAPI; calls: string[][] } {
-		const lockLine = lockReason === null ? "" : `locked ${lockReason}\n`;
-		const listOut = `worktree /repo\nbranch refs/heads/main\n\nworktree /repo/wt\nbranch refs/heads/wt/x\n${lockLine}\n`;
-		return recordingPi((args) => (args.includes("list") ? { code: 0, stdout: listOut, stderr: "" } : OK));
-	}
-
 	it("unlocks then locks an unleased worktree with a fresh session reason", async () => {
 		const { pi, calls } = lockStatePi(null);
 		const now = new Date("2026-07-23T10:00:00.000Z");
@@ -171,42 +186,15 @@ describe("acquireSessionLease", () => {
 		assert.ok(lock, "expected a lock call");
 		assert.equal(parseSessionLease(lock[lock.indexOf("--reason") + 1])?.sessionId, "sess-1");
 	});
+
+	it("throws when the takeover cannot be confirmed (failed unlock masked by 'already locked')", async () => {
+		const { pi } = lockStatePi(stagedLockReason(new Date("2026-07-23T09:00:00.000Z")), true);
+
+		await assert.rejects(acquireSessionLease(pi, "/repo", "/repo/wt", "sess-1"), /Failed to acquire the session lease/);
+	});
 });
 
 describe("stageWorktreeLock", () => {
-	// Models git lock state across calls: lock/unlock mutate it, list reports it. With
-	// failUnlock the unlock leg errors (swallowed by stageWorktreeLock) and the lock leg hits
-	// git's tolerated "already locked", so the old reason survives — the masked-refresh case.
-	function lockStatePi(lockReason: string | null, failUnlock = false): { pi: ExtensionAPI; calls: string[][] } {
-		let current = lockReason;
-		const calls: string[][] = [];
-		const pi = {
-			async exec(command: string, args: string[]): Promise<ExecResult> {
-				assert.equal(command, "git");
-				calls.push(args);
-				if (args.includes("list")) {
-					const lockLine = current === null ? "" : `locked ${current}\n`;
-					return {
-						code: 0,
-						stdout: `worktree /repo\nbranch refs/heads/main\n\nworktree /repo/wt\nbranch refs/heads/wt/x\n${lockLine}\n`,
-						stderr: "",
-					};
-				}
-				if (args.includes("unlock")) {
-					if (failUnlock) return { code: 1, stdout: "", stderr: "fatal: cannot unlock" };
-					current = null;
-					return OK;
-				}
-				if (args.includes("lock") && args.includes("--reason")) {
-					if (failUnlock) return { code: 1, stdout: "", stderr: "fatal: '/repo/wt' is already locked" };
-					current = args[args.indexOf("--reason") + 1] ?? null;
-				}
-				return OK;
-			},
-		} as ExtensionAPI;
-		return { pi, calls };
-	}
-
 	const now = new Date("2026-07-23T12:00:00.000Z");
 	const freshReason = "basecamp staged 2026-07-23T12:00:00.000Z";
 

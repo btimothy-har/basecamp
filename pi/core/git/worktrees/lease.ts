@@ -85,7 +85,9 @@ export function leaseOwnedBy(lockReason: string | null | undefined, sessionId: s
  * cold (leaseless) and, if it is also clean, reap it — a narrow race inherent to using the git
  * lock as the lease. It is bounded (two sequential git calls, victim is the live session
  * re-leasing) and never loses committed work; a stronger liveness signal is deferred hardening
- * (see AGENTS.md). Throws only if the final lock fails.
+ * (see AGENTS.md). Throws if the final lock fails or the lease cannot be confirmed — the
+ * caller treats acquisition as advisory and proceeds unleased rather than believe a lease
+ * that never landed.
  */
 export async function acquireSessionLease(
 	pi: ExtensionAPI,
@@ -97,8 +99,16 @@ export async function acquireSessionLease(
 	const record = findWorktreeRecord(await gitWorktreeRecords(pi, repoRoot), worktreeDir);
 	if (record?.locked && parseSessionLease(record.lockReason) === null && parseStagedLock(record.lockReason) === null)
 		return;
+	const reason = sessionLeaseReason(sessionId, now);
 	await unlockWorktree(pi, repoRoot, worktreeDir).catch(() => {});
-	await lockWorktree(pi, repoRoot, worktreeDir, sessionLeaseReason(sessionId, now));
+	await lockWorktree(pi, repoRoot, worktreeDir, reason);
+	// lockWorktree tolerates git's "already locked", which masks a failed unlock and leaves the
+	// old reason in place — for a staged-lock takeover that would strand the live session's
+	// worktree on the short staged TTL. Confirm the lease landed before reporting success.
+	const stamped = findWorktreeRecord(await gitWorktreeRecords(pi, repoRoot), worktreeDir);
+	if (stamped?.lockReason !== reason) {
+		throw new Error(`Failed to acquire the session lease on ${worktreeDir}`);
+	}
 }
 
 /**
