@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shlex
 import shutil
@@ -20,41 +21,47 @@ Engine = Literal["docker", "podman"]
 _REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
 _DEFAULT_JOBS_DIR: Final = Path.home() / "evals" / "basecamp-terminal-bench" / "jobs"
 _DEFAULT_MODELS_FILE: Final = Path(os.environ.get("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent")) / "models.json"
-_CI_TASKS: Final = (
+# Every entry is verified against the terminal-bench-2-1 manifest; harbor
+# silently drops task filters that match nothing, so drift is caught by the
+# manifest-snapshot test and the post-run trial reconciliation in run().
+_DOCKER_AMD64_TASKS: Final = (
     "terminal-bench/hf-model-inference",
     "terminal-bench/mteb-retrieve",
     "terminal-bench/pytorch-model-recovery",
-    "terminal-bench/broken-python",
-    "terminal-bench/fix-permissions",
-    "terminal-bench/cron-broken-network",
-    "terminal-bench/oom",
+    "terminal-bench/pytorch-model-cli",
+    "terminal-bench/train-fasttext",
+    "terminal-bench/count-dataset-tokens",
     "terminal-bench/git-multibranch",
     "terminal-bench/sanitize-git-repo",
     "terminal-bench/git-leak-recovery",
-    "terminal-bench/pandas-etl",
-    "terminal-bench/csv-to-parquet",
-    "terminal-bench/train-fasttext",
+    "terminal-bench/fix-git",
     "terminal-bench/fix-code-vulnerability",
+    "terminal-bench/vulnerable-secret",
     "terminal-bench/crack-7z-hash",
-    "terminal-bench/sql-injection-attack",
-    "terminal-bench/solve-sudoku",
-    "terminal-bench/weighted-max-sat-solver",
-    "terminal-bench/countdown-game",
+    "terminal-bench/password-recovery",
+    "terminal-bench/openssl-selfsigned-cert",
     "terminal-bench/nginx-request-logging",
-    "terminal-bench/simple-web-scraper",
-    "terminal-bench/build-cython-ext",
-    "terminal-bench/conda-env-conflict-resolution",
-    "terminal-bench/npm-conflict-resolution",
-    "terminal-bench/fix-pandas-version",
-    "terminal-bench/modernize-fortran-build",
-    "terminal-bench/setup-custom-dev-env",
     "terminal-bench/configure-git-webserver",
+    "terminal-bench/pypi-server",
+    "terminal-bench/db-wal-recovery",
+    "terminal-bench/headless-terminal",
+    "terminal-bench/build-cython-ext",
+    "terminal-bench/compile-compcert",
+    "terminal-bench/polyglot-c-py",
+    "terminal-bench/polyglot-rust-c",
+    "terminal-bench/modernize-scientific-stack",
+    "terminal-bench/sqlite-with-gcov",
     "terminal-bench/sqlite-db-truncate",
+    "terminal-bench/rstan-to-pystan",
     "terminal-bench/kv-store-grpc",
-    "terminal-bench/tmux-advanced-workflow",
+    "terminal-bench/query-optimize",
+    "terminal-bench/multi-source-data-merger",
+    "terminal-bench/chess-best-move",
+    "terminal-bench/constraints-scheduling",
+    "terminal-bench/merge-diff-arc-agi-task",
 )
 _PRESETS: Final = {
-    "ci": _CI_TASKS,
+    "docker-amd64": _DOCKER_AMD64_TASKS,
     "podman-smoke": ("terminal-bench/hf-model-inference",),
     "podman-arm64": (
         "terminal-bench/hf-model-inference",
@@ -87,6 +94,20 @@ class EvalLaunchError(RuntimeError):
     @classmethod
     def excessive_concurrency(cls) -> EvalLaunchError:
         return cls("concurrency cannot exceed the number of selected task attempts")
+
+    @classmethod
+    def concurrency_cap(cls, cap: int) -> EvalLaunchError:
+        return cls(f"concurrency cannot exceed {cap}")
+
+    @classmethod
+    def exclusive_all(cls) -> EvalLaunchError:
+        return cls("the 'all' selection cannot be combined with other tasks or presets")
+
+    @classmethod
+    def trial_mismatch(cls, expected: int, actual: int) -> EvalLaunchError:
+        return cls(
+            f"harbor ran {actual} trials but {expected} were requested; dataset drift silently dropped task filters"
+        )
 
     @classmethod
     def missing_models_file(cls, path: Path) -> EvalLaunchError:
@@ -134,6 +155,8 @@ def _task_name(value: str) -> str:
 def resolve_tasks(selection: Sequence[str]) -> tuple[str, ...] | None:
     values = selection or ("podman-arm64",)
     if "all" in values:
+        if len(values) > 1:
+            raise EvalLaunchError.exclusive_all()
         return None
     tasks: list[str] = []
     for value in values:
@@ -217,8 +240,9 @@ def build_harbor_command(options: LaunchOptions, commit: str) -> list[str]:
     ]
     if options.models_file:
         command.extend(("--agent-kwarg", f"pi_models_file={options.models_file}"))
-    for task in options.tasks or ():
-        command.extend(("--include-task-name", task))
+    if options.tasks is not None:
+        for task in options.tasks:
+            command.extend(("--include-task-name", task))
     command.extend(
         (
             "--n-attempts",
@@ -260,7 +284,12 @@ def build_environment(options: LaunchOptions) -> dict[str, str]:
     return environment
 
 
+_MAX_CONCURRENCY: Final = 32
+
+
 def validate_options(options: LaunchOptions) -> None:
+    if options.concurrency > _MAX_CONCURRENCY:
+        raise EvalLaunchError.concurrency_cap(_MAX_CONCURRENCY)
     if options.tasks is not None and options.concurrency > len(options.tasks) * options.attempts:
         raise EvalLaunchError.excessive_concurrency()
     if options.models_file and not options.models_file.is_file():
@@ -288,7 +317,29 @@ def run(options: LaunchOptions) -> int:
     if options.dry_run:
         return 0
     options.jobs_dir.mkdir(parents=True, exist_ok=True)
-    return subprocess.run(command, cwd=_REPOSITORY_ROOT, env=environment, check=False).returncode
+    returncode = subprocess.run(command, cwd=_REPOSITORY_ROOT, env=environment, check=False).returncode
+    if returncode == 0 and options.tasks is not None and not options.install_only:
+        _reconcile_trial_count(options)
+    return returncode
+
+
+def _reconcile_trial_count(options: LaunchOptions) -> None:
+    """Fail loudly when harbor silently dropped task filters (dataset drift)."""
+    assert options.tasks is not None
+    expected = len(options.tasks) * options.attempts
+    job_results = sorted(
+        (path for path in options.jobs_dir.glob("*/result.json") if path.is_file()),
+        key=lambda path: path.stat().st_mtime,
+    )
+    if not job_results:
+        return
+    try:
+        result = json.loads(job_results[-1].read_text())
+    except (OSError, json.JSONDecodeError):
+        return
+    actual = result.get("n_total_trials")
+    if isinstance(actual, int) and actual != expected:
+        raise EvalLaunchError.trial_mismatch(expected, actual)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

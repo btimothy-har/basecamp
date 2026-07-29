@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
+from typing import Final
 
 import pytest
 
@@ -119,43 +121,37 @@ def test_parse_options_supports_custom_selection_without_models() -> None:
     assert parsed.dry_run is True
 
 
-_CI_EXPECTED: tuple[str, ...] = (
-    "terminal-bench/hf-model-inference",
-    "terminal-bench/mteb-retrieve",
-    "terminal-bench/pytorch-model-recovery",
-    "terminal-bench/broken-python",
-    "terminal-bench/fix-permissions",
-    "terminal-bench/cron-broken-network",
-    "terminal-bench/oom",
-    "terminal-bench/git-multibranch",
-    "terminal-bench/sanitize-git-repo",
-    "terminal-bench/git-leak-recovery",
-    "terminal-bench/pandas-etl",
-    "terminal-bench/csv-to-parquet",
-    "terminal-bench/train-fasttext",
-    "terminal-bench/fix-code-vulnerability",
-    "terminal-bench/crack-7z-hash",
-    "terminal-bench/sql-injection-attack",
-    "terminal-bench/solve-sudoku",
-    "terminal-bench/weighted-max-sat-solver",
-    "terminal-bench/countdown-game",
-    "terminal-bench/nginx-request-logging",
-    "terminal-bench/simple-web-scraper",
-    "terminal-bench/build-cython-ext",
-    "terminal-bench/conda-env-conflict-resolution",
-    "terminal-bench/npm-conflict-resolution",
-    "terminal-bench/fix-pandas-version",
-    "terminal-bench/modernize-fortran-build",
-    "terminal-bench/setup-custom-dev-env",
-    "terminal-bench/configure-git-webserver",
-    "terminal-bench/sqlite-db-truncate",
-    "terminal-bench/kv-store-grpc",
-    "terminal-bench/tmux-advanced-workflow",
-)
+_MANIFEST_SNAPSHOT: Final = Path(__file__).with_name("terminal_bench_2_1_manifest.txt")
 
 
-def test_resolve_tasks_ci_preset_returns_expected_tasks_in_order() -> None:
-    assert run.resolve_tasks(("ci",)) == _CI_EXPECTED
+def test_docker_amd64_preset_shape() -> None:
+    tasks = run.resolve_tasks(("docker-amd64",))
+
+    assert tasks is not None
+    assert len(tasks) == len(set(tasks))
+    assert all(task.startswith("terminal-bench/") for task in tasks)
+    # Representative membership across the intended domains.
+    for expected in (
+        "terminal-bench/hf-model-inference",
+        "terminal-bench/git-multibranch",
+        "terminal-bench/fix-code-vulnerability",
+        "terminal-bench/build-cython-ext",
+        "terminal-bench/multi-source-data-merger",
+        "terminal-bench/chess-best-move",
+    ):
+        assert expected in tasks
+
+
+def test_docker_amd64_preset_is_covered_by_the_dataset_manifest() -> None:
+    # Snapshot of the terminal-bench-2-1 task list (89 tasks). Harbor silently
+    # drops task filters that match nothing, so the preset must stay inside the
+    # dataset; refresh the snapshot if the dataset version is intentionally bumped.
+    manifest = set(_MANIFEST_SNAPSHOT.read_text().split())
+    tasks = run.resolve_tasks(("docker-amd64",))
+
+    assert tasks is not None
+    missing = [task.split("/", 1)[1] for task in tasks if task.split("/", 1)[1] not in manifest]
+    assert missing == []
 
 
 def test_all_selection_builds_command_without_task_filters(tmp_path: Path) -> None:
@@ -166,8 +162,42 @@ def test_all_selection_builds_command_without_task_filters(tmp_path: Path) -> No
     assert "--include-task-name" not in command
 
 
-def test_validate_options_skips_concurrency_check_for_full_dataset(tmp_path: Path) -> None:
+def test_all_selection_rejects_mixed_selections() -> None:
+    with pytest.raises(run.EvalLaunchError, match="cannot be combined"):
+        run.resolve_tasks(("all", "hf-model-inference"))
+    with pytest.raises(run.EvalLaunchError, match="cannot be combined"):
+        run.resolve_tasks(("docker-amd64", "all"))
+
+
+def test_validate_options_enforces_absolute_concurrency_cap(tmp_path: Path) -> None:
     models_file = tmp_path / "models.json"
     models_file.write_text("{}")
 
-    run.validate_options(options(tmp_path, models_file=models_file, tasks=None, concurrency=100))
+    with pytest.raises(run.EvalLaunchError, match="concurrency cannot exceed 32"):
+        run.validate_options(options(tmp_path, models_file=models_file, tasks=None, concurrency=33))
+
+    run.validate_options(options(tmp_path, models_file=models_file, tasks=None, concurrency=32))
+
+
+def test_reconcile_trial_count_detects_silently_dropped_tasks(tmp_path: Path) -> None:
+    jobs_dir = tmp_path / "jobs"
+    job_dir = jobs_dir / "2026-07-29__00-00-00"
+    job_dir.mkdir(parents=True)
+    (job_dir / "result.json").write_text(json.dumps({"n_total_trials": 2, "stats": {}}))
+
+    selected = options(
+        tmp_path,
+        tasks=("terminal-bench/hf-model-inference", "terminal-bench/pytorch-model-recovery"),
+        attempts=2,
+        jobs_dir=jobs_dir,
+    )
+    with pytest.raises(run.EvalLaunchError, match="4 were requested"):
+        run._reconcile_trial_count(selected)
+
+    (job_dir / "result.json").write_text(json.dumps({"n_total_trials": 4, "stats": {}}))
+    run._reconcile_trial_count(selected)
+
+
+def test_reconcile_trial_count_ignores_missing_or_unreadable_results(tmp_path: Path) -> None:
+    selected = options(tmp_path, tasks=("terminal-bench/hf-model-inference",), jobs_dir=tmp_path / "jobs")
+    run._reconcile_trial_count(selected)

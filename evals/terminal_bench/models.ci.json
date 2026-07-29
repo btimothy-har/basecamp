@@ -9,7 +9,9 @@
           "id": "z-ai/glm-5.2",
           "name": "GLM 5.2",
           "reasoning": true,
-          "input": ["text"],
+          "input": [
+            "text"
+          ],
           "contextWindow": 1000000,
           "maxTokens": 130000,
           "cost": {
@@ -19,7 +21,7 @@
             "cacheWrite": 0.26
           },
           "thinkingLevelMap": {
-            "none": "off",
+            "off": "none",
             "minimal": "high",
             "low": "high",
             "medium": "high",
@@ -31,7 +33,9 @@
           "id": "moonshotai/kimi-k3",
           "name": "Kimi K3",
           "reasoning": true,
-          "input": ["text"],
+          "input": [
+            "text"
+          ],
           "contextWindow": 1000000,
           "maxTokens": 130000,
           "cost": {
@@ -41,7 +45,7 @@
             "cacheWrite": 0.3
           },
           "thinkingLevelMap": {
-            "none": "off",
+            "off": "none",
             "minimal": "high",
             "low": "high",
             "medium": "high",
