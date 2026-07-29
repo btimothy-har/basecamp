@@ -92,7 +92,7 @@ describe("continuation guard stop selection", () => {
 });
 
 describe("continuation guard fail-open behavior", () => {
-	it("does not nudge when the fast model is unavailable", async () => {
+	it("does not nudge when the session model is unavailable", async () => {
 		const { pi } = setup({ resolveModel: async () => null });
 		const { ctx } = context();
 
