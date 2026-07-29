@@ -380,7 +380,14 @@ make eval EVAL_ENGINE=docker EVAL_EXTRA=--no-models \
 
 The adapter installs the exact Pi version and a `git archive` of `package.json`, `package-lock.json`, and `pi/` from the clean `HEAD` commit resolved by the launcher. It verifies the archive digest, installs production dependencies from the committed lockfile without lifecycle scripts, and registers Basecamp with Pi. It never mounts host Pi auth, Basecamp configuration, worktrees, or the repository into the trial container.
 
-This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, bash reviewer, and structured file tools. It disables the Python hub, dispatched subagents, browser, workstreams, code-review UI, and interactive `plan()` flow. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
+This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, and structured file tools. It disables the Python hub, dispatched subagents, browser, workstreams, code-review UI, and interactive `plan()` flow.
+
+Two model-backed features are **not** exercised, because the trial container never receives basecamp's `config.json` and so cannot resolve the `fast` alias they share:
+
+- The **bash reviewer** is explicitly disabled (`BASECAMP_BASH_REVIEWER=off`, honoured only alongside the sandbox env signal and the `--unsafe-edit-sandboxed` launch flag). Left on, it could not reach a model, and its no-UI failsafe is fail-closed — so every gated command would be hard-blocked rather than judged, scoring a missing alias instead of the agent.
+- The **continuation guard** is inert. Its posture is fail-open, so an unresolvable alias simply means it never nudges; no trial has ever exercised it.
+
+Both are recorded per trial in `agent/basecamp-eval.json` (`bash_reviewer_enabled`, `continuation_guard_active`) so a score is never read as though they were active. Scores from this profile therefore measure the prompt, tools, and workflow — not basecamp's command gating or stop judgement. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
 
 Harbor writes each job and trial beneath `EVAL_JOBS_DIR` (default: `~/evals/basecamp-terminal-bench/jobs`). The useful per-trial files are:
 
@@ -396,7 +403,7 @@ Browse completed jobs with:
 harbor view "$HOME/evals/basecamp-terminal-bench/jobs"
 ```
 
-Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants, while `docker-amd64` and `all` assume an amd64 Docker host. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
+Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants, while `docker-amd64` and `all` assume an amd64 Docker host. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process; with the bash reviewer disabled in this profile there are no auxiliary reviewer completions to account for.
 
 The launcher reconciles each finished run: when Harbor silently drops a task filter that matches nothing (dataset drift), the trial count no longer equals tasks x attempts and the launch fails with an explicit error instead of reporting a silently smaller result.
 

@@ -60,8 +60,40 @@ _DOCKER_AMD64_TASKS: Final = (
     "terminal-bench/constraints-scheduling",
     "terminal-bench/merge-diff-arc-agi-task",
 )
+# Declared agent timeouts across the preset are 15 minutes for most tasks, but
+# these four run 30-60. A shard's wall clock is its slowest task, so isolating
+# them keeps one 60-minute ceiling from setting the whole run's duration.
+_DOCKER_AMD64_LONG_TAIL: Final = (
+    "terminal-bench/train-fasttext",
+    "terminal-bench/compile-compcert",
+    "terminal-bench/crack-7z-hash",
+    "terminal-bench/mteb-retrieve",
+)
+# rstan-to-pystan declares 8192 MB, so two lanes can demand 16 GB on a 16 GB
+# runner. It gets a shard of its own at concurrency 1 rather than taxing the
+# long shard's lane count for a constraint the other slow tasks lack.
+_DOCKER_AMD64_MEM: Final = ("terminal-bench/rstan-to-pystan",)
+_SHORT_SHARD_COUNT: Final = 3
+_DOCKER_AMD64_SHORT: Final = tuple(
+    task for task in _DOCKER_AMD64_TASKS if task not in (*_DOCKER_AMD64_LONG_TAIL, *_DOCKER_AMD64_MEM)
+)
+
+
+def _stripe(tasks: tuple[str, ...], index: int, count: int) -> tuple[str, ...]:
+    """Take every count-th task. The preset is grouped by topic, so contiguous
+    slices would cluster same-flavour (and similarly slow) tasks in one shard."""
+    return tasks[index::count]
+
+
+_SHORT_SHARDS: Final = {
+    f"docker-amd64-{index + 1}": _stripe(_DOCKER_AMD64_SHORT, index, _SHORT_SHARD_COUNT)
+    for index in range(_SHORT_SHARD_COUNT)
+}
 _PRESETS: Final = {
     "docker-amd64": _DOCKER_AMD64_TASKS,
+    "docker-amd64-long": _DOCKER_AMD64_LONG_TAIL,
+    "docker-amd64-mem": _DOCKER_AMD64_MEM,
+    **_SHORT_SHARDS,
     "podman-smoke": ("terminal-bench/hf-model-inference",),
     "podman-arm64": (
         "terminal-bench/hf-model-inference",
@@ -165,6 +197,43 @@ def resolve_tasks(selection: Sequence[str]) -> tuple[str, ...] | None:
             if task not in tasks:
                 tasks.append(task)
     return tuple(tasks)
+
+
+PRESET_NAMES: Final = frozenset(_PRESETS)
+
+
+@dataclass(frozen=True)
+class ShardProfile:
+    """One CI shard: which preset it runs and the resources it is allowed."""
+
+    label: str
+    preset: str
+    concurrency_cap: int | None
+    timeout_minutes: int
+
+
+# Timeouts: short shards hold ~10 15-minute tasks each; the long shard's four
+# 30-60 minute tasks at 3 attempts and up to 3 lanes need 120-240 minutes; the
+# mem shard runs its trials serially, so it gets the GitHub-hosted maximum.
+_AMD64_SHARD_PROFILES: Final = (
+    *(ShardProfile(str(index + 1), f"docker-amd64-{index + 1}", None, 180) for index in range(_SHORT_SHARD_COUNT)),
+    ShardProfile("long", "docker-amd64-long", 3, 300),
+    ShardProfile("mem", "docker-amd64-mem", 1, 360),
+)
+# Unsharded selections carry a whole preset in one job, so they get the
+# GitHub-hosted maximum rather than a per-shard budget.
+_UNSHARDED_TIMEOUT_MINUTES: Final = 360
+
+
+def shard_plan(task_set: str) -> tuple[ShardProfile, ...]:
+    """Shard profiles covering `task_set` across parallel CI jobs.
+
+    Only the amd64 preset is sharded; `all` passes no task filter and so cannot
+    be split by preset name.
+    """
+    if task_set != "docker-amd64":
+        return (ShardProfile(task_set, task_set, None, _UNSHARDED_TIMEOUT_MINUTES),)
+    return _AMD64_SHARD_PROFILES
 
 
 def _build_parser() -> argparse.ArgumentParser:

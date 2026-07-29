@@ -201,3 +201,66 @@ def test_reconcile_trial_count_detects_silently_dropped_tasks(tmp_path: Path) ->
 def test_reconcile_trial_count_ignores_missing_or_unreadable_results(tmp_path: Path) -> None:
     selected = options(tmp_path, tasks=("terminal-bench/hf-model-inference",), jobs_dir=tmp_path / "jobs")
     run._reconcile_trial_count(selected)
+
+
+def test_shard_plan_exactly_covers_the_amd64_preset() -> None:
+    plan = run.shard_plan("docker-amd64")
+    assert [profile.label for profile in plan] == ["1", "2", "3", "long", "mem"]
+
+    sharded: list[str] = []
+    for profile in plan:
+        sharded.extend(run.resolve_tasks((profile.preset,)) or ())
+
+    full = run.resolve_tasks(("docker-amd64",))
+    assert full is not None
+    # No task may be dropped (a silent scoring gap) or duplicated (paying twice
+    # for one trial and skewing the pooled mean).
+    assert sorted(sharded) == sorted(full)
+    assert len(sharded) == len(set(sharded))
+
+
+def test_long_shard_isolates_the_slow_tasks() -> None:
+    long_tasks = run.resolve_tasks(("docker-amd64-long",))
+
+    assert long_tasks == (
+        "terminal-bench/train-fasttext",
+        "terminal-bench/compile-compcert",
+        "terminal-bench/crack-7z-hash",
+        "terminal-bench/mteb-retrieve",
+    )
+    for profile in run.shard_plan("docker-amd64"):
+        if profile.preset == "docker-amd64-long":
+            continue
+        assert not set(run.resolve_tasks((profile.preset,)) or ()) & set(long_tasks)
+
+
+def test_mem_shard_isolates_the_memory_hungry_task() -> None:
+    # rstan-to-pystan declares 8192 MB; two lanes could exhaust a 16 GB runner.
+    assert run.resolve_tasks(("docker-amd64-mem",)) == ("terminal-bench/rstan-to-pystan",)
+    for profile in run.shard_plan("docker-amd64"):
+        if profile.preset == "docker-amd64-mem":
+            continue
+        assert "terminal-bench/rstan-to-pystan" not in (run.resolve_tasks((profile.preset,)) or ())
+
+
+def test_shard_profiles_carry_concurrency_caps_and_timeouts() -> None:
+    by_label = {profile.label: profile for profile in run.shard_plan("docker-amd64")}
+
+    for label in ("1", "2", "3"):
+        assert by_label[label].concurrency_cap is None
+        assert by_label[label].timeout_minutes == 180
+    assert by_label["long"].concurrency_cap == 3
+    assert by_label["long"].timeout_minutes == 300
+    assert by_label["mem"].concurrency_cap == 1
+    assert by_label["mem"].timeout_minutes == 360
+
+
+def test_shard_plan_leaves_unshardable_selections_alone() -> None:
+    assert run.shard_plan("all") == (run.ShardProfile("all", "all", None, 360),)
+    assert run.shard_plan("podman-arm64") == (run.ShardProfile("podman-arm64", "podman-arm64", None, 360),)
+
+
+def test_preset_names_cover_every_preset_for_matrix_validation() -> None:
+    for name in ("docker-amd64", "docker-amd64-1", "docker-amd64-long", "docker-amd64-mem", "podman-arm64"):
+        assert name in run.PRESET_NAMES
+    assert "all" not in run.PRESET_NAMES
