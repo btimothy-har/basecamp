@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       models:
-        description: Which model(s) to evaluate
+        description: Which model(s) to evaluate (ad hoc runs default to one leg)
         type: choice
         options:
-        - both
         - glm-5.2
         - kimi-k3
-        default: both
+        - both
+        default: glm-5.2
       task-set:
         description: Task selection preset
         type: choice
@@ -27,23 +27,28 @@ on:
         type: string
         default: "4"
       thinking:
-        description: Thinking level
+        description: Thinking level (per-model uses each model's default; a specific level overrides all legs)
         type: choice
         options:
+        - per-model
         - off
         - minimal
         - low
         - medium
         - high
         - xhigh
-        default: xhigh
+        default: per-model
+      sweep:
+        description: Also run each selected model at high and xhigh for comparison (multiplies paid legs)
+        type: boolean
+        default: false
       pi-version:
         description: Pi version under evaluation
         type: string
         default: "0.80.7"
   schedule:
-  # Weekly, Monday 06:00 UTC. Scheduled runs fall back to the dispatch
-  # defaults via the || expressions in the setup job (inputs.* are empty).
+  # Weekly, Monday 06:00 UTC. Scheduled runs fall back via the || expressions
+  # in the setup job (inputs.* are empty): both models at per-model defaults.
   - cron: "0 6 * * 1"
 
 # Keyed by event so a queued weekly run is never dropped behind manual
@@ -64,18 +69,21 @@ jobs:
       task-set: ${{ steps.inputs.outputs.task-set }}
       attempts: ${{ steps.inputs.outputs.attempts }}
       concurrency: ${{ steps.inputs.outputs.concurrency }}
-      thinking: ${{ steps.inputs.outputs.thinking }}
       pi-version: ${{ steps.inputs.outputs.pi-version }}
       config: ${{ steps.inputs.outputs.config }}
     steps:
     - name: Resolve and validate inputs
       id: inputs
       env:
+        # Scheduled runs see empty inputs.*; the fallbacks give the weekly run
+        # both models at per-model thinking defaults, while ad hoc dispatches
+        # default to a single glm-5.2 leg via the input defaults above.
         MODELS: ${{ inputs.models || 'both' }}
         TASK_SET: ${{ inputs.task-set || 'docker-amd64' }}
         ATTEMPTS: ${{ inputs.attempts || '3' }}
         CONCURRENCY: ${{ inputs.concurrency || '4' }}
-        THINKING: ${{ inputs.thinking || 'xhigh' }}
+        THINKING: ${{ inputs.thinking || 'per-model' }}
+        SWEEP: ${{ inputs.sweep || false }}
         PI_VERSION: ${{ inputs.pi-version || '0.80.7' }}
       run: |
         set -euo pipefail
@@ -88,37 +96,69 @@ jobs:
           echo "attempts=${ATTEMPTS}"
           echo "concurrency=${CONCURRENCY}"
           echo "thinking=${THINKING}"
+          echo "sweep=${SWEEP}"
           echo "pi-version=${PI_VERSION}"
-          echo "config=${TASK_SET} x${ATTEMPTS} attempts, concurrency ${CONCURRENCY}, thinking ${THINKING}, pi ${PI_VERSION}"
+          echo "config=${TASK_SET} x${ATTEMPTS} attempts, concurrency ${CONCURRENCY}, pi ${PI_VERSION}"
         } >> "$GITHUB_OUTPUT"
 
     - name: Build model matrix
       id: matrix
       env:
         MODELS: ${{ steps.inputs.outputs.models }}
+        THINKING: ${{ steps.inputs.outputs.thinking }}
+        SWEEP: ${{ steps.inputs.outputs.sweep }}
       run: |
         set -euo pipefail
+        # One legs table: model slug -> full model id and default thinking level.
         # Each leg carries a slug because artifact names disallow '/'.
+        model_for() {
+          case "$1" in
+            glm-5.2) echo "openrouter/z-ai/glm-5.2" ;;
+            kimi-k3) echo "openrouter/moonshotai/kimi-k3" ;;
+            *) return 1 ;;
+          esac
+        }
+        default_thinking_for() {
+          case "$1" in
+            glm-5.2) echo "xhigh" ;;
+            kimi-k3) echo "xhigh" ;;
+            *) return 1 ;;
+          esac
+        }
+
+        declare -a slugs
         case "$MODELS" in
-          glm-5.2)
-            entries='[{"model":"openrouter/z-ai/glm-5.2","slug":"glm-5.2"}]'
-            ;;
-          kimi-k3)
-            entries='[{"model":"openrouter/moonshotai/kimi-k3","slug":"kimi-k3"}]'
-            ;;
-          both)
-            entries='[{"model":"openrouter/z-ai/glm-5.2","slug":"glm-5.2"},{"model":"openrouter/moonshotai/kimi-k3","slug":"kimi-k3"}]'
-            ;;
+          glm-5.2) slugs=(glm-5.2) ;;
+          kimi-k3) slugs=(kimi-k3) ;;
+          both) slugs=(glm-5.2 kimi-k3) ;;
           *)
             echo "Unknown models input: $MODELS" >&2
             exit 1
             ;;
         esac
+
+        entries='[]'
+        for slug in "${slugs[@]}"; do
+          model="$(model_for "$slug")"
+          if [ "$SWEEP" = "true" ]; then
+            levels="high xhigh"
+          elif [ "$THINKING" = "per-model" ]; then
+            levels="$(default_thinking_for "$slug")"
+          else
+            levels="$THINKING"
+          fi
+          for level in $levels; do
+            entries="$(jq -c \
+              --arg model "$model" --arg slug "$slug" --arg thinking "$level" \
+              '. + [{model: $model, slug: $slug, thinking: $thinking}]' <<<"$entries")"
+          done
+        done
+        entries="$(jq -c 'unique_by(.model + "@" + .thinking)' <<<"$entries")"
         matrix="$(jq -cn --argjson entries "$entries" '{include: $entries}')"
         echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
 
   eval:
-    name: Eval ${{ matrix.slug }}
+    name: Eval ${{ matrix.slug }} (${{ matrix.thinking }})
     needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 330
@@ -131,7 +171,7 @@ jobs:
       TASK_SET: ${{ needs.setup.outputs.task-set }}
       ATTEMPTS: ${{ needs.setup.outputs.attempts }}
       CONCURRENCY: ${{ needs.setup.outputs.concurrency }}
-      THINKING: ${{ needs.setup.outputs.thinking }}
+      THINKING: ${{ matrix.thinking }}
       PI_VERSION: ${{ needs.setup.outputs.pi-version }}
       MODEL: ${{ matrix.model }}
     steps:
@@ -235,7 +275,7 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: eval-jobs-${{ matrix.slug }}
+        name: eval-jobs-${{ matrix.slug }}-${{ matrix.thinking }}
         # The repository is public: upload only job-level result/config files.
         # The raw jobs tree is deliberately excluded — harbor bind-mounts agent
         # transcripts into it and its per-trial scrubber does not cover
@@ -250,10 +290,11 @@ jobs:
       env:
         CONFIG: ${{ needs.setup.outputs.config }}
         MODEL_NAME: ${{ matrix.model }}
+        LEVEL: ${{ matrix.thinking }}
       run: |
         set -uo pipefail
         {
-          echo "### \`${MODEL_NAME}\` — ${CONFIG}"
+          echo "### \`${MODEL_NAME}\` @ ${LEVEL} — ${CONFIG}"
           echo ""
           uv run python -m evals.terminal_bench.summarize "${RUNNER_TEMP}/jobs"
         } >> "$GITHUB_STEP_SUMMARY"

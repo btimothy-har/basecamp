@@ -402,7 +402,7 @@ The launcher reconciles each finished run: when Harbor silently drops a task fil
 
 ### GitHub Actions
 
-`.github/workflows/terminal-bench.yml` runs the same launcher on GitHub-hosted runners, routing model traffic through a tailscale-hosted Bifrost proxy. It triggers manually (`workflow_dispatch`: model, task-set, attempts, concurrency, thinking, and Pi version inputs) and weekly on Monday 06:00 UTC with the dispatch defaults: `openrouter/z-ai/glm-5.2` and `openrouter/moonshotai/kimi-k3`, the `docker-amd64` preset, 3 attempts, xhigh thinking.
+`.github/workflows/terminal-bench.yml` runs the same launcher on GitHub-hosted runners, routing model traffic through a tailscale-hosted Bifrost proxy. It triggers manually (`workflow_dispatch`) and weekly on Monday 06:00 UTC. Matrix legs are (model, thinking) pairs: ad hoc dispatches default to a single `openrouter/z-ai/glm-5.2` leg, while the weekly run executes both `openrouter/z-ai/glm-5.2` and `openrouter/moonshotai/kimi-k3` at their per-model thinking defaults (xhigh), the `docker-amd64` preset, 3 attempts. Dispatch inputs cover the model(s), task-set, attempts, concurrency, a thinking override (or `per-model`), a `sweep` toggle that adds high+xhigh comparison legs per model, and the Pi version.
 
 Each matrix leg joins the tailnet with an OAuth client (`tag:github-actions`), points container DNS at the tailnet resolver, verifies proxy reachability from inside a container before any paid work, renders `evals/terminal_bench/models.ci.json` (a secret-free template whose `$BIFROST_BASE_URL` placeholder is resolved at run time; `LLM_API_KEY` stays an environment reference), and publishes a score summary plus a curated artifact containing only job-level result and config files.
 
