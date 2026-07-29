@@ -34,7 +34,9 @@ There is no triage phase and no deterministic block phase.
 `isTriviallySafe(command: string): boolean` in `fast-path.ts` is the only permission-granting code in the reviewer. It is true only when **both** hold:
 
 - every character is in `[A-Za-z0-9 \t\-_./,:@+]`;
-- the first whitespace-delimited word is on a read-only allowlist (`ls`, `pwd`, `cat`, `head`, `tail`, `wc`, `stat`, `file`, `which`, `date`), or is `git` with a read-only subcommand as word two.
+- the first whitespace-delimited word is on a read-only allowlist (`ls`, `pwd`, `cat`, `head`, `tail`, `wc`, `stat`, `file`, `which`), or is `git` with a read-only subcommand as word two.
+
+Both lists admit only commands that cannot write whatever their flags say, which is stricter than it first looks: `date` is absent because `date -s` sets the system clock, and `git bugreport`, `git diagnose` and `git fsck --lost-found` are absent because they create files despite reading like queries.
 
 The character test is what removes the need for a parser. Everything a shell could use to hide a second command — `|`, `&`, `;`, `<`, `>`, `(`, `)`, `{`, `}`, `$`, backtick, backslash, quotes, glob characters, `!`, `~`, `#`, `=`, and newline — is outside the set, so a string that passes is provably one simple command of literal words: no expansion, substitution, redirection, separator, glob, or quote can hide in it. The allowlist then decides what that one command is allowed to be.
 
