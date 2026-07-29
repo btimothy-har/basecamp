@@ -91,4 +91,21 @@ describe("bash triage segment splitting", () => {
 		assertTriage("7z x archive.7z", allow);
 		assertTriage("git status 2>/dev/null", allow);
 	});
+
+	it("ends a word at a glued redirection so the executable stays visible", () => {
+		// A shell ends a word at a redirection without needing whitespace, so
+		// `rm>file` is `rm` redirected. Fusing it into one token left the
+		// executable matching no known command name and allowed the segment.
+		assertTriage("rm>file -rf /x", dangerousShell);
+		assertTriage("bash<<EOF\nrm -rf /tmp/x\nEOF", dangerousShell);
+		assertTriage("sudo>out rm -rf /x", dangerousShell);
+		assertTriage("env>x FOO=bar rm -rf /x", dangerousShell);
+		// A glued redirection on a flag must not downgrade the verdict either.
+		assertTriage("git push --force>x origin main", irreversibleRemote);
+
+		// Quoted metacharacters remain data, and an fd prefix stays with its operator.
+		assertTriage('echo "a>b"', allow);
+		assertTriage("grep 'a > b' file.txt", allow);
+		assertTriage("ls 2>&1", allow);
+	});
 });

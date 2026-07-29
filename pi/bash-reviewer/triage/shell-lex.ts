@@ -10,41 +10,122 @@ import {
 	WRAPPER_SKIP_ONE,
 } from "./rules.ts";
 
-const SHELL_WORD_RE = /(?:[^\s"'\\]+|\\.|"(?:\\.|[^"\\])*"|'[^']*')+/g;
+/**
+ * End of a redirection operator starting at `start`: an optional leading `&`
+ * (`&>`), the `<`/`>` run, then the suffix a shell allows (`<<-`, `>&`, `>|`).
+ */
+function redirectionOperatorEnd(segment: string, start: number): number {
+	let end = start;
+	if (segment[end] === "&") end += 1;
+	while (segment[end] === "<" || segment[end] === ">") end += 1;
+	const core = segment.slice(start, end);
+	if (core === "<<" && segment[end] === "-") return end + 1;
+	if ((core === "<" || core === ">") && (segment[end] === "&" || segment[end] === "|")) return end + 1;
+	return end;
+}
 
-/** Tokenize shell syntax and strip quotes from each word to normalize `g"it"` → `git`. */
+function isRedirectionStart(segment: string, index: number): boolean {
+	const char = segment[index];
+	return char === "<" || char === ">" || (char === "&" && segment[index + 1] === ">");
+}
+
+/**
+ * Tokenize shell syntax, stripping quotes to normalize `g"it"` → `git`.
+ *
+ * Unquoted redirection operators become their own tokens, because a shell ends
+ * a word at one without needing whitespace: `rm>file` is `rm` redirected, and
+ * fusing it into a single token left the executable matching no known command
+ * name, so the whole segment fell through to `allow`. A digit run immediately
+ * before the operator is its fd prefix (`2>&1`) and stays fused to it.
+ */
 export function tokenizeShellLike(segment: string): string[] {
-	return (segment.match(SHELL_WORD_RE) ?? []).map((token) => {
-		let result = "";
-		let i = 0;
-		while (i < token.length) {
-			const ch = token[i]!;
-			if (ch === "\\" && i + 1 < token.length) {
-				result += token[i + 1];
-				i += 2;
-			} else if (ch === "'") {
-				const end = token.indexOf("'", i + 1);
-				result += end === -1 ? token.slice(i + 1) : token.slice(i + 1, end);
-				i = end === -1 ? token.length : end + 1;
-			} else if (ch === '"') {
-				let j = i + 1;
-				while (j < token.length && token[j] !== '"') {
-					if (token[j] === "\\" && j + 1 < token.length) {
-						result += token[j + 1];
-						j += 2;
-					} else {
-						result += token[j];
-						j += 1;
-					}
-				}
-				i = j + 1;
-			} else {
-				result += ch;
-				i += 1;
+	const tokens: string[] = [];
+	let word = "";
+	let started = false; // distinguishes a quoted empty word ('') from no word at all
+	let index = 0;
+
+	const flush = (): void => {
+		if (!started) return;
+		tokens.push(word);
+		word = "";
+		started = false;
+	};
+
+	while (index < segment.length) {
+		const char = segment[index]!;
+
+		if (char === "\\") {
+			const next = segment[index + 1];
+			// A backslash before a newline is a line continuation: the shell removes
+			// both characters, so they must not join the surrounding words either.
+			if (next === "\n") {
+				index += 2;
+				continue;
 			}
+			if (next === "\r" && segment[index + 2] === "\n") {
+				index += 3;
+				continue;
+			}
+			if (next !== undefined) {
+				word += next;
+				started = true;
+			}
+			index += 2;
+			continue;
 		}
-		return result;
-	});
+
+		if (char === "'") {
+			const close = segment.indexOf("'", index + 1);
+			word += close === -1 ? segment.slice(index + 1) : segment.slice(index + 1, close);
+			started = true;
+			index = close === -1 ? segment.length : close + 1;
+			continue;
+		}
+
+		if (char === '"') {
+			let cursor = index + 1;
+			while (cursor < segment.length && segment[cursor] !== '"') {
+				if (segment[cursor] === "\\" && cursor + 1 < segment.length) {
+					word += segment[cursor + 1];
+					cursor += 2;
+					continue;
+				}
+				word += segment[cursor];
+				cursor += 1;
+			}
+			started = true;
+			index = cursor + 1;
+			continue;
+		}
+
+		if (/\s/.test(char)) {
+			flush();
+			index += 1;
+			continue;
+		}
+
+		if (isRedirectionStart(segment, index)) {
+			let fdPrefix = "";
+			if (started && /^\d+$/.test(word)) {
+				fdPrefix = word;
+				word = "";
+				started = false;
+			} else {
+				flush();
+			}
+			const end = redirectionOperatorEnd(segment, index);
+			tokens.push(fdPrefix + segment.slice(index, end));
+			index = end;
+			continue;
+		}
+
+		word += char;
+		started = true;
+		index += 1;
+	}
+
+	flush();
+	return tokens;
 }
 
 export function isShellAssignment(token: string): boolean {
@@ -137,23 +218,20 @@ function skipFlagArguments(tokens: string[], startIndex: number, flagsWithValues
 }
 
 /**
- * A redirection operator token, optionally fd-prefixed: `<in`, `>out`,
- * `2>/dev/null`, `<<EOF`, `<<-EOF`, `>>log`, `&>all`, `2>&1`, `>&2`, `<&3`.
  * Redirections may legally precede the command word (`<<EOF bash`,
  * `2>/dev/null git push`), so the command-index helpers skip them — otherwise
- * the operator token sits at the executable position and every classifier
- * misreads the segment as unclassifiable.
+ * the operator sits at the executable position and every classifier misreads
+ * the segment as unclassifiable.
  */
-const REDIRECTION_RE = /^\d*(?:<{1,3}-?|>{1,2}|<>|>&|<&|&>{1,2}|>\|)/;
-/** A bare operator (`<`, `>>`, `<<`, `2>`, `&>`) carries its target or delimiter as the next token. */
-const BARE_REDIRECTION_RE = /^\d*(?:<{1,3}-?|>{1,2}|<>|>&|<&|&>{1,2}|>\|)$/;
+const REDIRECTION_RE = /^\d*(?:<{1,3}-?|>{1,2}|<>|>&|<&|&>{1,2}|>\|)$/;
 
+/** Skip redirection operators and their targets; the tokenizer always emits an operator on its own. */
 function skipRedirections(tokens: string[], startIndex: number): number {
 	let index = startIndex;
 	while (index < tokens.length) {
 		const token = tokens[index];
 		if (token === undefined || !REDIRECTION_RE.test(token)) return index;
-		index += BARE_REDIRECTION_RE.test(token) ? 2 : 1;
+		index += 2;
 	}
 	return index;
 }
