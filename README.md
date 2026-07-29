@@ -380,7 +380,13 @@ make eval EVAL_ENGINE=docker EVAL_EXTRA=--no-models \
 
 The adapter installs the exact Pi version and a `git archive` of `package.json`, `package-lock.json`, and `pi/` from the clean `HEAD` commit resolved by the launcher. It verifies the archive digest, installs production dependencies from the committed lockfile without lifecycle scripts, and registers Basecamp with Pi. It never mounts host Pi auth, Basecamp configuration, worktrees, or the repository into the trial container.
 
-This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, bash reviewer, and structured file tools. It disables the Python hub, dispatched subagents, browser, workstreams, code-review UI, and interactive `plan()` flow. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
+This is the worker-like `basecamp-pi-single` profile. It retains Basecamp's system prompt, skills, task workflow, project/workspace behavior, engineering tools, and structured file tools. It disables the Python hub, dispatched subagents, browser, workstreams, code-review UI, and interactive `plan()` flow.
+
+One model-backed feature is **not** exercised: the **bash reviewer** is explicitly disabled (`BASECAMP_BASH_REVIEWER=off`, honoured only alongside the sandbox env signal and the `--unsafe-edit-sandboxed` launch flag). It resolves its judge from basecamp's `fast` alias, which the trial container — never receiving basecamp's `config.json` — cannot provide. Left on, it could not reach a model, and its no-UI failsafe is fail-closed — so every gated command would be hard-blocked rather than judged, scoring a missing alias instead of the agent.
+
+The **continuation guard** is active in trials: its judge rides the active session model, which the installed `models.json` provides, so it judges each stop and nudges premature ones. Its posture is fail-open — any model-resolution or judge failure simply means no nudge.
+
+Both states are recorded per trial in `agent/basecamp-eval.json` (`bash_reviewer_enabled: false`, `continuation_guard_active: true`) so a score is never misread. Scores from this profile therefore measure the prompt, tools, workflow, and stop judgement — not basecamp's command gating. The adapter marks the trial with `BASECAMP_EXTERNAL_SANDBOX=1` and supplies both `--unsafe-edit` and `--unsafe-edit-sandboxed`; Basecamp requires all three signals before allowing `edit`/`write` in a headless subagent session. Read-only and ordinary headless or subagent sessions remain protected.
 
 Harbor writes each job and trial beneath `EVAL_JOBS_DIR` (default: `~/evals/basecamp-terminal-bench/jobs`). The useful per-trial files are:
 
@@ -396,7 +402,7 @@ Browse completed jobs with:
 harbor view "$HOME/evals/basecamp-terminal-bench/jobs"
 ```
 
-Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants, while `docker-amd64` and `all` assume an amd64 Docker host. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process and may not include auxiliary bash-reviewer model calls.
+Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants, while `docker-amd64` and `all` assume an amd64 Docker host. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process; the continuation guard's judge calls are auxiliary completions, so usage totals may not account for them.
 
 The launcher reconciles each finished run: when Harbor silently drops a task filter that matches nothing (dataset drift), the trial count no longer equals tasks x attempts and the launch fails with an explicit error instead of reporting a silently smaller result.
 

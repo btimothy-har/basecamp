@@ -12,10 +12,11 @@ on:
         - both
         default: glm-5.2
       task-set:
-        description: Task selection preset
+        description: Task selection preset (docker-smoke proves the pipeline with one short task)
         type: choice
         options:
         - docker-amd64
+        - docker-smoke
         - all
         default: docker-amd64
       attempts:
@@ -49,10 +50,11 @@ on:
   # Scheduled runs fall back via the || expressions in the setup job
   # (inputs.* are empty): both models at per-model defaults.
 
-# Keyed by event so a queued weekly run is never dropped behind manual
-# dispatches; within a trigger type, runs serialize.
+# Scheduled runs share one group so a weekly run never overlaps itself, while
+# each manual dispatch gets its own group keyed by run id. Serializing manual
+# dispatches would make every iteration wait out the previous ~25-minute run.
 concurrency:
-  group: terminal-bench-evals-${{ github.event_name }}
+  group: terminal-bench-evals-${{ github.event_name == 'schedule' && 'schedule' || github.run_id }}
   cancel-in-progress: false
 
 permissions:
@@ -62,16 +64,22 @@ jobs:
   setup:
     name: Compute eval matrix
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       matrix: ${{ steps.matrix.outputs.matrix }}
-      task-set: ${{ steps.inputs.outputs.task-set }}
-      attempts: ${{ steps.inputs.outputs.attempts }}
-      concurrency: ${{ steps.inputs.outputs.concurrency }}
-      pi-version: ${{ steps.inputs.outputs.pi-version }}
-      config: ${{ steps.inputs.outputs.config }}
+      attempts: ${{ steps.matrix.outputs.attempts }}
+      pi-version: ${{ steps.matrix.outputs.pi-version }}
+      shard-count: ${{ steps.matrix.outputs.shard-count }}
+      config: ${{ steps.matrix.outputs.config }}
     steps:
-    - name: Resolve and validate inputs
-      id: inputs
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+
+    - name: Resolve inputs and build matrix
+      id: matrix
       env:
         # Scheduled runs see empty inputs.*; the fallbacks give the weekly run
         # both models at per-model thinking defaults, while ad hoc dispatches
@@ -84,88 +92,34 @@ jobs:
         PI_VERSION: ${{ inputs.pi-version || '0.80.7' }}
       run: |
         set -euo pipefail
-        [[ "$ATTEMPTS" =~ ^[0-9]+$ ]] || { echo "attempts must be a positive integer: $ATTEMPTS" >&2; exit 1; }
-        [[ "$CONCURRENCY" =~ ^[0-9]+$ ]] || { echo "concurrency must be a positive integer: $CONCURRENCY" >&2; exit 1; }
-        [[ "$PI_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "pi-version must be x.y.z: $PI_VERSION" >&2; exit 1; }
-        {
-          echo "models=${MODELS}"
-          echo "task-set=${TASK_SET}"
-          echo "attempts=${ATTEMPTS}"
-          echo "concurrency=${CONCURRENCY}"
-          echo "thinking=${THINKING}"
-          echo "pi-version=${PI_VERSION}"
-          echo "config=${TASK_SET} x${ATTEMPTS} attempts, concurrency ${CONCURRENCY}, pi ${PI_VERSION}"
-        } >> "$GITHUB_OUTPUT"
-
-    - name: Build model matrix
-      id: matrix
-      env:
-        MODELS: ${{ steps.inputs.outputs.models }}
-        THINKING: ${{ steps.inputs.outputs.thinking }}
-      run: |
-        set -euo pipefail
-        # One legs table: model slug -> full model id and default thinking level.
-        # One level per model: opus/gpt legs default to xhigh (mapped xhigh->xhigh
-        # in models.ci.json), other models default to xhigh mapped to provider max.
-        # Each leg carries a slug because artifact names disallow '/'.
-        model_for() {
-          case "$1" in
-            glm-5.2) echo "openrouter/z-ai/glm-5.2" ;;
-            kimi-k3) echo "openrouter/moonshotai/kimi-k3" ;;
-            *) return 1 ;;
-          esac
-        }
-        default_thinking_for() {
-          case "$1" in
-            glm-5.2) echo "xhigh" ;;
-            kimi-k3) echo "xhigh" ;;
-            *) return 1 ;;
-          esac
-        }
-
-        declare -a slugs
-        case "$MODELS" in
-          glm-5.2) slugs=(glm-5.2) ;;
-          kimi-k3) slugs=(kimi-k3) ;;
-          both) slugs=(glm-5.2 kimi-k3) ;;
-          *)
-            echo "Unknown models input: $MODELS" >&2
-            exit 1
-            ;;
-        esac
-
-        entries='[]'
-        for slug in "${slugs[@]}"; do
-          model="$(model_for "$slug")"
-          if [ "$THINKING" = "per-model" ]; then
-            levels="$(default_thinking_for "$slug")"
-          else
-            levels="$THINKING"
-          fi
-          for level in $levels; do
-            entries="$(jq -c \
-              --arg model "$model" --arg slug "$slug" --arg thinking "$level" \
-              '. + [{model: $model, slug: $slug, thinking: $thinking}]' <<<"$entries")"
-          done
-        done
-        entries="$(jq -c 'unique_by(.model)' <<<"$entries")"
-        matrix="$(jq -cn --argjson entries "$entries" '{include: $entries}')"
-        echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
+        # Validation, the model legs table, and the leg x shard cross product
+        # all live in evals.terminal_bench.matrix so they can be unit-tested.
+        uv run python -m evals.terminal_bench.matrix \
+          --models "${MODELS}" \
+          --task-set "${TASK_SET}" \
+          --attempts "${ATTEMPTS}" \
+          --concurrency "${CONCURRENCY}" \
+          --thinking "${THINKING}" \
+          --pi-version "${PI_VERSION}" \
+          --output "$GITHUB_OUTPUT"
 
   eval:
-    name: Eval ${{ matrix.slug }} (${{ matrix.thinking }})
+    name: Eval ${{ matrix.slug }} shard ${{ matrix.shard }} (${{ matrix.thinking }})
     needs: setup
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    # Per-shard budgets live in the shard profile table in run.py: the short
+    # shards need far less than the long shard's 30-60 minute tasks, and the
+    # mem shard runs its trials serially.
+    timeout-minutes: ${{ matrix.timeout }}
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     env:
       BIFROST_BASE_URL: ${{ secrets.BIFROST_BASE_URL }}
       LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
-      TASK_SET: ${{ needs.setup.outputs.task-set }}
+      TASK_SET: ${{ matrix.preset }}
       ATTEMPTS: ${{ needs.setup.outputs.attempts }}
-      CONCURRENCY: ${{ needs.setup.outputs.concurrency }}
+      CONCURRENCY: ${{ matrix.concurrency }}
       THINKING: ${{ matrix.thinking }}
       PI_VERSION: ${{ needs.setup.outputs.pi-version }}
       MODEL: ${{ matrix.model }}
@@ -254,6 +208,10 @@ jobs:
     - name: Run Terminal-Bench eval
       run: |
         set -euo pipefail
+        # Harbor's progress display is TTY-only, so a CI run emits nothing for
+        # its whole duration. Rather than force a pty (which would stream ANSI
+        # redraw frames into the log), poll the job result.json harbor rewrites
+        # on every trial state change and print a compact heartbeat.
         uv run python -m evals.terminal_bench.run \
           "${TASK_SET}" \
           --engine docker \
@@ -264,20 +222,43 @@ jobs:
           --attempts "${ATTEMPTS}" \
           --concurrency "${CONCURRENCY}" \
           --jobs-dir "${RUNNER_TEMP}/jobs" \
-          --yes
+          --yes &
+        eval_pid=$!
+        # The heartbeat runs before the first sleep so an immediate launch
+        # failure does not burn a silent minute.
+        while kill -0 "${eval_pid}" 2>/dev/null; do
+          # `|| true` is load-bearing: under pipefail an unmatched glob makes
+          # the pipeline fail, and set -e would abort the step before the run.
+          result="$(ls -t "${RUNNER_TEMP}"/jobs/*/result.json 2>/dev/null | head -1 || true)"
+          if [ -n "${result}" ]; then
+            jq -r '.stats as $s | "[progress] \($s.n_completed_trials // 0)/\(.n_total_trials // "?") complete, \($s.n_errored_trials // 0) errored, \($s.n_running_trials // 0) running, \($s.n_pending_trials // 0) pending, cost $\($s.cost_usd // 0 | .*10000 | round / 10000)"' "${result}" || true
+          else
+            echo "[progress] no job result yet"
+          fi
+          sleep 60
+        done
+        wait "${eval_pid}"
 
     - name: Upload eval results
       if: always()
       uses: actions/upload-artifact@v4
       with:
-        name: eval-jobs-${{ matrix.slug }}-${{ matrix.thinking }}
-        # The repository is public: upload only job-level result/config files.
-        # The raw jobs tree is deliberately excluded — harbor bind-mounts agent
-        # transcripts into it and its per-trial scrubber does not cover
-        # BIFROST_BASE_URL (and never runs for cancelled trials).
+        # upload-artifact@v4 rejects duplicate names within a run, so the shard
+        # must be part of the name.
+        name: eval-jobs-${{ matrix.slug }}-${{ matrix.thinking }}-shard-${{ matrix.shard }}
+        # The repository is public: upload only the job- and trial-level
+        # result/config files. Those four globs carry no credentials — trial
+        # result.json/config.json hold task ids, phase timestamps, rewards and
+        # token counts, never extra_env, URLs or key material. Per-trial timing
+        # is what makes shard rebalancing measurable. The rest of the jobs tree
+        # stays excluded: harbor bind-mounts agent transcripts into it and its
+        # per-trial scrubber does not cover BIFROST_BASE_URL (and never runs
+        # for cancelled trials).
         path: |
           ${{ runner.temp }}/jobs/*/result.json
           ${{ runner.temp }}/jobs/*/config.json
+          ${{ runner.temp }}/jobs/*/*/result.json
+          ${{ runner.temp }}/jobs/*/*/config.json
         if-no-files-found: warn
 
     - name: Summarize scores
@@ -286,17 +267,62 @@ jobs:
         CONFIG: ${{ needs.setup.outputs.config }}
         MODEL_NAME: ${{ matrix.model }}
         LEVEL: ${{ matrix.thinking }}
+        SHARD: ${{ matrix.shard }}
       run: |
         set -uo pipefail
+        # `|| rc=$?` keeps the capture safe under the default -e shell, which
+        # would otherwise abort the step before a plain rc=$? could run.
+        rc=0
         {
-          echo "### \`${MODEL_NAME}\` @ ${LEVEL} — ${CONFIG}"
+          echo "### \`${MODEL_NAME}\` @ ${LEVEL} shard ${SHARD} — ${CONFIG}"
           echo ""
           uv run python -m evals.terminal_bench.summarize "${RUNNER_TEMP}/jobs"
-        } >> "$GITHUB_STEP_SUMMARY"
-        # summarize exits nonzero on incomplete jobs; preserve the summary but
-        # keep the step red so truncation is visible.
-        rc=$?
+        } >> "$GITHUB_STEP_SUMMARY" || rc=$?
+        # summarize exits nonzero on incomplete, unscored, or missing results;
+        # preserve the summary but keep the step red so it is not read as green.
         if [ "$rc" -ne 0 ]; then
-          echo "Summarize reported an incomplete or missing result (exit ${rc})" >&2
+          echo "Summarize reported an incomplete, unscored, or missing result (exit ${rc})" >&2
+          exit "$rc"
+        fi
+
+  pool:
+    name: Pool shard scores
+    needs: [setup, eval]
+    # Runs even when a shard failed, because a partial score plus an explicit
+    # incomplete warning is more useful than no score at all — but not when
+    # setup itself failed, since then there is nothing to pool.
+    if: always() && needs.setup.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+
+    - name: Download shard results
+      uses: actions/download-artifact@v4
+      with:
+        pattern: eval-jobs-*
+        path: shards
+
+    - name: Pool scores
+      env:
+        CONFIG: ${{ needs.setup.outputs.config }}
+        EXPECTED_SHARDS: ${{ needs.setup.outputs.shard-count }}
+      run: |
+        set -uo pipefail
+        # `|| rc=$?` keeps the capture safe under the default -e shell, which
+        # would otherwise abort the step before a plain rc=$? could run.
+        rc=0
+        {
+          echo "## Pooled \`${CONFIG}\`"
+          echo ""
+          uv run python -m evals.terminal_bench.summarize shards --pooled \
+            --expected-shards "${EXPECTED_SHARDS}"
+        } >> "$GITHUB_STEP_SUMMARY" || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          echo "Pooled score is incomplete, unscored, or missing (exit ${rc})" >&2
           exit "$rc"
         fi

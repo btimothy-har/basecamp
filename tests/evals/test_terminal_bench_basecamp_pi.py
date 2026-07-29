@@ -47,6 +47,7 @@ class FakePi:
         self._version = version
         self._extra_env = dict(extra_env or {})
         self.calls: list[tuple[str, str, dict[str, str] | None]] = []
+        self.template_prefix = ""
         self.runtime_output = "node=v24.4.1\nnpm=11.4.2\npi=0.80.7\n"
         provider, model = (model_name or "/").split("/", 1)
         self.model_output = f"provider model context\n{provider} {model} 128K\n"
@@ -54,6 +55,10 @@ class FakePi:
     @property
     def extra_env(self) -> dict[str, str]:
         return dict(self._extra_env)
+
+    def render_instruction(self, instruction: str) -> str:
+        """Mirror harbor: a no-op unless a prompt template is configured."""
+        return f"{self.template_prefix}{instruction}"
 
     async def exec_as_root(
         self,
@@ -212,7 +217,11 @@ def test_profile_identity_flags_and_environment(
         "BASECAMP_AGENT_DEPTH": "1",
         "BASECAMP_AGENT_MAX_DEPTH": "1",
         "BASECAMP_EXTERNAL_SANDBOX": "1",
+        "BASECAMP_BASH_REVIEWER": "off",
     }
+    # Profile env is not credential env: the off switch must not be reported as a
+    # forwarded secret name.
+    assert "BASECAMP_BASH_REVIEWER" not in agent._credential_environment_names
     flags = {flag.kwarg: flag for flag in agent.CLI_FLAGS}
     assert flags["unsafe_edit"].default is True
     assert flags["unsafe_edit_sandboxed"].default is True
@@ -318,6 +327,8 @@ async def test_install_uploads_auditable_source_and_uses_task_user(
     assert metadata == {
         "basecamp_archive_sha256": hashlib.sha256(archive_bytes).hexdigest(),
         "basecamp_commit": commit,
+        "bash_reviewer_enabled": False,
+        "continuation_guard_active": True,
         "credential_environment_names": ["OPENAI_API_KEY"],
         "external_sandbox": True,
         "model": "openai/gpt-5.6-sol",
@@ -429,3 +440,54 @@ async def test_runtime_probe_rejects_incomplete_output(
 
     with pytest.raises(adapter.RuntimeProbeError):
         await agent._probe_runtime(FakeEnvironment())
+
+
+def test_render_instruction_shields_only_a_leading_hyphen(
+    monkeypatch: pytest.MonkeyPatch,
+    source_repository: tuple[Path, str],
+    tmp_path: Path,
+) -> None:
+    adapter = _load_adapter(monkeypatch)
+    repository, commit = source_repository
+    agent = adapter.BasecampPiSingle(
+        logs_dir=tmp_path,
+        model_name="openai/gpt-5.6-sol",
+        basecamp_repo=repository,
+        basecamp_ref=commit,
+        version="0.80.7",
+    )
+    cases = (
+        (
+            "- You are given a PyTorch state dictionary\n- Recover it\n",
+            " - You are given a PyTorch state dictionary\n- Recover it\n",
+        ),
+        ("-", " -"),
+        ("--print the answer", " --print the answer"),
+        (" -x already parses", " -x already parses"),
+        ("", ""),
+        ("Recover the model weights with the -v flag.\n", "Recover the model weights with the -v flag.\n"),
+    )
+
+    for instruction, expected in cases:
+        assert agent.render_instruction(instruction) == expected
+
+
+def test_render_instruction_guards_a_hyphen_introduced_by_a_prompt_template(
+    monkeypatch: pytest.MonkeyPatch,
+    source_repository: tuple[Path, str],
+    tmp_path: Path,
+) -> None:
+    adapter = _load_adapter(monkeypatch)
+    repository, commit = source_repository
+    agent = adapter.BasecampPiSingle(
+        logs_dir=tmp_path,
+        model_name="openai/gpt-5.6-sol",
+        basecamp_repo=repository,
+        basecamp_ref=commit,
+        version="0.80.7",
+    )
+    # The guard sits after template rendering, so a template whose own first
+    # byte is a hyphen cannot smuggle one past it.
+    agent.template_prefix = "- follow these steps\n"
+
+    assert agent.render_instruction("Recover the weights.") == " - follow these steps\nRecover the weights."

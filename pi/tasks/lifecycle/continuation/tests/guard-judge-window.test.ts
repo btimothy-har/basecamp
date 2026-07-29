@@ -92,7 +92,7 @@ describe("continuation guard stop selection", () => {
 });
 
 describe("continuation guard fail-open behavior", () => {
-	it("does not nudge when the fast model is unavailable", async () => {
+	it("does not nudge when the session model is unavailable", async () => {
 		const { pi } = setup({ resolveModel: async () => null });
 		const { ctx } = context();
 
@@ -100,7 +100,7 @@ describe("continuation guard fail-open behavior", () => {
 
 		assert.deepEqual(pi.sent, []);
 		assert.equal(pi.entries.at(-1)?.outcome, "no_verdict");
-		assert.match(pi.entries.at(-1)?.reason ?? "", /fast model unavailable/);
+		assert.match(pi.entries.at(-1)?.reason ?? "", /session model unavailable/);
 	});
 
 	it("does not nudge when the judge returns no decision", async () => {

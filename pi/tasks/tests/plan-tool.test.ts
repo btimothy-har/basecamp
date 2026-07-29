@@ -82,7 +82,8 @@ function tasksRuntime(): TasksRuntime {
 
 function register(): { pi: FakePi; tool: RegisteredTool } {
 	const pi = new FakePi();
-	registerPlan(pi as unknown as ExtensionAPI, tasksRuntime());
+	// Pinned so the suite is deterministic even when run inside a dispatched agent.
+	registerPlan(pi as unknown as ExtensionAPI, tasksRuntime(), { isSubagent: () => false });
 	return { pi, tool: pi.getPlan() };
 }
 

@@ -1,5 +1,5 @@
 /**
- * Continuation guard — the rubric the fast model judges a stop against.
+ * Continuation guard — the rubric the judge model evaluates a stop against.
  *
  * Composed from named parts rather than carved out of a finished string. The
  * subagent variant must drop veto Q, and stripping that bullet from an

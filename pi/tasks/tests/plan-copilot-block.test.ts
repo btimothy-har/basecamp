@@ -2,10 +2,10 @@ import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { resetAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
-import { registerPlanCopilotGuard } from "#tasks/tools/guards.ts";
+import { registerPlanCopilotGuard, registerPlanSkillGuard } from "#tasks/tools/guards.ts";
 
 type ToolCallEvent = { type: string; toolName: string; toolCallId: string; input: Record<string, unknown> };
-type Handler = (event: ToolCallEvent) => unknown;
+type Handler = (event: ToolCallEvent, ctx?: unknown) => unknown;
 
 class FakePi {
 	readonly handlers = new Map<string, Handler[]>();
@@ -57,5 +57,31 @@ describe("plan copilot guard", () => {
 		const result = await handler({ type: "tool_call", toolName: "bash", toolCallId: "t1", input: {} });
 
 		assert.equal(result, undefined);
+	});
+
+	it("wins over the skill guard when both are registered in composition order", async () => {
+		// The composition root registers the copilot guard before the skill guard so
+		// a blocked copilot plan() reports the copilot reason; this mirrors Pi's
+		// first-blocking-handler-wins dispatch over that ordering.
+		const pi = new FakePi();
+		registerPlanCopilotGuard(pi as unknown as ExtensionAPI);
+		registerPlanSkillGuard(pi as unknown as ExtensionAPI);
+		const handlers = pi.handlers.get("tool_call") ?? [];
+		assert.equal(handlers.length, 2);
+		setAgentMode("copilot");
+
+		const event = { type: "tool_call", toolName: "plan", toolCallId: "t1", input: {} };
+		const ctx = { hasUI: true };
+		let blocking: { block?: boolean; reason?: string } | undefined;
+		for (const handler of handlers) {
+			const result = (await handler(event, ctx)) as { block?: boolean; reason?: string } | undefined;
+			if (result?.block) {
+				blocking = result;
+				break;
+			}
+		}
+
+		assert.equal(blocking?.block, true);
+		assert.match(blocking?.reason ?? "", /copilot/);
 	});
 });

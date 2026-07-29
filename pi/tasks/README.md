@@ -45,7 +45,7 @@ Mechanical preconditions (no model call when any holds), in the order they are r
 
 `aborted` and a second `pending_user_messages` check are re-read *after* the judge returns, because both go stale across that await — and the window is exactly when a user aborts or types, since Pi drains its queues immediately before `agent_end`. Pi resumes on any queued message without checking for an abort, so a nudge sent after an ESC would restart the run the user just cancelled. The judge call itself carries a deadline combined with the run signal: it holds run settlement open while in flight, so an unbounded call would wedge every stop with no way out.
 
-The rubric, judged by the `fast` model in one forced tool call:
+The rubric, judged by the active session model in one forced tool call:
 
 | | Category | Verdict |
 |---|----------|---------|
@@ -60,9 +60,9 @@ Uncertainty holds. Goal and task state are **evidence inside category R, not a g
 
 `retrigger` and the category's polarity are redundant on purpose: the parser rejects a verdict whose `retrigger` disagrees with its category, so model confusion becomes no action rather than the wrong action. One `verdictSchema` factory builds both the tool schema the model answers against and the schema the parser validates, so the offered categories and the accepted ones cannot drift.
 
-**Fail open.** No `fast` alias, no verdict, a malformed or self-contradicting response, a judge timeout, or any thrown error all mean *no nudge*. This inverts the bash reviewer's fail-closed posture on purpose: a wrong stop costs the user a keystroke, while a wrong continue burns a whole agent run.
+**Fail open.** A failed model resolution, no verdict, a malformed or self-contradicting response, a judge timeout, or any thrown error all mean *no nudge*. This inverts the bash reviewer's fail-closed posture on purpose: a wrong stop costs the user a keystroke, while a wrong continue burns a whole agent run.
 
-The guard needs a `fast` model alias and is inert without one. That is a dependency, not a control: the same alias backs the bash reviewer, which is fail-*closed*, so removing it would route every gated command to a confirmation prompt and deny them outright in subagents. There is no off switch.
+The judge rides the **active session model**, with auth from the model registry — no alias, no separate configuration, and no off switch beyond the mechanical preconditions (read-only state reaches the judge as context in its input, not as a gate). The bash reviewer deliberately keeps the `fast` alias instead, and the asymmetry is load-bearing: the reviewer runs on every bash call and is fail-*closed*, so it needs a cheap dedicated model, while the guard runs once per stop and is fail-open, so it can afford the session model. Do not unify them.
 
 **Subagents diverge.** A dispatched agent has no user, so veto Q is withheld from the rubric text, the tool schema, *and* the parser (`offeredCategories` is the one source of truth): a question there is unanswerable, and stopping on one wastes the run. Its nudge tells it to decide and proceed, or report the blocker as its deliverable — and to restate its result in full, because a dispatched run's recorded result is whatever its final message says, so a continuation that omits the deliverable discards it.
 
@@ -81,7 +81,7 @@ One feature, organized by function (not sub-features):
 
 ## Dependencies
 
-- **core** (`#core/*`): agent-mode (+ copilot), session state, workspace service + worktree setup, skill-tracker, host paths/config, model-alias resolution (the continuation guard's `fast` judge), errors
+- **core** (`#core/*`): agent-mode (+ copilot), session state, workspace service + worktree setup, skill-tracker, host paths/config, errors
 
 ## Type contracts
 

@@ -29,6 +29,13 @@ _PROFILE_ENV: Final = {
     "BASECAMP_AGENT_DEPTH": "1",
     "BASECAMP_AGENT_MAX_DEPTH": "1",
     "BASECAMP_EXTERNAL_SANDBOX": "1",
+    # The trial container never receives basecamp's config, so the reviewer's
+    # `fast` alias cannot resolve and every gate verdict would reach the no-UI
+    # failsafe and hard-block. That measures a missing alias, not the agent, so
+    # the reviewer is off here; basecamp requires the sandbox signal above
+    # before honouring this. Recorded in each trial's metadata, because a score
+    # cannot be read without knowing the gate was absent.
+    "BASECAMP_BASH_REVIEWER": "off",
 }
 
 
@@ -274,6 +281,10 @@ class BasecampPiSingle(Pi):
             "credential_environment_names": self._credential_environment_names,
             "external_sandbox": True,
             "subagents_enabled": False,
+            "bash_reviewer_enabled": False,
+            # The judge rides the active session model, which the installed
+            # models.json provides, so the guard is live in trials.
+            "continuation_guard_active": True,
         }
         if self._pi_models:
             metadata["models_config"] = {
@@ -300,3 +311,18 @@ class BasecampPiSingle(Pi):
         await self._probe_model(environment)
         runtime = await self._probe_runtime(environment)
         await self._upload_metadata(environment, digest, runtime)
+
+    @override
+    def render_instruction(self, instruction: str) -> str:
+        # Harbor interpolates the instruction as a bare positional argument with no end-of-options
+        # separator, and Pi's parser recognises neither `--` nor a message flag, so an instruction
+        # opening with `-` aborts the trial as an unknown option. A single leading space is the
+        # smallest perturbation that parses: piping via stdin would mean reimplementing harbor's
+        # whole command string (it redirects `</dev/null`), and a leading newline changes more bytes
+        # for no gain. Every other byte is preserved, so benchmark fidelity holds.
+        #
+        # This guards render_instruction rather than run() so it is the last transformation before
+        # the command is built: a prompt template is applied here too, and its own leading text
+        # would otherwise be able to reintroduce the hyphen behind the guard's back.
+        rendered = super().render_instruction(instruction)
+        return f" {rendered}" if rendered.startswith("-") else rendered

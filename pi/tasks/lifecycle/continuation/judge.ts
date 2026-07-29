@@ -1,5 +1,5 @@
 /**
- * Continuation guard — the fast-model call that judges a stop.
+ * Continuation guard — the model call that judges a stop.
  *
  * The rubric itself lives in `rubric.ts`; this module is the plumbing around it
  * and mirrors `#bash-reviewer/llm.ts`. Every failure path returns null, because
@@ -10,11 +10,7 @@ import type { Api, AssistantMessage, Context, Model, ModelThinkingLevel, Tool } 
 import { complete as defaultComplete } from "@earendil-works/pi-ai/compat";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Value } from "@sinclair/typebox/value";
-import {
-	resolveAliasedModel,
-	resolveForcedToolChoice,
-	resolvePortableReasoningEffort,
-} from "#core/model/resolution.ts";
+import { resolveForcedToolChoice, resolvePortableReasoningEffort } from "#core/model/resolution.ts";
 import { buildRubric, categoryRetriggers, offeredCategories } from "./rubric.ts";
 import { type ContinuationVerdict, type JudgeInput, verdictSchema } from "./types.ts";
 
@@ -106,9 +102,19 @@ export async function runJudge(opts: {
 	return parseJudgeResponse(msg, opts.subagent);
 }
 
-// The feature is deliberately inert without a configured fast alias.
+// The judge rides the active session model — no dedicated alias, no config
+// dependency. Fail-open stands: a missing model or unusable auth resolves to
+// null and the caller does not nudge.
 export async function resolveJudgeModel(
 	ctx: ExtensionContext,
 ): Promise<{ model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string> } } | null> {
-	return resolveAliasedModel(ctx, "fast");
+	const model = ctx.model;
+	if (!model) return null;
+	try {
+		const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+		if (!auth.ok || (!auth.apiKey && !(auth.headers && Object.keys(auth.headers).length > 0))) return null;
+		return { model, auth: { apiKey: auth.apiKey, headers: auth.headers } };
+	} catch {
+		return null;
+	}
 }

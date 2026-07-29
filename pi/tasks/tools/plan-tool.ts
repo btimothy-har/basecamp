@@ -7,6 +7,12 @@
  * off to an execution worktree, analysis plans stay in analysis mode. On
  * feedback, returns structured feedback for revision.
  *
+ * Subagent sessions have no reviewer and already run in their own isolated
+ * workspace, so their plans auto-approve: the goal cycle starts immediately
+ * and execution proceeds in place — no review overlay, no worktree handoff.
+ * Without this, a headless plan() could never be approved (fresh reviews only
+ * become approved through the overlay) and every call was a dead end.
+ *
  * The tool is thin: it drives draft → review → approve, delegates the worktree
  * choreography to runHandoff, and maps the outcome to its result.
  */
@@ -14,12 +20,19 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Type } from "@sinclair/typebox";
 import { getAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
+import { isSubagent } from "#core/host/env.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import { startGoalCycle } from "#tasks/lifecycle/goal-cycle.ts";
 import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
 import type { PlanDraft } from "#tasks/schemas/plan.ts";
 import type { GoalCycle } from "#tasks/schemas/task.ts";
-import { buildApprovedResult, buildDraft, buildFeedbackResult, isAllApproved } from "#tasks/workflows/draft.ts";
+import {
+	approveDraft,
+	buildApprovedResult,
+	buildDraft,
+	buildFeedbackResult,
+	isAllApproved,
+} from "#tasks/workflows/draft.ts";
 import { createHandoffLatch, dispatchImplementationHandoff } from "#tasks/workflows/handoff/dispatch.ts";
 import {
 	buildHandoffMessage,
@@ -45,6 +58,8 @@ export interface PlanAccess {
 export interface PlanDeps {
 	review?: (draft: PlanDraft, ctx: ExtensionContext) => Promise<"submit" | "decline">;
 	handoff?: typeof runHandoff;
+	/** Injectable for tests; agent depth is immutable per process, so this is resolved once at registration. */
+	isSubagent?: () => boolean;
 }
 
 function cancelledResult(next_step: string) {
@@ -57,6 +72,7 @@ function cancelledResult(next_step: string) {
 export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: PlanDeps = {}): PlanAccess {
 	const review = deps.review ?? showReviewOverlay;
 	const handoff = deps.handoff ?? runHandoff;
+	const subagentSession = (deps.isSubagent ?? isSubagent)();
 	let draft: PlanDraft | null = null;
 	let pendingImplementationHandoff: PendingImplementationHandoff | null = null;
 	const handoffLatch = createHandoffLatch();
@@ -83,11 +99,13 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: Plan
 	pi.registerTool({
 		name: "plan",
 		label: "Plan",
-		description:
-			"Submit a structured plan for user review. Blocks until the user approves or provides feedback. " +
-			"On approval, creates the goal and tasks. Analysis plans stay in analysis mode; " +
-			"implementation plans hand off to an execution worktree for direct implementation. " +
-			"On feedback, returns structured feedback for revision.",
+		description: subagentSession
+			? "Submit a structured plan for this dispatched run. The plan is auto-approved: it sets the goal and " +
+				"task list in one call, and execution proceeds immediately in the current workspace."
+			: "Submit a structured plan for user review. Blocks until the user approves or provides feedback. " +
+				"On approval, creates the goal and tasks. Analysis plans stay in analysis mode; " +
+				"implementation plans hand off to an execution worktree for direct implementation. " +
+				"On feedback, returns structured feedback for revision.",
 		promptSnippet: "Submit a structured plan for review, approval, and work handoff",
 		parameters: Type.Object({
 			goal: Type.String({ description: "Overarching objective" }),
@@ -124,8 +142,12 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: Plan
 				draft,
 			);
 
+			if (subagentSession) {
+				draft = approveDraft(draft);
+			}
+
 			let reviewResult: "submit" | "decline" = "submit";
-			if (ctx.hasUI) {
+			if (ctx.hasUI && !subagentSession) {
 				const reviewDraft = draft;
 				reviewResult = await withHerdrBlocked(pi, "Waiting for plan approval", () => review(reviewDraft, ctx));
 			}
@@ -158,6 +180,16 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: Plan
 			if (getAgentMode() === "analysis") {
 				startGoalCycle(runtime, { goal: draft.goal.content, tasks: approvedTasks, planRef, agentMode: "analysis" });
 				const result = buildApprovedResult(draft, "analysis");
+				draft = null;
+				return { content: [{ type: "text", text: result }], details: undefined };
+			}
+
+			// A dispatched run already executes inside its own isolated workspace, so
+			// there is no worktree to choose and no fresh-session handoff to schedule.
+			if (subagentSession) {
+				setAgentMode("work");
+				startGoalCycle(runtime, { goal: draft.goal.content, tasks: approvedTasks, planRef, agentMode: "work" });
+				const result = buildApprovedResult(draft, "in_place");
 				draft = null;
 				return { content: [{ type: "text", text: result }], details: undefined };
 			}
