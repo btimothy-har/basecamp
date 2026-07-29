@@ -112,7 +112,8 @@ async def handle_wait(
         )
     except Exception as exc:  # noqa: BLE001 — the requester must still get a correlated reply
         logger.exception("wait failed; reporting unknown for all requested handles")
-        message = f"wait failed: {exc}"
+        # Raw cause only — the client renderers add the "wait failed:" framing.
+        message = str(exc)
         results = [
             WaitResultItem(agent_handle=agent_handle, status="unknown", result=None, error=message)
             for agent_handle in frame.agent_handles

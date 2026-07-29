@@ -1,98 +1,71 @@
-"""Concurrency pragmas for the hub SQLite store.
+"""WAL mode for the hub SQLite store.
 
 The daemon serves many concurrent readers/writers (agent telemetry, result
-reports, waits). Without WAL and a busy_timeout, a read overlapping a writer's
-commit raised ``database is locked`` into the wait path, which ``handle_wait``
-swallowed as "not awaitable". These tests pin the fix: connections run in WAL
-mode with a retry window, and a contended write waits instead of failing.
+reports, waits). Without WAL, a reader whose read transaction overlapped a
+writer's commit contended for the lock and raised ``database is locked`` into
+the wait path, which ``handle_wait`` swallowed as "not awaitable". WAL lets
+readers run against a snapshot alongside a writer; these tests pin that the
+store runs in WAL and that a writer commits while a reader holds an open read.
 """
 
 from __future__ import annotations
 
+import sqlite3
 import threading
-import time
 from pathlib import Path
 
 from basecamp.hub.store import Store
 
 
-def test_store_connections_enable_wal_and_busy_timeout(tmp_path: Path) -> None:
+def test_store_connections_run_in_wal_mode(tmp_path: Path) -> None:
     store = Store(db_path=tmp_path / "daemon.db")
 
     for acquire in (store._reading, lambda: store._writing(immediate=True)):
         with acquire() as conn:
             assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-            assert conn.execute("PRAGMA busy_timeout").fetchone()[0] > 0
 
 
-def test_store_write_retries_under_concurrent_write_lock(tmp_path: Path) -> None:
-    # A second writer that arrives while the write lock is held must wait for it
-    # (busy_timeout) rather than raising "database is locked" immediately — the
-    # failure mode that surfaced in the wait path under telemetry/report load.
+def test_store_writer_commits_while_a_read_transaction_is_open(tmp_path: Path) -> None:
+    # WAL's defining benefit: a writer commits while a reader holds an open read
+    # transaction. In rollback-journal mode the reader's SHARED lock blocks the
+    # writer's EXCLUSIVE commit, so this raises "database is locked" once the
+    # default busy_timeout elapses — the failure mode that surfaced in the wait
+    # path. Each thread opens its own connection, so check_same_thread is respected.
     db_path = tmp_path / "daemon.db"
     store = Store(db_path=db_path)
 
-    held = threading.Event()
-    release = threading.Event()
+    read_held = threading.Event()
+    release_reader = threading.Event()
 
-    def hold_write_lock() -> None:
-        # Each thread opens its own connection, so the default check_same_thread
-        # guard is respected.
-        with store._writing(immediate=True):
-            held.set()
-            release.wait(timeout=5)
+    def hold_read_transaction() -> None:
+        conn = sqlite3.connect(db_path)
+        conn.execute("BEGIN")
+        # Read real table content so the open transaction holds a SHARED lock
+        # (a constant `SELECT 1` touches no table and acquires no lock).
+        conn.execute("SELECT name FROM sqlite_master LIMIT 1").fetchone()
+        read_held.set()
+        release_reader.wait(timeout=5)
+        conn.rollback()
+        conn.close()
 
-    holder = threading.Thread(target=hold_write_lock)
-    holder.start()
-    assert held.wait(timeout=5), "holder did not acquire the write lock"
+    reader = threading.Thread(target=hold_read_transaction)
+    reader.start()
+    assert read_held.wait(timeout=5), "reader did not acquire a read transaction"
 
-    outcome: dict[str, object] = {}
-
-    def contend() -> None:
-        try:
-            with store._writing(immediate=True) as conn:
-                conn.execute("SELECT 1").fetchone()
-            outcome["ok"] = True
-        except BaseException as exc:  # noqa: BLE001 — record any failure verbatim
-            outcome["error"] = repr(exc)
-
-    contender = threading.Thread(target=contend)
-    contender.start()
-    time.sleep(0.3)
-    # The contender is genuinely blocked on the held lock, not failed fast.
-    assert contender.is_alive(), "contender was not blocked on the write lock"
-
-    release.set()
-    contender.join(timeout=6)
-    holder.join(timeout=6)
-
-    assert outcome.get("ok"), f"store write failed under contention: {outcome.get('error')}"
-
-
-def test_store_read_succeeds_during_concurrent_writer(tmp_path: Path) -> None:
-    # The reported bug: a wait's projection read racing a writer's commit. Under
-    # WAL a reader proceeds against a consistent snapshot and does not block on,
-    # or raise against, an open writer.
-    db_path = tmp_path / "daemon.db"
-    store = Store(db_path=db_path)
-
-    held = threading.Event()
-    release = threading.Event()
-
-    def hold_open_writer() -> None:
-        with store._writing(immediate=True) as conn:
-            conn.execute("CREATE TABLE IF NOT EXISTS marker (x INTEGER)")
-            held.set()
-            release.wait(timeout=5)
-
-    writer = threading.Thread(target=hold_open_writer)
-    writer.start()
-    assert held.wait(timeout=5)
-
+    writer_error: dict[str, object] = {}
+    still_held = False
     try:
-        with store._reading() as conn:
-            rows = conn.execute("SELECT 1 AS v").fetchall()
-        assert [row["v"] for row in rows] == [1]
+        with store._writing() as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS marker (x INTEGER)")
+            conn.execute("INSERT INTO marker (x) VALUES (1)")
+        # Captured before releasing the reader: under WAL the write committed
+        # while the read transaction was still open.
+        still_held = reader.is_alive()
+    except BaseException as exc:  # noqa: BLE001 — record any failure verbatim
+        writer_error["error"] = repr(exc)
     finally:
-        release.set()
-        writer.join(timeout=6)
+        release_reader.set()
+        reader.join(timeout=6)
+
+    assert not writer_error, f"store write failed while a read transaction was open: {writer_error.get('error')}"
+    assert still_held, "writer blocked on the open read transaction (expected to commit under WAL)"

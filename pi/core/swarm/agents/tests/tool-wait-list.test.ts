@@ -136,14 +136,14 @@ describe("wait_for_agent and list_agents", () => {
 			type: "wait_result",
 			v: PROTOCOL_VERSION,
 			request_id: outbound.request_id,
-			results: [{ agent_handle: "jade-tiger-9z8y7x", status: "unknown", result: null, error: "wait failed: boom" }],
+			results: [{ agent_handle: "jade-tiger-9z8y7x", status: "unknown", result: null, error: "boom" }],
 		});
 
 		const result = await executePromise;
 		assert.equal(result.isError, undefined);
 		assert.equal(result.details.items[0].status, "unknown");
-		assert.match(result.content[0].text, /wait failed: boom/);
-		assert.doesNotMatch(result.content[0].text, /not awaitable/);
+		// The daemon sends the raw cause; the renderer adds the single "wait failed:" prefix.
+		assert.equal(result.content[0].text, "? jade-tiger-9z8y7x wait failed: boom");
 	});
 
 	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {

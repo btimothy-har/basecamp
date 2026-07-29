@@ -73,6 +73,4 @@ def test_ws_wait_failure_propagates_exception_message(tmp_path: Path, monkeypatc
     assert reply["results"], "expected at least one fallback result item"
     for item in reply["results"]:
         assert item["status"] == "unknown"
-        assert item["error"] is not None
-        assert "boom" in item["error"]
-        assert "wait failed" in item["error"]
+        assert item["error"] == "boom"
