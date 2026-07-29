@@ -40,6 +40,17 @@ def test_collects_trial_timings_across_shard_artifacts(tmp_path: Path) -> None:
     ]
 
 
+def test_mixed_aware_and_naive_timestamps_compare_as_utc(tmp_path: Path) -> None:
+    _write(
+        tmp_path / "job" / "task-a__x1" / "result.json",
+        _trial("terminal-bench/task-a", "2026-07-29T10:00:00Z", "2026-07-29T10:05:00"),
+    )
+
+    collected = timings.collect_timings(tmp_path)
+
+    assert [(t.task, t.seconds) for t in collected] == [("terminal-bench/task-a", 300.0)]
+
+
 def test_job_level_results_and_malformed_trials_are_skipped(tmp_path: Path) -> None:
     _write(
         tmp_path / "job" / "result.json",

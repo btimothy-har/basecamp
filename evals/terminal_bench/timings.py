@@ -12,7 +12,7 @@ import argparse
 import json
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -23,12 +23,16 @@ class TrialTiming:
 
 
 def _parse_timestamp(value: object) -> datetime | None:
+    """Aware UTC datetime, or None. Harbor writes both `...Z` (aware) and
+    suffix-free (naive) timestamps; naive values are treated as UTC so a
+    mixed pair can never raise on comparison."""
     if not isinstance(value, str):
         return None
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value)
     except ValueError:
         return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
 
 
 def _trial_timing(payload: dict[str, object]) -> TrialTiming | None:
