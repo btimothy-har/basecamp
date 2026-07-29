@@ -27,7 +27,7 @@ on:
         type: string
         default: "4"
       thinking:
-        description: Thinking level (per-model uses each model's default; a specific level overrides all legs)
+        description: Thinking level override (per-model uses each model's default; a specific level overrides it)
         type: choice
         options:
         - per-model
@@ -38,10 +38,6 @@ on:
         - high
         - xhigh
         default: per-model
-      sweep:
-        description: Also run each selected model at high and xhigh for comparison (multiplies paid legs)
-        type: boolean
-        default: false
       pi-version:
         description: Pi version under evaluation
         type: string
@@ -85,7 +81,6 @@ jobs:
         ATTEMPTS: ${{ inputs.attempts || '3' }}
         CONCURRENCY: ${{ inputs.concurrency || '4' }}
         THINKING: ${{ inputs.thinking || 'per-model' }}
-        SWEEP: ${{ inputs.sweep || false }}
         PI_VERSION: ${{ inputs.pi-version || '0.80.7' }}
       run: |
         set -euo pipefail
@@ -98,7 +93,6 @@ jobs:
           echo "attempts=${ATTEMPTS}"
           echo "concurrency=${CONCURRENCY}"
           echo "thinking=${THINKING}"
-          echo "sweep=${SWEEP}"
           echo "pi-version=${PI_VERSION}"
           echo "config=${TASK_SET} x${ATTEMPTS} attempts, concurrency ${CONCURRENCY}, pi ${PI_VERSION}"
         } >> "$GITHUB_OUTPUT"
@@ -108,10 +102,11 @@ jobs:
       env:
         MODELS: ${{ steps.inputs.outputs.models }}
         THINKING: ${{ steps.inputs.outputs.thinking }}
-        SWEEP: ${{ steps.inputs.outputs.sweep }}
       run: |
         set -euo pipefail
         # One legs table: model slug -> full model id and default thinking level.
+        # One level per model: opus/gpt legs default to xhigh (mapped xhigh->xhigh
+        # in models.ci.json), other models default to xhigh mapped to provider max.
         # Each leg carries a slug because artifact names disallow '/'.
         model_for() {
           case "$1" in
@@ -142,9 +137,7 @@ jobs:
         entries='[]'
         for slug in "${slugs[@]}"; do
           model="$(model_for "$slug")"
-          if [ "$SWEEP" = "true" ]; then
-            levels="high xhigh"
-          elif [ "$THINKING" = "per-model" ]; then
+          if [ "$THINKING" = "per-model" ]; then
             levels="$(default_thinking_for "$slug")"
           else
             levels="$THINKING"
@@ -155,7 +148,7 @@ jobs:
               '. + [{model: $model, slug: $slug, thinking: $thinking}]' <<<"$entries")"
           done
         done
-        entries="$(jq -c 'unique_by(.model + "@" + .thinking)' <<<"$entries")"
+        entries="$(jq -c 'unique_by(.model)' <<<"$entries")"
         matrix="$(jq -cn --argjson entries "$entries" '{include: $entries}')"
         echo "matrix=${matrix}" >> "$GITHUB_OUTPUT"
 
