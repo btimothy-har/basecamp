@@ -229,8 +229,48 @@ describe("runJudge", () => {
 });
 
 describe("resolveJudgeModel", () => {
-	it("returns null when the fast alias is unset", async () => {
+	it("returns null when the session has no active model", async () => {
 		const ctx = {} as ExtensionContext;
+		assert.equal(await resolveJudgeModel(ctx), null);
+	});
+
+	it("returns the active session model with registry auth", async () => {
+		const ctx = {
+			model: fakeModel,
+			modelRegistry: {
+				getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "key", headers: undefined }),
+			},
+		} as unknown as ExtensionContext;
+		const resolved = await resolveJudgeModel(ctx);
+		assert.equal(resolved?.model, fakeModel);
+		assert.equal(resolved?.auth.apiKey, "key");
+	});
+
+	it("returns null when registry auth is not ok", async () => {
+		const ctx = {
+			model: fakeModel,
+			modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: false }) },
+		} as unknown as ExtensionContext;
+		assert.equal(await resolveJudgeModel(ctx), null);
+	});
+
+	it("returns null when auth carries neither key nor headers", async () => {
+		const ctx = {
+			model: fakeModel,
+			modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: undefined, headers: {} }) },
+		} as unknown as ExtensionContext;
+		assert.equal(await resolveJudgeModel(ctx), null);
+	});
+
+	it("returns null when the auth lookup throws (fail-open)", async () => {
+		const ctx = {
+			model: fakeModel,
+			modelRegistry: {
+				getApiKeyAndHeaders: async () => {
+					throw new Error("registry unavailable");
+				},
+			},
+		} as unknown as ExtensionContext;
 		assert.equal(await resolveJudgeModel(ctx), null);
 	});
 });
