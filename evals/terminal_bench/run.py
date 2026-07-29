@@ -20,7 +20,41 @@ Engine = Literal["docker", "podman"]
 _REPOSITORY_ROOT: Final = Path(__file__).resolve().parents[2]
 _DEFAULT_JOBS_DIR: Final = Path.home() / "evals" / "basecamp-terminal-bench" / "jobs"
 _DEFAULT_MODELS_FILE: Final = Path(os.environ.get("PI_CODING_AGENT_DIR", Path.home() / ".pi" / "agent")) / "models.json"
+_CI_TASKS: Final = (
+    "terminal-bench/hf-model-inference",
+    "terminal-bench/mteb-retrieve",
+    "terminal-bench/pytorch-model-recovery",
+    "terminal-bench/broken-python",
+    "terminal-bench/fix-permissions",
+    "terminal-bench/cron-broken-network",
+    "terminal-bench/oom",
+    "terminal-bench/git-multibranch",
+    "terminal-bench/sanitize-git-repo",
+    "terminal-bench/git-leak-recovery",
+    "terminal-bench/pandas-etl",
+    "terminal-bench/csv-to-parquet",
+    "terminal-bench/train-fasttext",
+    "terminal-bench/fix-code-vulnerability",
+    "terminal-bench/crack-7z-hash",
+    "terminal-bench/sql-injection-attack",
+    "terminal-bench/solve-sudoku",
+    "terminal-bench/weighted-max-sat-solver",
+    "terminal-bench/countdown-game",
+    "terminal-bench/nginx-request-logging",
+    "terminal-bench/simple-web-scraper",
+    "terminal-bench/build-cython-ext",
+    "terminal-bench/conda-env-conflict-resolution",
+    "terminal-bench/npm-conflict-resolution",
+    "terminal-bench/fix-pandas-version",
+    "terminal-bench/modernize-fortran-build",
+    "terminal-bench/setup-custom-dev-env",
+    "terminal-bench/configure-git-webserver",
+    "terminal-bench/sqlite-db-truncate",
+    "terminal-bench/kv-store-grpc",
+    "terminal-bench/tmux-advanced-workflow",
+)
 _PRESETS: Final = {
+    "ci": _CI_TASKS,
     "podman-smoke": ("terminal-bench/hf-model-inference",),
     "podman-arm64": (
         "terminal-bench/hf-model-inference",
@@ -72,7 +106,7 @@ class PositiveIntError(argparse.ArgumentTypeError):
 
 @dataclass(frozen=True)
 class LaunchOptions:
-    tasks: tuple[str, ...]
+    tasks: tuple[str, ...] | None  # None selects the full dataset (no task filter)
     engine: Engine
     attempts: int
     concurrency: int
@@ -97,8 +131,10 @@ def _task_name(value: str) -> str:
     return value if value.startswith("terminal-bench/") else f"terminal-bench/{value}"
 
 
-def resolve_tasks(selection: Sequence[str]) -> tuple[str, ...]:
+def resolve_tasks(selection: Sequence[str]) -> tuple[str, ...] | None:
     values = selection or ("podman-arm64",)
+    if "all" in values:
+        return None
     tasks: list[str] = []
     for value in values:
         expanded = _PRESETS.get(value, (_task_name(value),))
@@ -181,7 +217,7 @@ def build_harbor_command(options: LaunchOptions, commit: str) -> list[str]:
     ]
     if options.models_file:
         command.extend(("--agent-kwarg", f"pi_models_file={options.models_file}"))
-    for task in options.tasks:
+    for task in options.tasks or ():
         command.extend(("--include-task-name", task))
     command.extend(
         (
@@ -225,7 +261,7 @@ def build_environment(options: LaunchOptions) -> dict[str, str]:
 
 
 def validate_options(options: LaunchOptions) -> None:
-    if options.concurrency > len(options.tasks) * options.attempts:
+    if options.tasks is not None and options.concurrency > len(options.tasks) * options.attempts:
         raise EvalLaunchError.excessive_concurrency()
     if options.models_file and not options.models_file.is_file():
         raise EvalLaunchError.missing_models_file(options.models_file)
@@ -240,9 +276,12 @@ def run(options: LaunchOptions) -> int:
     command = build_harbor_command(options, commit)
 
     print(f"Basecamp commit: {commit}")
-    print(f"Tasks ({len(options.tasks)}):")
-    for task in options.tasks:
-        print(f"  - {task}")
+    if options.tasks is None:
+        print("Tasks: all (full dataset)")
+    else:
+        print(f"Tasks ({len(options.tasks)}):")
+        for task in options.tasks:
+            print(f"  - {task}")
     print(shlex.join(command))
     sys.stdout.flush()
 

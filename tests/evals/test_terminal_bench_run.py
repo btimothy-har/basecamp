@@ -117,3 +117,57 @@ def test_parse_options_supports_custom_selection_without_models() -> None:
     assert parsed.attempts == 3
     assert parsed.concurrency == 2
     assert parsed.dry_run is True
+
+
+_CI_EXPECTED: tuple[str, ...] = (
+    "terminal-bench/hf-model-inference",
+    "terminal-bench/mteb-retrieve",
+    "terminal-bench/pytorch-model-recovery",
+    "terminal-bench/broken-python",
+    "terminal-bench/fix-permissions",
+    "terminal-bench/cron-broken-network",
+    "terminal-bench/oom",
+    "terminal-bench/git-multibranch",
+    "terminal-bench/sanitize-git-repo",
+    "terminal-bench/git-leak-recovery",
+    "terminal-bench/pandas-etl",
+    "terminal-bench/csv-to-parquet",
+    "terminal-bench/train-fasttext",
+    "terminal-bench/fix-code-vulnerability",
+    "terminal-bench/crack-7z-hash",
+    "terminal-bench/sql-injection-attack",
+    "terminal-bench/solve-sudoku",
+    "terminal-bench/weighted-max-sat-solver",
+    "terminal-bench/countdown-game",
+    "terminal-bench/nginx-request-logging",
+    "terminal-bench/simple-web-scraper",
+    "terminal-bench/build-cython-ext",
+    "terminal-bench/conda-env-conflict-resolution",
+    "terminal-bench/npm-conflict-resolution",
+    "terminal-bench/fix-pandas-version",
+    "terminal-bench/modernize-fortran-build",
+    "terminal-bench/setup-custom-dev-env",
+    "terminal-bench/configure-git-webserver",
+    "terminal-bench/sqlite-db-truncate",
+    "terminal-bench/kv-store-grpc",
+    "terminal-bench/tmux-advanced-workflow",
+)
+
+
+def test_resolve_tasks_ci_preset_returns_expected_tasks_in_order() -> None:
+    assert run.resolve_tasks(("ci",)) == _CI_EXPECTED
+
+
+def test_all_selection_builds_command_without_task_filters(tmp_path: Path) -> None:
+    assert run.resolve_tasks(("all",)) is None
+
+    command = run.build_harbor_command(options(tmp_path, tasks=None), "abc123")
+
+    assert "--include-task-name" not in command
+
+
+def test_validate_options_skips_concurrency_check_for_full_dataset(tmp_path: Path) -> None:
+    models_file = tmp_path / "models.json"
+    models_file.write_text("{}")
+
+    run.validate_options(options(tmp_path, models_file=models_file, tasks=None, concurrency=100))
