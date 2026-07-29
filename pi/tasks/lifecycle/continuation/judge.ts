@@ -1,5 +1,5 @@
 /**
- * Continuation guard — the fast-model call that judges a stop.
+ * Continuation guard — the model call that judges a stop.
  *
  * The rubric itself lives in `rubric.ts`; this module is the plumbing around it
  * and mirrors `#bash-reviewer/llm.ts`. Every failure path returns null, because
