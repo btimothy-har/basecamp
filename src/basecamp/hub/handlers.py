@@ -8,6 +8,7 @@ what each inbound frame does once the connection is live.
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from fastapi import WebSocket
 
@@ -46,6 +47,8 @@ from .swarm.service import (
     update_workstream,
     wait_for_agents,
 )
+
+logger = logging.getLogger(__name__)
 
 
 async def _send_reply(websocket: WebSocket, frame: object) -> None:
@@ -107,12 +110,16 @@ async def handle_wait(
             registry=registry,
             requester_node_id=requester_node_id,
         )
-    except Exception:  # noqa: BLE001 — the requester must still get a correlated reply
+    except Exception as exc:  # noqa: BLE001 — the requester must still get a correlated reply
+        logger.exception("wait failed; reporting unknown for all requested handles")
+        # Raw cause only — the client renderers add the "wait failed:" framing.
+        message = str(exc)
         results = [
-            WaitResultItem(agent_handle=agent_handle, status="unknown", result=None, error=None)
+            WaitResultItem(agent_handle=agent_handle, status="unknown", result=None, error=message)
             for agent_handle in frame.agent_handles
         ] + [
-            WaitResultItem(agent_id=agent_id, status="unknown", result=None, error=None) for agent_id in frame.agent_ids
+            WaitResultItem(agent_id=agent_id, status="unknown", result=None, error=message)
+            for agent_id in frame.agent_ids
         ]
     await _send_reply(
         websocket,

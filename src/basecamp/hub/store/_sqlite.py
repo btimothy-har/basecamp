@@ -22,11 +22,24 @@ from pathlib import Path
 from typing import Any
 
 
+def _configure(connection: sqlite3.Connection) -> None:
+    """Switch the connection to WAL mode.
+
+    WAL lets readers run against a snapshot alongside a writer, so the
+    read-during-write contention that surfaced as ``database is locked`` in the
+    wait path cannot occur. WAL is a file-level property: the first connection to
+    a rollback-mode DB flips it, and every later call is a no-op read. (sqlite3
+    already defaults ``busy_timeout`` to 5000ms, so no retry pragma is needed.)
+    """
+    connection.execute("PRAGMA journal_mode=WAL")
+
+
 @contextmanager
 def reading(db_path: Path) -> Iterator[sqlite3.Connection]:
     """A read connection with the ``sqlite3.Row`` factory, always closed on exit."""
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
+    _configure(connection)
     try:
         yield connection
     finally:
@@ -41,6 +54,7 @@ def writing(db_path: Path, *, immediate: bool = False) -> Iterator[sqlite3.Conne
     read-modify-write guards that must not race a concurrent writer.
     """
     connection = sqlite3.connect(db_path)
+    _configure(connection)
     try:
         if immediate:
             connection.execute("BEGIN IMMEDIATE")

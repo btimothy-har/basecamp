@@ -6,6 +6,7 @@ import { createDaemonClient } from "#core/swarm/agents/rpc.ts";
 import {
 	type DaemonToolDeps,
 	formatWaitItemText,
+	hasText,
 	normalizeHandles,
 	preview,
 	requireAgentsSkillMessage,
@@ -106,8 +107,8 @@ export function registerWaitForAgentTool(
 				return {
 					agentHandle,
 					status: "unknown",
-					result: null,
-					error: null,
+					result: hit.result,
+					error: hit.error,
 				};
 			});
 
@@ -127,6 +128,9 @@ export function registerWaitForAgentTool(
 					return `${theme.fg("error", "✗")} ${item.agentHandle} ${theme.fg("error", preview(item.error) || "failed")}`;
 				}
 				if (item.status === "unknown") {
+					if (hasText(item.error)) {
+						return `${theme.fg("error", "?")} ${item.agentHandle} ${theme.fg("error", `wait failed: ${preview(item.error)}`)}`;
+					}
 					return `${theme.fg("warning", "?")} ${item.agentHandle} ${theme.fg("muted", "not awaitable or unavailable")}`;
 				}
 				return `${theme.fg("warning", "…")} ${item.agentHandle} ${theme.fg("muted", "still running (timed out)")}`;
