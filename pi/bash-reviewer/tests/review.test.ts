@@ -17,6 +17,30 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.notifications.length, 0);
 	});
 
+	// The fast path is the reason a broken `fast` alias does not brick a headless session.
+	it("allows fast-path commands even when no reviewer model can be resolved", async () => {
+		const harness = makeDeps({
+			hasUI: false,
+			resolveModel: async () => null,
+		});
+
+		assert.equal(await reviewBashCommand("cat src/file.ts", harness.deps), undefined);
+		assert.equal(harness.resolveModelCalls(), 0);
+		assert.equal(harness.auditEntries.length, 0);
+	});
+
+	// The restrict-only invariant: an allowlisted executable buys nothing once a metacharacter
+	// is present, because no static check here is trusted to understand what the shell will do.
+	it("sends metacharacter-bearing commands to the gate despite an allowlisted executable", async () => {
+		for (const command of ["cat f | sh", "git status && rm -rf build", "cat $(echo /etc/passwd)"]) {
+			const harness = makeDeps({ runGate: async () => makeDecision("approve", "Reviewed.") });
+
+			await reviewBashCommand(command, harness.deps);
+
+			assert.equal(harness.runGateCalls(), 1, `${command} should reach the gate`);
+		}
+	});
+
 	it("escalates model-unavailable failures to the user and allows confirmed commands", async () => {
 		const harness = makeDeps({ resolveModel: async () => null, confirm: async () => true });
 
@@ -33,7 +57,7 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries.length, 1);
 		assert.equal(harness.auditEntries[0]?.phase, "failsafe");
 		assert.equal(harness.auditEntries[0]?.action, "approve");
-		assert.equal(harness.auditEntries[0]?.category, "git-mutation");
+		assert.equal(harness.auditEntries[0]?.category, undefined);
 		assert.equal(harness.auditEntries[0]?.note, "escalated");
 	});
 
@@ -61,7 +85,7 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries[0]?.note, "escalated");
 	});
 
-	it("approves non-failClosed gate decisions without blocking", async () => {
+	it("approves low-risk gate decisions without blocking", async () => {
 		const harness = makeDeps({ runGate: async () => makeDecision("approve", "The commit is local and requested.") });
 
 		const outcome = await reviewBashCommand("git commit -m 'test'", harness.deps);
@@ -99,7 +123,7 @@ describe("reviewBashCommand", () => {
 
 	it("permits route_to_user git-mutation decisions for subagents", async () => {
 		const harness = makeDeps({
-			runGate: async () => makeDecision("route_to_user", "Ambiguous local change."),
+			runGate: async () => makeDecision("route_to_user", "Ambiguous local change.", { category: "git-mutation" }),
 			hasUI: false,
 			isSubagent: true,
 		});
@@ -113,9 +137,13 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries[0]?.note, "subagent-collapse");
 	});
 
-	it("clamps failClosed approve decisions to user review and allows confirmed commands", async () => {
+	it("upgrades destructive-risk approvals to user review and allows confirmed commands", async () => {
 		const harness = makeDeps({
-			runGate: async () => makeDecision("approve", "Force push matches the explicit request."),
+			runGate: async () =>
+				makeDecision("approve", "Force push matches the explicit request.", {
+					risk: "destructive",
+					category: "irreversible-remote",
+				}),
 			confirm: async () => true,
 		});
 

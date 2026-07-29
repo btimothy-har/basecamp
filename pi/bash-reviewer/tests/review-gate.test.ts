@@ -2,49 +2,47 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { Context, Model } from "@earendil-works/pi-ai";
 import { reviewBashCommand } from "#bash-reviewer/review.ts";
-import { assertAuditedNonAllow, makeDecision, makeDeps } from "./review-harness.ts";
+import { assertAuditedGated, makeDecision, makeDeps } from "./review-harness.ts";
 
 describe("reviewBashCommand", () => {
-	it("blocks raw bq query commands during triage and audits the block", async () => {
-		const harness = makeDeps();
+	// bq and wide-search were deterministic pre-LLM blocks; they are gate deny rules now, so the
+	// observable contract is that the command reaches the gate and the verdict is plumbed through.
+	it("sends bq query commands to the gate rather than blocking them statically", async () => {
+		const harness = makeDeps({
+			runGate: async () =>
+				makeDecision("deny", 'Write the SQL to a .sql file and use bq_query({ path: "..." }).', {
+					category: "bq-query",
+				}),
+		});
 
 		const outcome = await reviewBashCommand("bq query 'select 1'", harness.deps);
 
 		assert.equal(outcome?.block, true);
 		assert.match(outcome?.reason ?? "", /bq_query/);
-		assert.equal(harness.resolveModelCalls(), 0);
-		assert.equal(harness.runGateCalls(), 0);
+		assert.equal(harness.resolveModelCalls(), 1);
+		assert.equal(harness.runGateCalls(), 1);
 		assert.equal(harness.auditEntries.length, 1);
-		assert.deepEqual(harness.auditEntries[0], {
-			phase: "triage",
-			action: "block",
-			category: "bq-query",
-			command: "bq query 'select 1'",
-			reason:
-				'Raw `bq query` execution through bash is blocked. Write the SQL to a .sql file and use bq_query({ path: "..." }) instead.',
-		});
+		assert.equal(harness.auditEntries[0]?.phase, "gate");
+		assert.equal(harness.auditEntries[0]?.action, "deny");
+		assert.equal(harness.auditEntries[0]?.category, "bq-query");
 		assert.equal(harness.notifications.length, 1);
 		assert.equal(harness.notifications[0]?.type, "warning");
 		assert.match(harness.notifications[0]?.message ?? "", /reviewer blocked/);
-		assert.match(harness.notifications[0]?.message ?? "", /bq_query/);
 	});
 
-	it("blocks wide-ranging searches during triage and audits them as wide-search", async () => {
-		const harness = makeDeps();
+	it("sends wide-ranging searches to the gate rather than blocking them statically", async () => {
+		const harness = makeDeps({
+			runGate: async () =>
+				makeDecision("deny", "Scope the search to the project directory.", { category: "wide-search" }),
+		});
 
 		const outcome = await reviewBashCommand("grep -r foo /", harness.deps);
 
 		assert.equal(outcome?.block, true);
-		assert.match(outcome?.reason ?? "", /Wide-ranging filesystem search blocked/);
-		assert.equal(harness.resolveModelCalls(), 0);
-		assert.equal(harness.runGateCalls(), 0);
-		assert.equal(harness.auditEntries.length, 1);
-		assert.equal(harness.auditEntries[0]?.phase, "triage");
-		assert.equal(harness.auditEntries[0]?.action, "block");
+		assert.equal(harness.runGateCalls(), 1);
+		assert.equal(harness.auditEntries[0]?.phase, "gate");
+		assert.equal(harness.auditEntries[0]?.action, "deny");
 		assert.equal(harness.auditEntries[0]?.category, "wide-search");
-		assert.equal(harness.notifications.length, 1);
-		assert.equal(harness.notifications[0]?.type, "warning");
-		assert.match(harness.notifications[0]?.message ?? "", /reviewer blocked/);
 	});
 
 	it("escalates model-unavailable failures to the user and blocks declined commands", async () => {
@@ -58,7 +56,7 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.confirmCalls(), 1);
 		assert.equal(harness.auditEntries[0]?.phase, "failsafe");
 		assert.equal(harness.auditEntries[0]?.action, "deny");
-		assert.equal(harness.auditEntries[0]?.category, "git-mutation");
+		assert.equal(harness.auditEntries[0]?.category, undefined);
 		assert.equal(harness.auditEntries[0]?.note, "escalated");
 	});
 
@@ -75,7 +73,7 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.runGateCalls(), 0);
 		assert.equal(harness.auditEntries[0]?.phase, "failsafe");
 		assert.equal(harness.auditEntries[0]?.action, "deny");
-		assert.equal(harness.auditEntries[0]?.category, "git-mutation");
+		assert.equal(harness.auditEntries[0]?.category, undefined);
 		assert.equal(harness.auditEntries[0]?.note, "no-ui");
 	});
 
@@ -153,9 +151,10 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries[0]?.note, "no-ui");
 	});
 
-	it("blocks route_to_user gh-mutation decisions for subagents", async () => {
+	it("blocks route_to_user gh-publish decisions for subagents", async () => {
 		const harness = makeDeps({
-			runGate: async () => makeDecision("route_to_user", "Publishing externally requires review."),
+			runGate: async () =>
+				makeDecision("route_to_user", "Publishing externally requires review.", { category: "gh-publish" }),
 			hasUI: false,
 			isSubagent: true,
 		});
@@ -169,9 +168,13 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.confirmCalls(), 0);
 	});
 
-	it("blocks failClosed irreversible-remote decisions for subagents", async () => {
+	it("blocks destructive-risk approvals of irreversible-remote commands for subagents", async () => {
 		const harness = makeDeps({
-			runGate: async () => makeDecision("approve", "Force push matches the explicit request."),
+			runGate: async () =>
+				makeDecision("approve", "Force push matches the explicit request.", {
+					risk: "destructive",
+					category: "irreversible-remote",
+				}),
 			hasUI: false,
 			isSubagent: true,
 		});
@@ -183,9 +186,9 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries[0]?.note, "subagent-collapse");
 	});
 
-	it("blocks route_to_user dangerous-shell decisions for subagents", async () => {
+	it("blocks route_to_user destructive-local decisions for subagents", async () => {
 		const harness = makeDeps({
-			runGate: async () => makeDecision("route_to_user", "Recursive delete."),
+			runGate: async () => makeDecision("route_to_user", "Recursive delete.", { category: "destructive-local" }),
 			hasUI: false,
 			isSubagent: true,
 		});
@@ -210,9 +213,13 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries[0]?.note, "no-ui");
 	});
 
-	it("clamps failClosed approve decisions to user review and blocks declined commands", async () => {
+	it("upgrades destructive-risk approvals to user review and blocks declined commands", async () => {
 		const harness = makeDeps({
-			runGate: async () => makeDecision("approve", "Force push matches the explicit request."),
+			runGate: async () =>
+				makeDecision("approve", "Force push matches the explicit request.", {
+					risk: "destructive",
+					category: "irreversible-remote",
+				}),
 			confirm: async () => false,
 		});
 
@@ -224,7 +231,7 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries[0]?.note, "route_to_user");
 	});
 
-	it("emits audit entries on every non-allow path", async () => {
+	it("emits audit entries on every gated path", async () => {
 		for (const command of [
 			"bq query 'select 1'",
 			"git commit -m 'test'",
@@ -232,7 +239,7 @@ describe("reviewBashCommand", () => {
 			"gh pr create --title 'test'",
 		]) {
 			const harness = makeDeps({ runGate: async () => makeDecision("route_to_user", "Needs review.") });
-			await assertAuditedNonAllow(command, harness.deps, harness.auditEntries);
+			await assertAuditedGated(command, harness.deps, harness.auditEntries);
 		}
 	});
 

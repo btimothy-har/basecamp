@@ -288,4 +288,16 @@ describe("sanitizeAgentSpawnEnv", () => {
 		assert.equal(env.OPENAI_API_KEY, "openai-key");
 		assert.equal(env.CUSTOM_API_KEY, "custom-key");
 	});
+
+	it("strips the bash-reviewer opt-out pair while passing ordinary BASECAMP_ vars", () => {
+		const env = sanitizeAgentSpawnEnv({
+			BASECAMP_BASH_REVIEWER: "off",
+			BASECAMP_EXTERNAL_SANDBOX: "1",
+			BASECAMP_REPO: "org/name",
+		});
+
+		assert.equal(env.BASECAMP_BASH_REVIEWER, undefined);
+		assert.equal(env.BASECAMP_EXTERNAL_SANDBOX, undefined);
+		assert.equal(env.BASECAMP_REPO, "org/name");
+	});
 });

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { CatalogItem } from "#core/catalog/index.ts";
 import type { WorkspaceState } from "#core/project/workspace/state.ts";
 import {
 	buildCapabilitiesIndex,
@@ -44,6 +45,31 @@ describe("capabilities index", () => {
 		assert.match(index, /load it with `skill` when they are not/);
 		assert.doesNotMatch(index, /Use `skill` to load .* before using it/);
 		assert.doesNotMatch(index, /skill\(\{ name:/);
+	});
+
+	it("flattens a multi-line tool description onto one index line", () => {
+		// Tool descriptions are authored as multi-line prose but the index is a one-line-per-item
+		// list, so a leaked newline would corrupt every line after it.
+		const toolItems: CatalogItem[] = [
+			{
+				type: "tools",
+				name: "bash",
+				description: "\n  Run a shell command.\n\n\tSupports:\n    - pipes\n    - redirects\n  ",
+			},
+			{ type: "tools", name: "ls", description: "List a directory." },
+		];
+
+		const index = buildCapabilitiesIndex({ toolItems, skillItems: [], agentItems: [], includeAgents: false });
+
+		const lines = index.split("\n");
+		const heading = lines.indexOf("Tools (2):");
+		assert.notEqual(heading, -1);
+		// every whitespace run — newlines, tabs, indentation — collapses to a single space,
+		// and leading/trailing whitespace is dropped
+		assert.deepEqual(lines.slice(heading + 1, heading + 3), [
+			"- bash — Run a shell command. Supports: - pipes - redirects",
+			"- ls — List a directory.",
+		]);
 	});
 });
 

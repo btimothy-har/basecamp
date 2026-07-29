@@ -11,11 +11,21 @@ import {
 
 const Decision = Type.Union([Type.Literal("approve"), Type.Literal("route_to_user"), Type.Literal("deny")]);
 const Risk = Type.Union([Type.Literal("none"), Type.Literal("local"), Type.Literal("destructive")]);
+const Category = Type.Union([
+	Type.Literal("git-mutation"),
+	Type.Literal("gh-publish"),
+	Type.Literal("irreversible-remote"),
+	Type.Literal("destructive-local"),
+	Type.Literal("bq-query"),
+	Type.Literal("wide-search"),
+	Type.Literal("other"),
+]);
 
 export const GateDecision = Type.Object(
 	{
 		decision: Decision,
 		risk: Risk,
+		category: Category,
 		reason: Type.String(),
 	},
 	{ additionalProperties: false },
@@ -26,6 +36,17 @@ export const RULESET = `You are a safety reviewer for a coding agent's bash comm
 You are given the recent human messages, most-recent-last, and one bash command. Decide whether the command should be approved, routed to the user for explicit review, or denied.
 You must call the gate_decision tool exactly once. Keep the reason to one short sentence.
 
+Risk levels: "none" for read-only commands; "local" for reversible changes inside the working tree such as builds, test runs, or removing generated artifacts; "destructive" for irreversible or wide-blast-radius effects such as remote history rewrites, deleting tracked source or user data, or writes outside the project.
+
+Also classify the command with a category. When several apply, choose the most severe in this order: irreversible-remote, gh-publish, destructive-local, bq-query, wide-search, git-mutation, other.
+- irreversible-remote: force-push, remote ref deletion, push --mirror/--all/--tags, or a history rewrite that is pushed.
+- gh-publish: externally visible GitHub writes such as gh pr/issue create, comment, edit, merge, or review.
+- destructive-local: recursive or forced deletion, dd, mkfs, shred, recursive chmod/chown, find -delete, or sudo.
+- bq-query: BigQuery CLI query execution.
+- wide-search: a recursive filesystem search rooted at a system or home directory.
+- git-mutation: local git writes such as commit, add, checkout, merge, rebase, reset, stash, or branch/tag creation and deletion.
+- other: anything else, including read-only commands.
+
 Rules:
 R1 Intent alignment: if the command is not plausibly serving what the human recently asked for, especially anything destructive or irreversible, lean deny.
 R2 Irreversible-remote operations such as force-push, remote ref deletion, push --mirror/--all/--tags, or history rewrite followed by push must route_to_user with risk "destructive".
@@ -34,6 +55,8 @@ R4 Secret exfiltration: if the command would publish text containing secrets or 
 R5 Protected-checkout writes are suspicious defense-in-depth signals; the edit layer already guards this, but treat such bash writes with caution.
 R6 Destructive local operations such as recursive or forced file deletion, dd, mkfs, recursive chmod/chown, find -delete, shred, or sudo: approve ONLY if the recent human messages clearly authorized this specific action; otherwise route_to_user; deny if clearly unsafe and not requested.
 R7 All \`git worktree\` subcommands (add, move, list, remove, lock, unlock, prune) must be denied. Worktree management is automated through the plan() tool's approval flow and the /worktree command; the agent must never manage worktrees directly.
+R8 Raw \`bq query\` execution through bash must be denied; say in the reason that the SQL belongs in a .sql file run through the bq_query({ path: "..." }) tool, which enforces scan approval. Other bq subcommands such as show, ls, or head are fine.
+R9 A recursive filesystem search (grep -r/-R, rg, find, fd, ag, ack) rooted at a system or home directory such as /, ~, $HOME, /usr, /etc, /var, /opt, or /Users must be denied for performance: such scans take many minutes. Say in the reason to scope the search to the project directory or a subpath. Searches already scoped to the project or a subpath are fine and should be approved.
 Input arrives as JSON with recent_human_messages and command fields.
 Default: approve with risk "none" or "local".`;
 

@@ -14,11 +14,11 @@
 - Irreversible remote operations require user confirmation, including force-push, remote ref deletion, and `push --mirror` / `push --all`.
 - Opening or modifying PRs and issues (`gh pr create|comment|edit|merge`, `gh issue create|comment|edit`) is routed to the user for review before it runs.
 - Keep the protected checkout clean: commits and mutating git commands belong in the active execution worktree.
-- Do not manage worktrees directly with `git worktree`; those subcommands are blocked. The system creates execution worktrees automatically — on implementation plan approval, and one per dispatched agent run — and removes agent workspaces when their runs end: only commits on an agent's branch survive teardown. To integrate a finished agent's work, `git merge` its `agent/<handle>` branch (that is a normal git command, not a worktree command).
+- Do not manage worktrees directly with `git worktree`; the reviewer denies those subcommands. The system creates execution worktrees automatically — on implementation plan approval, and one per dispatched agent run — and removes agent workspaces when their runs end: only commits on an agent's branch survive teardown. To integrate a finished agent's work, `git merge` its `agent/<handle>` branch (that is a normal git command, not a worktree command).
 
 ## Searching
 
-- Keep filesystem searches targeted to the project. Recursive searches (`grep -r`, `rg`, `find`, `fd`, `ag`, `ack`) rooted at a system or home directory (`/`, `~`, `$HOME`, `/usr`, `/etc`, `/Users`, …) are blocked because whole-system scans are slow; search from the project directory (`.`) or a subpath instead.
+- Keep filesystem searches targeted to the project. Recursive searches (`grep -r`, `rg`, `find`, `fd`, `ag`, `ack`) rooted at a system or home directory (`/`, `~`, `$HOME`, `/usr`, `/etc`, `/Users`, …) are usually denied by the reviewer because whole-system scans are slow; search from the project directory (`.`) or a subpath instead.
 
 ## Python Environment
 
