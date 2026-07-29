@@ -1,4 +1,4 @@
-/** Shell-syntax lexing: segment splitting, tokenization, wrapper/flag skipping, arg helpers. */
+/** Shell-syntax lexing: tokenization, wrapper/flag skipping, arg helpers. */
 
 import {
 	IONICE_FLAGS_WITH_VALUE,
@@ -9,14 +9,6 @@ import {
 	TIME_FLAGS_WITH_VALUE,
 	WRAPPER_SKIP_ONE,
 } from "./rules.ts";
-
-/** Split a command on shell separators so each segment is checked independently. */
-export function splitSegments(cmd: string): string[] {
-	return cmd
-		.split(/\s*(?:&&|\|\||[;|])\s*/)
-		.map((s) => s.trim())
-		.filter(Boolean);
-}
 
 const SHELL_WORD_RE = /(?:[^\s"'\\]+|\\.|"(?:\\.|[^"\\])*"|'[^']*')+/g;
 

@@ -1,7 +1,8 @@
 /**
  * Static command triage — composes the segment/nesting walk over the
- * classifiers in classify-git.ts and classify-commands.ts, using the shell
- * lexing in shell-lex.ts and the verdicts/tables in rules.ts.
+ * classifiers in classify-git.ts and classify-commands.ts, using the segment
+ * splitting in split-segments.ts, the shell lexing in shell-lex.ts, and the
+ * verdicts/tables in rules.ts.
  */
 
 import { classifyDangerousShellTokens, classifySearchScopeTokens, isBqQuerySegment } from "./classify-commands.ts";
@@ -17,9 +18,9 @@ import {
 	isShellExecutable,
 	isXargsExecutable,
 	shellScriptArgument,
-	splitSegments,
 	tokenizeShellLike,
 } from "./shell-lex.ts";
+import { type HeredocRecord, splitCommand } from "./split-segments.ts";
 
 export type { Triage } from "./rules.ts";
 
@@ -125,6 +126,23 @@ function commandSubstitutionBodies(cmd: string): string[] {
 	return bodies;
 }
 
+/**
+ * A heredoc body fed to a shell interpreter (`bash <<EOF`) is executed code,
+ * so it is triaged recursively. Any other opener (`cat <<EOF`) keeps the body
+ * as data.
+ */
+function classifyHeredocBodies(heredocs: HeredocRecord[], depth: number): Triage {
+	let result: Triage = ALLOW;
+	for (const { opener, body } of heredocs) {
+		const tokens = tokenizeShellLike(opener);
+		const executable = tokens[commandIndexAfterPrefixes(tokens)];
+		if (executable !== undefined && isShellExecutable(executable)) {
+			result = mergeTriage(result, triageCommandInternal(body, depth + 1));
+		}
+	}
+	return result;
+}
+
 function classifySegment(segment: string, depth: number): Triage {
 	if (isBqQuerySegment(segment)) return BQ_QUERY_BLOCK;
 
@@ -144,11 +162,12 @@ function triageCommandInternal(command: string, depth: number): Triage {
 
 	if (findNetworkFetchPipedToShell(command)) result = mergeTriage(result, DANGEROUS_SHELL);
 
-	for (const segment of splitSegments(command)) {
+	const { segments, heredocs } = splitCommand(command);
+	for (const segment of segments) {
 		result = mergeTriage(result, classifySegment(segment, depth));
 	}
 
-	return result;
+	return mergeTriage(result, classifyHeredocBodies(heredocs, depth));
 }
 
 export function triageCommand(command: string): Triage {
