@@ -136,6 +136,28 @@ function skipFlagArguments(tokens: string[], startIndex: number, flagsWithValues
 	return index;
 }
 
+/**
+ * A redirection operator token, optionally fd-prefixed: `<in`, `>out`,
+ * `2>/dev/null`, `<<EOF`, `<<-EOF`, `>>log`, `&>all`, `2>&1`, `>&2`, `<&3`.
+ * Redirections may legally precede the command word (`<<EOF bash`,
+ * `2>/dev/null git push`), so the command-index helpers skip them — otherwise
+ * the operator token sits at the executable position and every classifier
+ * misreads the segment as unclassifiable.
+ */
+const REDIRECTION_RE = /^\d*(?:<{1,3}-?|>{1,2}|<>|>&|<&|&>{1,2}|>\|)/;
+/** A bare operator (`<`, `>>`, `<<`, `2>`, `&>`) carries its target or delimiter as the next token. */
+const BARE_REDIRECTION_RE = /^\d*(?:<{1,3}-?|>{1,2}|<>|>&|<&|&>{1,2}|>\|)$/;
+
+function skipRedirections(tokens: string[], startIndex: number): number {
+	let index = startIndex;
+	while (index < tokens.length) {
+		const token = tokens[index];
+		if (token === undefined || !REDIRECTION_RE.test(token)) return index;
+		index += BARE_REDIRECTION_RE.test(token) ? 2 : 1;
+	}
+	return index;
+}
+
 function skipWrapper(tokens: string[], index: number): number | null {
 	const token = tokens[index];
 	if (token === undefined) return index;
@@ -161,6 +183,11 @@ export function commandIndexAfterAssignmentsAndEnv(tokens: string[]): number {
 			index += 1;
 			continue;
 		}
+		const afterRedirections = skipRedirections(tokens, index);
+		if (afterRedirections !== index) {
+			index = afterRedirections;
+			continue;
+		}
 		if (commandBaseName(token) === "env") {
 			index = skipEnvArguments(tokens, index + 1);
 			continue;
@@ -179,6 +206,11 @@ export function commandIndexAfterPrefixes(tokens: string[]): number {
 		if (token === undefined) return index;
 		if (isShellAssignment(token)) {
 			index += 1;
+			continue;
+		}
+		const afterRedirections = skipRedirections(tokens, index);
+		if (afterRedirections !== index) {
+			index = afterRedirections;
 			continue;
 		}
 
