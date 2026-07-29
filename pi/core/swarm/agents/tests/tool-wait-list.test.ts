@@ -113,6 +113,39 @@ describe("wait_for_agent and list_agents", () => {
 		assert.match(result.content[0].text, /\? scout-missing not awaitable or unavailable/);
 	});
 
+	it("wait_for_agent surfaces daemon error on unknown items carrying one", async () => {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
+		const { pi, tools } = createMockPi();
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		const waitTool = toolByName(tools, "wait_for_agent");
+
+		const executePromise = waitTool.execute(
+			"1",
+			{ agent_handles: ["jade-tiger-9z8y7x"], timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{},
+		);
+
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
+		assert.equal(outbound.type, "wait");
+
+		connection.emit({
+			type: "wait_result",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			results: [{ agent_handle: "jade-tiger-9z8y7x", status: "unknown", result: null, error: "wait failed: boom" }],
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.items[0].status, "unknown");
+		assert.match(result.content[0].text, /wait failed: boom/);
+		assert.doesNotMatch(result.content[0].text, /not awaitable/);
+	});
+
 	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
 		let connected = false;
 		const { pi, tools } = createMockPi();

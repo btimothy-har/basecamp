@@ -178,7 +178,11 @@ export function formatWaitItemText(item: WaitHandleResult): string {
 		if (hasText(item.result)) parts.push(`result:\n${item.result}`);
 		return parts.join("\n");
 	}
-	if (item.status === "unknown") return `? ${item.agentHandle} not awaitable or unavailable`;
+	if (item.status === "unknown") {
+		return hasText(item.error)
+			? `? ${item.agentHandle} wait failed: ${item.error}`
+			: `? ${item.agentHandle} not awaitable or unavailable`;
+	}
 	return `… ${item.agentHandle} still running (timed out)`;
 }
 
