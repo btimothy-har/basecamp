@@ -16,7 +16,7 @@
 		],
 		"skills": [
 			"./pi/tasks/skills",
-			"./pi/engineering/skills",
+			"./pi/skills",
 			"./pi/core/swarm/skills"
 		],
 		"prompts": [
