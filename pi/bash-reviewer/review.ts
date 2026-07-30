@@ -9,6 +9,8 @@ const SUBAGENT_APPROVE_CATEGORIES = new Set<GateDecision["category"]>(["git-muta
 export interface ReviewDeps {
 	resolveModel: () => Promise<{ model: Model<any>; auth: ReviewAuth } | null>;
 	recentMessages: () => string[];
+	/** The active worktree directory, or undefined when in the protected checkout. */
+	worktreeDir?: string;
 	runGate: (args: {
 		model: Model<any>;
 		auth: ReviewAuth;
@@ -103,7 +105,7 @@ export async function reviewBashCommand(command: string, deps: ReviewDeps): Prom
 		const resolved = await deps.resolveModel();
 		if (resolved === null) return await failSafe("reviewer model unavailable");
 
-		const context = buildGateContext(deps.recentMessages(), command);
+		const context = buildGateContext(deps.recentMessages(), command, deps.worktreeDir);
 		const decision = await deps.runGate({
 			model: resolved.model,
 			auth: resolved.auth,

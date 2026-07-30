@@ -55,6 +55,7 @@ export function registerBashReviewer(pi: ExtensionAPI): void {
 		const deps: ReviewDeps = {
 			resolveModel: () => resolveGateModel(ctx),
 			recentMessages: () => recentUserMessages(ctx.sessionManager.getEntries()),
+			worktreeDir: getBasecampEnv("BASECAMP_WORKTREE_DIR") || undefined,
 			runGate: (args) => runGate(args),
 			confirm: (title, body) =>
 				withHerdrBlocked(pi, "Waiting for command approval", () => ctx.ui.confirm(title, body, { signal: ctx.signal })),

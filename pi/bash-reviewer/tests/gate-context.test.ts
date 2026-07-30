@@ -18,9 +18,18 @@ describe("buildGateContext", () => {
 		if (typeof content !== "string") throw new Error("expected string content");
 		assert.match(content, /"recent_human_messages"/);
 		assert.match(content, /"command"/);
+		assert.match(content, /"worktree_dir"/);
 		assert.ok(content.includes(JSON.stringify(command)));
 		const payload = JSON.parse(content.replace(/^Evaluate whether the bash command should run\. Input:\n\n/, ""));
-		assert.deepEqual(payload, { recent_human_messages: recentHumanMessages, command });
+		assert.deepEqual(payload, { recent_human_messages: recentHumanMessages, command, worktree_dir: null });
+	});
+
+	it("includes the worktree directory when provided", () => {
+		const context = buildGateContext([], "sed -i s/x/y/ file.ts", "/home/user/.worktrees/repo/wt/branch");
+		const content = context.messages[0]?.content;
+		if (typeof content !== "string") throw new Error("expected string content");
+		const payload = JSON.parse(content.replace(/^Evaluate whether the bash command should run\. Input:\n\n/, ""));
+		assert.equal(payload.worktree_dir, "/home/user/.worktrees/repo/wt/branch");
 	});
 });
 
@@ -42,14 +51,21 @@ describe("RULESET", () => {
 		assert.doesNotMatch(RULESET, /All .*git worktree.* subcommands.*must be denied/);
 	});
 
-	// R1 was relaxed from "lean deny" to "lean route_to_user" so reversible local operations
-	// are not hard-denied based on intent second-guessing.
-	it("relaxes R1 to route_to_user and excludes local git ops from deny", () => {
+	// R1 was relaxed from "lean deny" to "lean route_to_user" so reversible git operations
+	// are not hard-denied based on intent second-guessing. Includes push to feature branches.
+	it("relaxes R1 to route_to_user and excludes normal git ops from deny", () => {
 		assert.match(RULESET, /R1.*lean route_to_user/);
-		assert.match(RULESET, /Do NOT deny normal local git operations/);
+		assert.match(RULESET, /Do NOT deny normal git operations/);
+		assert.match(RULESET, /push to a feature branch/);
 	});
 
-	// R5 now clarifies the protected-checkout vs active-worktree distinction and explicitly
+	// The RULESET tells the model how to use the worktree_dir field to apply R5 correctly.
+	it("describes the worktree_dir input field for R5 discrimination", () => {
+		assert.match(RULESET, /worktree_dir/);
+		assert.match(RULESET, /worktree_dir is null when the session is in the protected checkout/);
+	});
+
+	// R5 clarifies the protected-checkout vs active-worktree distinction and explicitly
 	// approves local bash file edits (sed, tee, etc.) in the worktree.
 	it("clarifies R5 scope and approves local bash file edits in worktrees", () => {
 		assert.match(RULESET, /does NOT apply to commands running inside an active worktree/);

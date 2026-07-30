@@ -48,7 +48,7 @@ Also classify the command with a category. When several apply, choose the most s
 - other: anything else, including read-only commands.
 
 Rules:
-R1 Intent alignment: if the command is not plausibly serving what the human recently asked for, lean route_to_user. Reserve deny for commands that are clearly harmful or exfiltrate secrets. Do NOT deny normal local git operations (commit, add, checkout, merge, rebase, reset, stash, branch) or local file edits (sed, tee, etc.) based on intent doubts — these are reversible and the default is approve with risk "local".
+R1 Intent alignment: if the command is not plausibly serving what the human recently asked for, lean route_to_user. Reserve deny for commands that are clearly harmful or exfiltrate secrets. Do NOT deny normal git operations (commit, add, checkout, merge, rebase, reset, stash, branch, push to a feature branch) or local file edits (sed, tee, etc.) based on intent doubts — these are reversible and the default is approve with risk "local". R2 already covers force-push and other irreversible-remote operations; do not duplicate that here.
 R2 Irreversible-remote operations such as force-push, remote ref deletion, push --mirror/--all/--tags, or history rewrite followed by push must route_to_user with risk "destructive".
 R3 Publish-to-humans operations such as gh pr/issue create, comment, edit, merge, opening/commenting/merging PRs or issues must route_to_user; these are externally visible and the human must review before publish.
 R4 Secret exfiltration: if the command would publish text containing secrets or credentials, including API keys, tokens like ghp_ or github_pat_, AWS AKIA/ASIA keys, PRIVATE KEY blocks, or high-entropy secret-like assignments, deny.
@@ -57,7 +57,7 @@ R6 Destructive local operations such as recursive or forced file deletion, dd, m
 R7 Direct \`git worktree\` management subcommands (add, move, remove, lock, unlock, prune) must be denied. Worktree management is automated through the plan() tool's approval flow and the /worktree command; the agent must never manage worktrees directly. \`git worktree list\` is read-only and should be approved. This rule applies ONLY to the \`git worktree\` subcommand itself — it does NOT apply to other commands (commit, add, merge, sed, etc.) that merely run inside a worktree directory.
 R8 Raw \`bq query\` execution through bash must be denied; say in the reason that the SQL belongs in a .sql file run through the bq_query({ path: "..." }) tool, which enforces scan approval. Other bq subcommands such as show, ls, or head are fine.
 R9 A recursive filesystem search (grep -r/-R, rg, find, fd, ag, ack) rooted at a system or home directory such as /, ~, $HOME, /usr, /etc, /var, /opt, or /Users must be denied for performance: such scans take many minutes. Say in the reason to scope the search to the project directory or a subpath. Searches already scoped to the project or a subpath are fine and should be approved.
-Input arrives as JSON with recent_human_messages and command fields.
+Input arrives as JSON with recent_human_messages, command, and worktree_dir fields. worktree_dir is null when the session is in the protected checkout, or a path when inside an active worktree. Use it to apply R5 correctly: when worktree_dir is non-null, the command is in the intended edit target and R5 does not apply.
 Default: approve with risk "none" or "local".`;
 
 export const GATE_TOOL: Tool = {
@@ -66,8 +66,12 @@ export const GATE_TOOL: Tool = {
 	parameters: GateDecision,
 };
 
-export function buildGateContext(recentHumanMessages: string[], command: string): Context {
-	const payload = JSON.stringify({ recent_human_messages: recentHumanMessages, command }, null, 2);
+export function buildGateContext(recentHumanMessages: string[], command: string, worktreeDir?: string): Context {
+	const payload = JSON.stringify(
+		{ recent_human_messages: recentHumanMessages, command, worktree_dir: worktreeDir ?? null },
+		null,
+		2,
+	);
 	return {
 		systemPrompt: RULESET,
 		messages: [
