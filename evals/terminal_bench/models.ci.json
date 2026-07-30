@@ -1,8 +1,8 @@
 {
 	"providers": {
 		"openrouter": {
-			"baseUrl": "$BIFROST_BASE_URL/v1",
-			"apiKey": "$LLM_API_KEY",
+			"baseUrl": "https://openrouter.ai/api/v1",
+			"apiKey": "$OPENROUTER_API_KEY",
 			"api": "openai-completions",
 			"models": [
 				{

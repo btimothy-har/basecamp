@@ -115,8 +115,7 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.matrix) }}
     env:
-      BIFROST_BASE_URL: ${{ secrets.BIFROST_BASE_URL }}
-      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
       TASK_SET: ${{ matrix.preset }}
       ATTEMPTS: ${{ needs.setup.outputs.attempts }}
       CONCURRENCY: ${{ matrix.concurrency }}
@@ -127,47 +126,24 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: Join tailnet
-      # Pinned to the v3 commit; this action receives the tailnet OAuth secret.
-      uses: tailscale/github-action@6cae46e2d796f265265cfcf628b72a32b4d7cade
-      with:
-        oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
-        oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
-        tags: tag:github-actions
-
-    - name: Configure Docker DNS for MagicDNS
+    - name: OpenRouter canary
       run: |
         set -euo pipefail
-        # Docker containers on GHA runners cannot resolve tailscale MagicDNS
-        # names with the default resolver; merge the tailnet resolver into the
-        # existing daemon configuration rather than replacing it.
-        if [ -f /etc/docker/daemon.json ]; then
-          jq '. + {dns: ["100.100.100.100", "1.1.1.1"]}' /etc/docker/daemon.json | sudo tee /etc/docker/daemon.json.new > /dev/null
-        else
-          echo '{ "dns": ["100.100.100.100", "1.1.1.1"] }' | sudo tee /etc/docker/daemon.json.new > /dev/null
-        fi
-        sudo mv /etc/docker/daemon.json.new /etc/docker/daemon.json
-        sudo systemctl restart docker
-
-    - name: Bifrost canary (container path)
-      run: |
-        set -euo pipefail
-        # The eval's LLM traffic originates inside task containers, so the
-        # canary must prove the container DNS/route path, not the host's.
-        # Fail before any paid work; tailnet propagation can lag, so retry.
+        # Fail before any paid work on a missing/invalid key or an OpenRouter
+        # outage. Traffic originates in task containers but reaches OpenRouter
+        # over the runner's normal egress, so a host check covers the path;
+        # /key is auth-gated, unlike the public /models list.
         for attempt in 1 2 3; do
-          if docker run --rm \
-            -e BIFROST_BASE_URL -e LLM_API_KEY \
-            curlimages/curl:8.10.1 -fsS -o /dev/null \
-            -H "Authorization: Bearer ${LLM_API_KEY}" \
-            "${BIFROST_BASE_URL}/v1/models"; then
-            echo "Bifrost proxy reachable from a container (attempt ${attempt})"
+          if curl -fsS -o /dev/null \
+            -H "Authorization: Bearer ${OPENROUTER_API_KEY}" \
+            "https://openrouter.ai/api/v1/key"; then
+            echo "OpenRouter reachable with a valid key (attempt ${attempt})"
             exit 0
           fi
           echo "Canary attempt ${attempt} failed" >&2
           sleep 10
         done
-        echo "Bifrost proxy unreachable from containers after 3 attempts" >&2
+        echo "OpenRouter canary failed after 3 attempts" >&2
         exit 1
 
     - name: Free disk space
@@ -195,16 +171,6 @@ jobs:
         set -euo pipefail
         uv sync
 
-    - name: Render models file
-      run: |
-        set -euo pipefail
-        # Pi interpolates apiKey/headers but not baseUrl, so the committed
-        # template's $BIFROST_BASE_URL is resolved here, outside the repo tree
-        # (the launcher requires a clean git status).
-        uv run python -m evals.terminal_bench.models \
-          evals/terminal_bench/models.ci.json \
-          "${RUNNER_TEMP}/models.ci.resolved.json"
-
     - name: Run Terminal-Bench eval
       run: |
         set -euo pipefail
@@ -218,7 +184,7 @@ jobs:
           --model "${MODEL}" \
           --thinking "${THINKING}" \
           --pi-version "${PI_VERSION}" \
-          --models-file "${RUNNER_TEMP}/models.ci.resolved.json" \
+          --models-file "evals/terminal_bench/models.ci.json" \
           --attempts "${ATTEMPTS}" \
           --concurrency "${CONCURRENCY}" \
           --jobs-dir "${RUNNER_TEMP}/jobs" \
@@ -252,8 +218,9 @@ jobs:
         # token counts, never extra_env, URLs or key material. Per-trial timing
         # is what makes shard rebalancing measurable. The rest of the jobs tree
         # stays excluded: harbor bind-mounts agent transcripts into it and its
-        # per-trial scrubber does not cover BIFROST_BASE_URL (and never runs
-        # for cancelled trials).
+        # per-trial scrubber never runs for cancelled trials. The committed
+        # models template carries only the `$OPENROUTER_API_KEY` placeholder,
+        # which Pi interpolates at run time; the key value never enters the tree.
         path: |
           ${{ runner.temp }}/jobs/*/result.json
           ${{ runner.temp }}/jobs/*/config.json

@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import os
 import re
-import sys
-from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Final, NamedTuple
 
@@ -132,62 +129,3 @@ def resolve_provider_environment(model_name: str | None, configured: dict[str, s
         if value:
             resolved[name] = value
     return resolved
-
-
-class PiModelsRenderError(RuntimeError):
-    """A models template cannot be rendered into a runnable configuration."""
-
-    def __init__(self, path: Path, detail: str) -> None:
-        super().__init__(f"Cannot render Pi models template at {path}: {detail}")
-
-
-def _render_base_url(source: Path, provider: str, value: str, environment: Mapping[str, str]) -> str:
-    def substitute(match: re.Match[str]) -> str:
-        name = match.group(1) or match.group(2)
-        resolved = environment.get(name)
-        if not resolved:
-            raise PiModelsRenderError(source, f"{provider}.baseUrl: environment variable is unavailable: {name}")
-        return resolved
-
-    return _ENV_REFERENCE.sub(substitute, value)
-
-
-def render_models_template(
-    source: Path,
-    destination: Path,
-    environment: Mapping[str, str] | None = None,
-) -> PiModelsSnapshot:
-    """Resolve provider baseUrl env references, leaving credential references for Pi.
-
-    Pi interpolates $VAR templates in apiKey and headers only, so a template that
-    keeps its base URL out of the repository must be rendered before launch.
-    """
-    env = environment if environment is not None else os.environ
-    snapshot = load_pi_models(source)
-    document = json.loads(snapshot.content)
-    for provider_name, config in document["providers"].items():
-        base_url = config.get("baseUrl")
-        if isinstance(base_url, str):
-            config["baseUrl"] = _render_base_url(source, provider_name, base_url, env)
-    rendered = (json.dumps(document, indent=2) + "\n").encode()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_bytes(rendered)
-    return load_pi_models(destination)
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Render a Pi models template for evaluation runs")
-    parser.add_argument("source", type=Path)
-    parser.add_argument("destination", type=Path)
-    args = parser.parse_args(argv)
-    try:
-        snapshot = render_models_template(args.source.expanduser(), args.destination.expanduser())
-    except (PiModelsFileError, PiModelsRenderError) as exc:
-        print(exc, file=sys.stderr)
-        return 2
-    print(f"Rendered {args.source} -> {args.destination} (sha256 {snapshot.digest})")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

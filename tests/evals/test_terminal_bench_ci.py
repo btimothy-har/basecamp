@@ -8,44 +8,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from evals.terminal_bench import models, summarize
-
-_TEMPLATE = {
-    "providers": {
-        "openrouter": {
-            "baseUrl": "$BIFROST_BASE_URL/v1",
-            "apiKey": "$LLM_API_KEY",
-            "api": "openai-completions",
-            "models": [{"id": "z-ai/glm-5.2", "contextWindow": 1000000, "maxTokens": 130000}],
-        }
-    }
-}
-
-
-def _write_template(tmp_path: Path) -> Path:
-    source = tmp_path / "models.template.json"
-    source.write_text(json.dumps(_TEMPLATE))
-    return source
-
-
-def test_render_models_template_resolves_base_url_only(tmp_path: Path) -> None:
-    source = _write_template(tmp_path)
-    destination = tmp_path / "rendered.json"
-
-    snapshot = models.render_models_template(source, destination, {"BIFROST_BASE_URL": "https://proxy.example.test"})
-
-    rendered = json.loads(destination.read_text())
-    provider = rendered["providers"]["openrouter"]
-    assert provider["baseUrl"] == "https://proxy.example.test/v1"
-    assert provider["apiKey"] == "$LLM_API_KEY"
-    assert snapshot.environment_names == ("LLM_API_KEY",)
-
-
-def test_render_models_template_fails_on_unresolved_placeholder(tmp_path: Path) -> None:
-    source = _write_template(tmp_path)
-
-    with pytest.raises(models.PiModelsRenderError, match="BIFROST_BASE_URL"):
-        models.render_models_template(source, tmp_path / "rendered.json", {})
+from evals.terminal_bench import summarize
 
 
 def _harbor_result(
