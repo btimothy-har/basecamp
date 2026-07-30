@@ -18,6 +18,8 @@ export interface ReviewDeps {
 	confirm: (title: string, body: string) => Promise<boolean>;
 	hasUI: boolean;
 	isSubagent: boolean;
+	/** When true the LLM gate is skipped — the fast path still runs first. */
+	paused: boolean;
 	signal?: AbortSignal;
 	audit: (entry: ReviewAuditEntry) => void;
 	notify: (message: string, type?: "info" | "warning" | "error") => void;
@@ -50,6 +52,11 @@ function confirmationBody(command: string, decision: GateDecision): string {
  */
 export async function reviewBashCommand(command: string, deps: ReviewDeps): Promise<ReviewOutcome> {
 	if (isTriviallySafe(command)) return undefined;
+
+	// The escape hatch: skip the LLM gate entirely. The fast path above already
+	// ran, so only non-trivial commands reach here. This is a temporary
+	// session-level toggle (`/bash-guard off`), not a security control.
+	if (deps.paused) return undefined;
 
 	const auditCommand = truncateCommand(command);
 	const audit = (entry: Omit<ReviewAuditEntry, "command">) => {

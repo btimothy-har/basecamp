@@ -76,6 +76,14 @@ The check runs **per call**, and the `tool_call` hook is always registered: an o
 
 The Terminal-Bench eval profile is the only caller; it passes the flag on the pi command line alongside the env vars. There the trial container never receives basecamp's `config.json`, so the reviewer's `fast` alias cannot resolve; every gate verdict would fall through to the no-UI failsafe and hard-block a command the shipped reviewer would have judged on its merits. Scoring that measures a missing alias rather than the agent. Each trial's `basecamp-eval.json` records `bash_reviewer_enabled: false` so no score is read as if the gate were present.
 
+## Temporary escape hatch
+
+`/bash-guard` is a session-level toggle that skips the LLM gate without touching the durable opt-out triad. `/bash-guard off` pauses the gate; `/bash-guard on` resumes it; with no argument it toggles. The fast path (`isTriviallySafe`) still runs regardless — only the model gate is skipped.
+
+The pause is backed by `BASECAMP_BASH_REVIEWER_PAUSED` on `process.env`, so it propagates to subagent spawns (`buildAgentEnv` copies every `BASECAMP_*` var; this one is not in `RESTRICTED_AGENT_SPAWN_ENV_VARS`). It survives `/reload` but not a process restart, and `loadDotenv` refuses it from a repo `.env`. The status — `🛡 on` or `🛡 off` — is published through `ctx.ui.setStatus` and appears in the footer's third line alongside other extension statuses.
+
+It is **not a security control**: the env+flag triad above remains the only durable opt-out, and a subagent that turns its own gate off affects only its own process.
+
 ## Dependencies
 
 - **core** (`#core/*`): shared Basecamp/Pi runtime primitives
