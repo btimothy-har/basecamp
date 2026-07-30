@@ -52,11 +52,14 @@ describe("RULESET", () => {
 	});
 
 	// R1 was relaxed from "lean deny" to "lean route_to_user" so reversible git operations
-	// are not hard-denied based on intent second-guessing. Includes push to feature branches.
+	// are not hard-denied based on intent second-guessing. File-edit carve-out is scoped
+	// to worktree_dir non-null to avoid colliding with R5's protected-checkout caution.
 	it("relaxes R1 to route_to_user and excludes normal git ops from deny", () => {
 		assert.match(RULESET, /R1.*lean route_to_user/);
 		assert.match(RULESET, /Do NOT deny normal git operations/);
 		assert.match(RULESET, /push to a feature branch/);
+		assert.match(RULESET, /worktree_dir is non-null.*not denied based on intent doubts/);
+		assert.match(RULESET, /When worktree_dir is null, defer to R5/);
 	});
 
 	// The RULESET tells the model how to use the worktree_dir field to apply R5 correctly.
