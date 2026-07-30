@@ -207,7 +207,7 @@ describe("runGate", () => {
 			const result = await runGate({
 				model: fakeModel,
 				auth: { apiKey: "test-key" },
-				context: buildGateContext(["Please inspect status."], "git status"),
+				context: buildGateContext(["Please inspect status."], "git status", "/repo"),
 				complete: async (_model, _context, options) => {
 					assert.equal(options?.apiKey, "test-key");
 					assert.deepEqual(options?.toolChoice, { type: "tool", name: "gate_decision" });
@@ -225,7 +225,7 @@ describe("runGate", () => {
 		const result = await runGate({
 			model: model({ api: "openai-responses", provider: "openai", reasoning: true }),
 			auth: { apiKey: "test-key" },
-			context: buildGateContext([], "git status"),
+			context: buildGateContext([], "git status", "/repo"),
 			complete: async (_model, _context, options) => {
 				assert.deepEqual(options?.toolChoice, { type: "function", name: "gate_decision" });
 				assert.equal(options?.reasoningEffort, "low");
@@ -241,7 +241,7 @@ describe("runGate", () => {
 		const result = await runGate({
 			model: model({ api: "openai-completions", provider: "openai", reasoning: false }),
 			auth: { apiKey: "test-key" },
-			context: buildGateContext([], "git status"),
+			context: buildGateContext([], "git status", "/repo"),
 			complete: async (_model, _context, options) => {
 				assert.equal(Object.hasOwn(options ?? {}, "reasoningEffort"), false);
 				return assistantWithToolCall("gate_decision", decision);
@@ -256,7 +256,7 @@ describe("runGate", () => {
 			await runGate({
 				model: fakeModel,
 				auth: { apiKey: "test-key" },
-				context: buildGateContext([], "git status"),
+				context: buildGateContext([], "git status", "/repo"),
 				complete: async () => ({
 					...assistantWithToolCall("gate_decision", {
 						decision: "approve",
@@ -273,7 +273,7 @@ describe("runGate", () => {
 			await runGate({
 				model: fakeModel,
 				auth: { apiKey: "test-key" },
-				context: buildGateContext([], "git status"),
+				context: buildGateContext([], "git status", "/repo"),
 				complete: async () =>
 					assistantWithToolCall("gate_decision", { decision: "allow", risk: "none", category: "other", reason: "bad" }),
 			}),
@@ -286,7 +286,7 @@ describe("runGate", () => {
 			runGate({
 				model: fakeModel,
 				auth: { apiKey: "test-key" },
-				context: buildGateContext([], "git push --force"),
+				context: buildGateContext([], "git push --force", "/repo"),
 				complete: async () => {
 					throw new Error("provider unavailable");
 				},
@@ -300,7 +300,7 @@ describe("runGate", () => {
 			runGate({
 				model: fakeModel,
 				auth: { apiKey: "test-key" },
-				context: buildGateContext([], "git push --force"),
+				context: buildGateContext([], "git push --force", "/repo"),
 				complete: async () => ({
 					...assistantWithToolCall("gate_decision", {
 						decision: "approve",
@@ -321,7 +321,7 @@ describe("runGate", () => {
 			runGate({
 				model: fakeModel,
 				auth: { apiKey: "test-key" },
-				context: buildGateContext([], "git push --force"),
+				context: buildGateContext([], "git push --force", "/repo"),
 				complete: async () => ({
 					...assistantWithToolCall("gate_decision", {
 						decision: "approve",

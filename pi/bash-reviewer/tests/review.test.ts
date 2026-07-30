@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
+import type { Context } from "@earendil-works/pi-ai";
 import { runGate } from "#bash-reviewer/llm.ts";
 import { reviewBashCommand } from "#bash-reviewer/review.ts";
 import { makeDecision, makeDeps } from "./review-harness.ts";
@@ -153,5 +154,25 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.confirmCalls(), 1);
 		assert.equal(harness.auditEntries[0]?.action, "approve");
 		assert.equal(harness.auditEntries[0]?.note, "route_to_user");
+	});
+
+	it("threads the cwd into the gate context payload", async () => {
+		const captured: Context[] = [];
+		const harness = makeDeps({
+			cwd: "/home/user/.worktrees/repo/wt/branch",
+			runGate: async (args) => {
+				captured.push(args.context);
+				return makeDecision("approve");
+			},
+		});
+
+		await reviewBashCommand("sed -i s/x/y/ file.ts", harness.deps);
+
+		assert.equal(harness.runGateCalls(), 1);
+		const content = captured[0]?.messages[0]?.content;
+		assert.equal(typeof content, "string");
+		if (typeof content !== "string") throw new Error("expected string content");
+		const payload = JSON.parse(content.replace(/^Evaluate whether the bash command should run\. Input:\n\n/, ""));
+		assert.equal(payload.cwd, "/home/user/.worktrees/repo/wt/branch");
 	});
 });
