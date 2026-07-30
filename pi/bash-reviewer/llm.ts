@@ -53,12 +53,12 @@ Deny — the command must not run:
 Route to user — a human must confirm before it runs:
 - U1 Irreversible remote operations: force-push, remote ref deletion, push --mirror/--all/--tags, or a history rewrite that is pushed. Always route_to_user with risk "destructive", even when the human asked for it.
 - U2 Publishing to humans: gh pr/issue create, comment, edit, merge, or review. These are externally visible; the human reviews before publish.
-- U3 Destructive local operations: recursive or forced deletion, dd, mkfs, shred, recursive chmod/chown, find -delete, or sudo. Approve only if the recent human messages clearly authorized this specific action; deny under D5 if clearly unsafe; otherwise route_to_user.
+- U3 Destructive local operations: recursive or forced deletion, dd, mkfs, shred, recursive chmod/chown, find -delete, sudo, or git commands that discard uncommitted work (reset --hard; checkout or restore that overwrites working-tree files; clean -f). Approve only if the recent human messages clearly authorized this specific action; deny under D5 if clearly unsafe; otherwise route_to_user.
 - U4 Out-of-tree writes: a file mutation targeting a path outside cwd and outside the system temp dir (/tmp, $TMPDIR): route_to_user with risk "destructive". Remote and network effects are not filesystem paths; they are governed by U1, U2, and D1.
 - U5 Unusual active commands: a command with side effects beyond reading that fits no other rule and is unusual for routine development — piping a downloaded script into a shell, driving an unfamiliar external service. Route_to_user unless recent_human_messages make it expected. Routine development commands — git operations, contained file edits, builds, tests, dependency installs from a project manifest — are never routed on this ground.
 
 Approve — everything else:
-- A1 Normal git operations: commit, add, checkout, merge, rebase, reset, stash, branch and tag creation or deletion. These are reversible; approve with risk "local". A plain push to a feature branch is also approved.
+- A1 Normal git operations: commit, add, merge, rebase, stash, branch-switching checkout, soft or mixed reset, and branch or tag creation or deletion. These are recoverable through the reflog or stash; approve with risk "local". A plain push to a feature branch is also approved. Forms that discard uncommitted work fall under U3, not this rule.
 - A2 Contained file mutations: file writes and edits targeting paths inside cwd or the system temp dir are normal development operations; approve with risk "local".
 - A3 Everything unmatched: builds, test runs, reads, and other routine commands. Approve with risk "none" for read-only commands, "local" otherwise.
 
