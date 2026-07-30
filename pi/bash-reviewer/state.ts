@@ -26,10 +26,13 @@ type PauseListener = (paused: boolean) => void;
 
 interface ReviewerPauseState {
 	listeners: Set<PauseListener>;
+	/** The active session's unsubscribe, stored so a `/reload` can clear it before re-subscribing. */
+	currentUnsubscribe: (() => void) | null;
 }
 
 const getReviewerPauseState = processScoped<ReviewerPauseState>("basecamp.bashReviewer.pause", () => ({
 	listeners: new Set(),
+	currentUnsubscribe: null,
 }));
 
 export function isReviewerPaused(): boolean {
@@ -49,10 +52,24 @@ export function setReviewerPaused(next: boolean): boolean {
 	return next;
 }
 
+/**
+ * Register a pause-change listener, replacing any previous one.
+ *
+ * The listener set is `processScoped` (survives `/reload`), but the
+ * `unsubscribe` closure from the previous module load is unreachable after a
+ * reload — `session_start` fires again without an intervening
+ * `session_shutdown`. This mirrors the hub's `clearHubMetadataWiring` pattern:
+ * store the unsubscribe in the same surviving state and call it before
+ * registering a new listener, so stale-`ctx` callbacks don't accumulate.
+ */
 export function onReviewerPauseChange(listener: PauseListener): () => void {
 	const state = getReviewerPauseState();
+	state.currentUnsubscribe?.();
 	state.listeners.add(listener);
-	return () => {
+	const unsubscribe = () => {
 		state.listeners.delete(listener);
+		if (state.currentUnsubscribe === unsubscribe) state.currentUnsubscribe = null;
 	};
+	state.currentUnsubscribe = unsubscribe;
+	return unsubscribe;
 }

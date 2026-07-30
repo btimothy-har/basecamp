@@ -71,12 +71,9 @@ export function registerBashReviewer(pi: ExtensionAPI): void {
 		return await reviewBashCommand(command, deps);
 	});
 
-	pi.on("session_start", (_event, ctx) => {
-		publishReviewerStatus(ctx, isReviewerPaused());
-	});
-
 	let unsubscribePause: (() => void) | null = null;
 	pi.on("session_start", (_event, ctx) => {
+		publishReviewerStatus(ctx, isReviewerPaused());
 		unsubscribePause = onReviewerPauseChange((paused) => publishReviewerStatus(ctx, paused));
 	});
 

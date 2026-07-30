@@ -53,4 +53,24 @@ describe("reviewer pause state", () => {
 		setReviewerPaused(true);
 		assert.deepEqual(events, []);
 	});
+
+	it("replaces the previous listener on re-register (reload safety)", () => {
+		const first: boolean[] = [];
+		const firstUnsub = onReviewerPauseChange((paused) => first.push(paused));
+
+		// Simulate a /reload: a new module load registers a new listener without
+		// an intervening session_shutdown for the old one. onReviewerPauseChange
+		// must call the previous unsubscribe so the stale listener is removed.
+		const second: boolean[] = [];
+		const secondUnsub = onReviewerPauseChange((paused) => second.push(paused));
+
+		setReviewerPaused(true);
+
+		// Only the second listener should fire — the first was replaced.
+		assert.deepEqual(first, []);
+		assert.deepEqual(second, [true]);
+
+		firstUnsub();
+		secondUnsub();
+	});
 });
