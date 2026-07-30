@@ -95,7 +95,7 @@ def build_matrix(
     # pass validation and corrupt the $GITHUB_OUTPUT key=value line.
     if not _PI_VERSION_PATTERN.fullmatch(pi_version):
         raise MatrixInputError.bad_pi_version(pi_version)
-    # A typo would otherwise only fail after tailnet/docker/harbor setup, when
+    # A typo would otherwise only fail after OpenRouter/docker/harbor setup, when
     # the launcher treats the unknown name as a single task filter.
     if task_set != "all" and task_set not in PRESET_NAMES:
         raise MatrixInputError.unknown_task_set(task_set)

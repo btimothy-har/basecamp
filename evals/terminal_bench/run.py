@@ -94,7 +94,7 @@ _PRESETS: Final = {
     "docker-amd64-long": _DOCKER_AMD64_LONG_TAIL,
     "docker-amd64-mem": _DOCKER_AMD64_MEM,
     **_SHORT_SHARDS,
-    # One short, reliable task to prove the CI pipeline end to end (tailnet,
+    # One short, reliable task to prove the CI pipeline end to end (OpenRouter
     # canary, harbor, models file, scoring) without paying for a full run.
     "docker-smoke": ("terminal-bench/hf-model-inference",),
     "podman-smoke": ("terminal-bench/hf-model-inference",),
