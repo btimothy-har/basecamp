@@ -65,12 +65,13 @@ describe("RULESET", () => {
 		assert.match(RULESET, /worktree_dir is null when the session is in the protected checkout/);
 	});
 
-	// R5 clarifies the protected-checkout vs active-worktree distinction and explicitly
-	// approves local bash file edits (sed, tee, etc.) in the worktree.
-	it("clarifies R5 scope and approves local bash file edits in worktrees", () => {
-		assert.match(RULESET, /does NOT apply to commands running inside an active worktree/);
+	// R5 ties protected-checkout caution and worktree approval explicitly to worktree_dir,
+	// avoiding self-contradiction from reusing "the working tree" term.
+	it("clarifies R5 scope and approves local bash file edits in worktrees only", () => {
+		assert.match(RULESET, /worktree_dir is null.*suspicious/);
+		assert.match(RULESET, /worktree_dir is non-null.*approve with risk "local"/);
 		assert.match(RULESET, /sed.*tee.*echo redirection.*perl -i/);
-		assert.match(RULESET, /approve with risk "local"/);
+		assert.match(RULESET, /When worktree_dir is null, do NOT auto-approve/);
 	});
 
 	it("defines every category the reviewer keys policy on", () => {

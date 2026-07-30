@@ -52,7 +52,7 @@ Three policies that used to be deterministic pre-LLM blocks are now gate rules i
 
 **Fail-closed defence in depth survives without a parser.** A gate `approve` carrying `risk === "destructive"` is upgraded to `route_to_user`, so a single model slip toward approve still cannot silently force-push; the self-contradiction is caught by the reviewer rather than by the shell.
 
-**Intent alignment uses route_to_user, not deny.** R1 tells the model to lean `route_to_user` — not `deny` — when a command seems misaligned with the user's request. Normal local git operations (commit, add, checkout, merge, rebase, reset, stash, branch) and local file edits (sed, tee, echo redirection, perl -i) are explicitly excluded from deny based on intent doubts: they are reversible, and the default is approve with risk `"local"`. R5 clarifies that the protected-checkout caution does not apply inside an active worktree — those paths are the intended edit target.
+**Intent alignment uses route_to_user, not deny.** R1 tells the model to lean `route_to_user` — not `deny` — when a command seems misaligned with the user's request. Normal git operations (commit, add, checkout, merge, rebase, reset, stash, branch, push to a feature branch) and local file edits (sed, tee, echo redirection, perl -i) are explicitly excluded from deny based on intent doubts: they are reversible, and the default is approve with risk `"local"`. R5 ties its protected-checkout caution and worktree approval to the `worktree_dir` input field: when `worktree_dir` is null (protected checkout), bash writes are treated with caution; when non-null (active worktree), local file edits are approved with risk `"local"`.
 
 ## Autonomous subagents
 
