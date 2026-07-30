@@ -34,6 +34,29 @@ describe("RULESET", () => {
 		assert.match(RULESET, /recursive filesystem search/);
 	});
 
+	// R7 was narrowed from "All git worktree subcommands" to only mutating ones; the scope
+	// clarification prevents the model from over-applying it to commands inside a worktree.
+	it("narrows R7 to mutating worktree subcommands and scopes it to git worktree only", () => {
+		assert.match(RULESET, /git worktree list.*read-only.*approved/);
+		assert.match(RULESET, /does NOT apply to other commands/);
+		assert.doesNotMatch(RULESET, /All .*git worktree.* subcommands.*must be denied/);
+	});
+
+	// R1 was relaxed from "lean deny" to "lean route_to_user" so reversible local operations
+	// are not hard-denied based on intent second-guessing.
+	it("relaxes R1 to route_to_user and excludes local git ops from deny", () => {
+		assert.match(RULESET, /R1.*lean route_to_user/);
+		assert.match(RULESET, /Do NOT deny normal local git operations/);
+	});
+
+	// R5 now clarifies the protected-checkout vs active-worktree distinction and explicitly
+	// approves local bash file edits (sed, tee, etc.) in the worktree.
+	it("clarifies R5 scope and approves local bash file edits in worktrees", () => {
+		assert.match(RULESET, /does NOT apply to commands running inside an active worktree/);
+		assert.match(RULESET, /sed.*tee.*echo redirection.*perl -i/);
+		assert.match(RULESET, /approve with risk "local"/);
+	});
+
 	it("defines every category the reviewer keys policy on", () => {
 		for (const category of [
 			"git-mutation",
