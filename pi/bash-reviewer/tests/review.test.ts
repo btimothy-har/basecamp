@@ -156,10 +156,10 @@ describe("reviewBashCommand", () => {
 		assert.equal(harness.auditEntries[0]?.note, "route_to_user");
 	});
 
-	it("threads worktreeDir into the gate context payload", async () => {
+	it("threads the cwd into the gate context payload", async () => {
 		const captured: Context[] = [];
 		const harness = makeDeps({
-			worktreeDir: "/home/user/.worktrees/repo/wt/branch",
+			cwd: "/home/user/.worktrees/repo/wt/branch",
 			runGate: async (args) => {
 				captured.push(args.context);
 				return makeDecision("approve");
@@ -173,25 +173,6 @@ describe("reviewBashCommand", () => {
 		assert.equal(typeof content, "string");
 		if (typeof content !== "string") throw new Error("expected string content");
 		const payload = JSON.parse(content.replace(/^Evaluate whether the bash command should run\. Input:\n\n/, ""));
-		assert.equal(payload.worktree_dir, "/home/user/.worktrees/repo/wt/branch");
-	});
-
-	it("threads null worktree_dir when no worktree is active", async () => {
-		const captured: Context[] = [];
-		const harness = makeDeps({
-			runGate: async (args) => {
-				captured.push(args.context);
-				return makeDecision("approve");
-			},
-		});
-
-		await reviewBashCommand("git commit -m test", harness.deps);
-
-		assert.equal(harness.runGateCalls(), 1);
-		const content = captured[0]?.messages[0]?.content;
-		assert.equal(typeof content, "string");
-		if (typeof content !== "string") throw new Error("expected string content");
-		const payload = JSON.parse(content.replace(/^Evaluate whether the bash command should run\. Input:\n\n/, ""));
-		assert.equal(payload.worktree_dir, null);
+		assert.equal(payload.cwd, "/home/user/.worktrees/repo/wt/branch");
 	});
 });

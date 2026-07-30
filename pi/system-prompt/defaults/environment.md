@@ -14,7 +14,7 @@
 - Irreversible remote operations require user confirmation, including force-push, remote ref deletion, and `push --mirror` / `push --all`.
 - Opening or modifying PRs and issues (`gh pr create|comment|edit|merge`, `gh issue create|comment|edit`) is routed to the user for review before it runs.
 - Keep the protected checkout clean: commits and mutating git commands belong in the active execution worktree.
-- Do not manage worktrees directly with `git worktree`; the reviewer denies those subcommands. The system creates execution worktrees automatically — on implementation plan approval, and one per dispatched agent run — and removes agent workspaces when their runs end: only commits on an agent's branch survive teardown. To integrate a finished agent's work, `git merge` its `agent/<handle>` branch (that is a normal git command, not a worktree command).
+- Do not manage worktrees directly with `git worktree`; the reviewer denies the mutating subcommands (`git worktree list` is fine). The system creates execution worktrees automatically — on implementation plan approval, and one per dispatched agent run — and removes agent workspaces when their runs end: only commits on an agent's branch survive teardown. To integrate a finished agent's work, `git merge` its `agent/<handle>` branch (that is a normal git command, not a worktree command).
 
 ## Searching
 

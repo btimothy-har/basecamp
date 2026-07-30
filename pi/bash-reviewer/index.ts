@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isToolCallEventType } from "@earendil-works/pi-coding-agent";
 import type { AutocompleteItem } from "@earendil-works/pi-tui";
 import { getBasecampEnv, isSubagent } from "#core/host/env.ts";
+import { getWorkspaceEffectiveCwd } from "#core/project/workspace/state.ts";
 import { recentUserMessages } from "#core/session/user-context.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
 import { resolveGateModel, runGate } from "./llm.ts";
@@ -55,7 +56,7 @@ export function registerBashReviewer(pi: ExtensionAPI): void {
 		const deps: ReviewDeps = {
 			resolveModel: () => resolveGateModel(ctx),
 			recentMessages: () => recentUserMessages(ctx.sessionManager.getEntries()),
-			worktreeDir: getBasecampEnv("BASECAMP_WORKTREE_DIR") || undefined,
+			cwd: getWorkspaceEffectiveCwd(),
 			runGate: (args) => runGate(args),
 			confirm: (title, body) =>
 				withHerdrBlocked(pi, "Waiting for command approval", () => ctx.ui.confirm(title, body, { signal: ctx.signal })),

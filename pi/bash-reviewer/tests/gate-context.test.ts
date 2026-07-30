@@ -6,7 +6,7 @@ describe("buildGateContext", () => {
 	it("sets the ruleset, includes the gate tool, and embeds recent messages plus command as JSON", () => {
 		const recentHumanMessages = ["Check the repo status.", "Now make a commit."];
 		const command = "git commit -m 'test'";
-		const context = buildGateContext(recentHumanMessages, command);
+		const context = buildGateContext(recentHumanMessages, command, "/repo");
 
 		assert.equal(context.systemPrompt, RULESET);
 		assert.deepEqual(context.tools, [GATE_TOOL]);
@@ -18,18 +18,18 @@ describe("buildGateContext", () => {
 		if (typeof content !== "string") throw new Error("expected string content");
 		assert.match(content, /"recent_human_messages"/);
 		assert.match(content, /"command"/);
-		assert.match(content, /"worktree_dir"/);
+		assert.match(content, /"cwd"/);
 		assert.ok(content.includes(JSON.stringify(command)));
 		const payload = JSON.parse(content.replace(/^Evaluate whether the bash command should run\. Input:\n\n/, ""));
-		assert.deepEqual(payload, { recent_human_messages: recentHumanMessages, command, worktree_dir: null });
+		assert.deepEqual(payload, { recent_human_messages: recentHumanMessages, command, cwd: "/repo" });
 	});
 
-	it("includes the worktree directory when provided", () => {
+	it("embeds the cwd the command runs from", () => {
 		const context = buildGateContext([], "sed -i s/x/y/ file.ts", "/home/user/.worktrees/repo/wt/branch");
 		const content = context.messages[0]?.content;
 		if (typeof content !== "string") throw new Error("expected string content");
 		const payload = JSON.parse(content.replace(/^Evaluate whether the bash command should run\. Input:\n\n/, ""));
-		assert.equal(payload.worktree_dir, "/home/user/.worktrees/repo/wt/branch");
+		assert.equal(payload.cwd, "/home/user/.worktrees/repo/wt/branch");
 	});
 });
 
@@ -43,38 +43,44 @@ describe("RULESET", () => {
 		assert.match(RULESET, /recursive filesystem search/);
 	});
 
-	// R7 was narrowed from "All git worktree subcommands" to only mutating ones; the scope
-	// clarification prevents the model from over-applying it to commands inside a worktree.
-	it("narrows R7 to mutating worktree subcommands and scopes it to git worktree only", () => {
-		assert.match(RULESET, /git worktree list.*read-only.*approved/);
-		assert.match(RULESET, /does NOT apply to other commands/);
+	// Rules are grouped by outcome with a single precedence meta-rule; per-rule cross-references
+	// ("defer to R5", "R2 already covers") are gone, so the precedence line is load-bearing.
+	it("states the outcome precedence meta-rule", () => {
+		assert.match(RULESET, /most restrictive outcome wins: deny over route_to_user over approve/);
+	});
+
+	// D2 denies only mutating worktree subcommands and is scoped to the git worktree subcommand
+	// itself, so the model neither approves worktree management nor over-applies the rule to
+	// commands that merely run inside a worktree directory.
+	it("denies mutating worktree subcommands only, scoped to git worktree itself", () => {
+		assert.match(RULESET, /git worktree list.*read-only.*approve/);
+		assert.match(RULESET, /never other commands that merely run inside a worktree directory/);
 		assert.doesNotMatch(RULESET, /All .*git worktree.* subcommands.*must be denied/);
 	});
 
-	// R1 was relaxed from "lean deny" to "lean route_to_user" so reversible git operations
-	// are not hard-denied based on intent second-guessing. File-edit carve-out is scoped
-	// to worktree_dir non-null to avoid colliding with R5's protected-checkout caution.
-	it("relaxes R1 to route_to_user and excludes normal git ops from deny", () => {
-		assert.match(RULESET, /R1.*lean route_to_user/);
-		assert.match(RULESET, /Do NOT deny normal git operations/);
+	// Normal git operations and contained file edits are approve rules, not intent judgments:
+	// the branch exists to stop the gate from second-guessing reversible development work.
+	it("approves normal git operations and contained file mutations", () => {
+		assert.match(RULESET, /A1 Normal git operations.*approve with risk "local"/);
 		assert.match(RULESET, /push to a feature branch/);
-		assert.match(RULESET, /worktree_dir is non-null.*not denied based on intent doubts/);
-		assert.match(RULESET, /When worktree_dir is null, defer to R5/);
+		assert.match(RULESET, /A2 Contained file mutations.*inside cwd or the system temp dir.*approve with risk "local"/);
 	});
 
-	// The RULESET tells the model how to use the worktree_dir field to apply R5 correctly.
-	it("describes the worktree_dir input field for R5 discrimination", () => {
-		assert.match(RULESET, /worktree_dir/);
-		assert.match(RULESET, /worktree_dir is null when the session is in the protected checkout/);
+	// Containment is the single spatial concept: the cwd input field, the out-of-tree route
+	// rule, and the risk definitions must all reference it.
+	it("defines cwd containment for the out-of-tree rule and risk levels", () => {
+		assert.match(RULESET, /cwd: the directory the command runs in; relative paths resolve here/);
+		assert.match(RULESET, /U4 Out-of-tree writes.*outside cwd and outside the system temp dir/);
+		assert.match(RULESET, /file writes outside cwd and the temp dir/);
 	});
 
-	// R5 ties protected-checkout caution and worktree approval explicitly to worktree_dir,
-	// avoiding self-contradiction from reusing "the working tree" term.
-	it("clarifies R5 scope and approves local bash file edits in worktrees only", () => {
-		assert.match(RULESET, /worktree_dir is null.*suspicious/);
-		assert.match(RULESET, /worktree_dir is non-null.*approve with risk "local"/);
-		assert.match(RULESET, /sed.*tee.*echo redirection.*perl -i/);
-		assert.match(RULESET, /When worktree_dir is null, do NOT auto-approve/);
+	// U5 keys on the command being unusual, not on tracing every command back to the
+	// conversation; the routine-work sentence is what stops a fast model from routing a
+	// git commit for feeling unrelated to the last message.
+	it("scopes the unusual-command catch-all away from routine development", () => {
+		assert.match(RULESET, /U5 Unusual active commands/);
+		assert.match(RULESET, /never routed on this ground/);
+		assert.doesNotMatch(RULESET, /Intent alignment/);
 	});
 
 	it("defines every category the reviewer keys policy on", () => {
