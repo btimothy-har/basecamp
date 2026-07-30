@@ -48,6 +48,7 @@ export function makeDeps(
 		confirm: ReviewDeps["confirm"];
 		hasUI: boolean;
 		isSubagent: boolean;
+		paused: boolean;
 	}> = {},
 ): FakeReviewHarness {
 	const auditEntries: ReviewAuditEntry[] = [];
@@ -78,6 +79,7 @@ export function makeDeps(
 		},
 		hasUI: overrides.hasUI ?? true,
 		isSubagent: overrides.isSubagent ?? false,
+		paused: overrides.paused ?? false,
 		audit: (entry) => auditEntries.push(entry),
 		notify: (message, type) => notifications.push({ message, type }),
 	};

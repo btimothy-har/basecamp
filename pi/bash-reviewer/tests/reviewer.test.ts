@@ -26,6 +26,8 @@ class FakePi {
 
 	appendEntry(): void {}
 
+	registerCommand(): void {}
+
 	getFlag(): unknown {
 		return undefined;
 	}
