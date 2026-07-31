@@ -160,6 +160,14 @@ class PositiveIntError(argparse.ArgumentTypeError):
         super().__init__("must be at least 1")
 
 
+# Harbor agent import path per profile. `single` is the historical no-dispatch
+# surface; `swarm` enables daemon-backed subagents (see basecamp_pi_swarm.py).
+_PROFILE_AGENTS: Final = {
+    "single": "evals.terminal_bench.basecamp_pi:BasecampPiSingle",
+    "swarm": "evals.terminal_bench.basecamp_pi_swarm:BasecampPiSwarm",
+}
+
+
 @dataclass(frozen=True)
 class LaunchOptions:
     tasks: tuple[str, ...] | None  # None selects the full dataset (no task filter)
@@ -167,6 +175,7 @@ class LaunchOptions:
     attempts: int
     concurrency: int
     model: str
+    profile: str
     thinking: str
     pi_version: str
     models_file: Path | None
@@ -250,6 +259,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--attempts", type=_positive_int, default=1)
     parser.add_argument("--concurrency", type=_positive_int, default=1)
     parser.add_argument("--model", default="openai/gpt-5.6-sol")
+    parser.add_argument("--profile", choices=tuple(_PROFILE_AGENTS), default="single")
     parser.add_argument("--thinking", default="xhigh")
     parser.add_argument("--pi-version", default="0.80.7")
     parser.add_argument("--models-file", type=Path, default=_DEFAULT_MODELS_FILE)
@@ -269,6 +279,7 @@ def parse_options(argv: Sequence[str] | None = None) -> LaunchOptions:
         attempts=args.attempts,
         concurrency=args.concurrency,
         model=args.model,
+        profile=args.profile,
         thinking=args.thinking,
         pi_version=args.pi_version,
         models_file=None if args.no_models else args.models_file.expanduser().resolve(),
@@ -302,7 +313,7 @@ def build_harbor_command(options: LaunchOptions, commit: str) -> list[str]:
         "--dataset",
         "terminal-bench/terminal-bench-2-1",
         "--agent",
-        "evals.terminal_bench.basecamp_pi:BasecampPiSingle",
+        _PROFILE_AGENTS[options.profile],
         "--model",
         options.model,
         "--agent-kwarg",
