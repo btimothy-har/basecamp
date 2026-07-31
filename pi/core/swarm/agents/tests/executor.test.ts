@@ -10,6 +10,7 @@ import {
 	buildAgentTaskText,
 	buildPiArgs,
 	ensureAgentDir,
+	isExternalSandboxLaunch,
 	type RunWorkspace,
 	sanitizeAgentSpawnEnv,
 } from "#core/swarm/agents/executor.ts";
@@ -51,6 +52,43 @@ describe("ensureAgentDir", () => {
 	});
 });
 
+describe("isExternalSandboxLaunch", () => {
+	it("requires the complete trio", () => {
+		assert.equal(isExternalSandboxLaunch("off", "1", true), true);
+		assert.equal(isExternalSandboxLaunch("off", "1", false), false);
+		assert.equal(isExternalSandboxLaunch("off", undefined, true), false);
+		assert.equal(isExternalSandboxLaunch(undefined, "1", true), false);
+		assert.equal(isExternalSandboxLaunch("on", "1", true), false);
+		assert.equal(isExternalSandboxLaunch("off", "0", true), false);
+	});
+});
+
+describe("buildPiArgs sandbox flag", () => {
+	function argsFor(externalSandboxLaunch: boolean): string[] {
+		const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-agent-session-"));
+		const { args, agentDir } = buildPiArgs(null, "hello", {
+			name: `agent-sbx-${randomUUID()}`,
+			model: undefined,
+			sessionDir,
+			extensionTools: [],
+			workspace: null,
+			externalSandboxLaunch,
+		});
+		fs.rmSync(sessionDir, { recursive: true, force: true });
+		fs.rmSync(agentDir, { recursive: true, force: true });
+		return args;
+	}
+
+	it("emits --unsafe-edit-sandboxed only under the full external-sandbox launch state", () => {
+		assert.equal(argsFor(true).includes("--unsafe-edit-sandboxed"), true);
+		assert.equal(argsFor(false).includes("--unsafe-edit-sandboxed"), false);
+	});
+
+	it("never emits --unsafe-edit", () => {
+		assert.equal(argsFor(true).includes("--unsafe-edit"), false);
+	});
+});
+
 describe("buildPiArgs task text", () => {
 	it("passes short tasks with the completion contract as the final arg", () => {
 		const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), "basecamp-agent-session-"));
@@ -60,6 +98,7 @@ describe("buildPiArgs task text", () => {
 			sessionDir,
 			extensionTools: [],
 			workspace: null,
+			externalSandboxLaunch: false,
 		});
 
 		try {
@@ -79,6 +118,7 @@ describe("buildPiArgs task text", () => {
 			sessionDir,
 			extensionTools: [],
 			workspace: null,
+			externalSandboxLaunch: false,
 		});
 
 		try {
@@ -111,6 +151,7 @@ function buildToolArgs(
 		sessionDir,
 		extensionTools: ["dispatch_agent", "list_agents", "wait_for_agent"],
 		workspace,
+		externalSandboxLaunch: false,
 	});
 	const promptIndex = args.indexOf("--agent-prompt");
 	const prompt = promptIndex === -1 ? null : fs.readFileSync(args[promptIndex + 1] as string, "utf8");

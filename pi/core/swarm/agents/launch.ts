@@ -1,12 +1,18 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { getAgentDepth } from "#core/host/env.ts";
+import { getAgentDepth, getBasecampEnv } from "#core/host/env.ts";
 import { isWithin } from "#core/host/paths.ts";
 import { resolveDaemonPaths } from "#core/hub/index.ts";
 import type { AgentWorkspaceProvision } from "./agent-workspace.ts";
 import type { AgentConfig } from "./discovery.ts";
-import { buildAgentRunName, buildPiArgs, type RunWorkspace, sanitizeAgentSpawnEnv } from "./executor.ts";
+import {
+	buildAgentRunName,
+	buildPiArgs,
+	isExternalSandboxLaunch,
+	type RunWorkspace,
+	sanitizeAgentSpawnEnv,
+} from "./executor.ts";
 import { resolveModel } from "./model-resolution.ts";
 import { DEFAULT_AGENT_MAX_DEPTH } from "./types.ts";
 
@@ -69,6 +75,8 @@ export interface SharedAgentLaunchPlan {
 	agent: AgentConfig | null;
 	agentLabel: string;
 	model: string | undefined;
+	/** Set when the persona's model alias failed to resolve and the parent model was used. */
+	modelAliasFallback: string | null;
 	name: string;
 	environment: Record<string, string>;
 	extensionTools: string[];
@@ -109,13 +117,32 @@ export function resolveParentSession(
 	return process.env.BASECAMP_SESSION_NAME ?? (pi.getSessionName()?.trim() || ctx.sessionManager.getSessionId());
 }
 
-export function buildAgentEnv(opts: { name: string; parentSession: string; project: string }): Record<string, string> {
+// The bash-reviewer opt-out pair. processEnvForSpawn strips it unconditionally and is
+// spread first at the dispatch merge, so this copy loop is the single deciding layer:
+// omitted here ⇒ absent from the child; re-added here ⇒ propagated.
+const SANDBOX_SIGNAL_ENV_VARS = ["BASECAMP_BASH_REVIEWER", "BASECAMP_EXTERNAL_SANDBOX"] as const;
+
+export function buildAgentEnv(opts: {
+	name: string;
+	parentSession: string;
+	project: string;
+	externalSandboxLaunch: boolean;
+}): Record<string, string> {
 	const depth = getAgentDepth();
 	const env: Record<string, string> = {};
 	for (const [k, v] of Object.entries(process.env)) {
 		if (k === "BASECAMP_AGENT_HANDLE") continue;
+		if ((SANDBOX_SIGNAL_ENV_VARS as readonly string[]).includes(k)) continue;
 		if (k.startsWith("BASECAMP_") && v !== undefined) {
 			env[k] = v;
+		}
+	}
+	// The pair propagates only as part of the complete external-sandbox launch state
+	// (env pair + the parent's own --unsafe-edit-sandboxed argv); see isExternalSandboxLaunch.
+	if (opts.externalSandboxLaunch) {
+		for (const key of SANDBOX_SIGNAL_ENV_VARS) {
+			const value = process.env[key];
+			if (value !== undefined) env[key] = value;
 		}
 	}
 	env.BASECAMP_PROJECT = opts.project;
@@ -206,15 +233,21 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 		};
 	}
 
-	const model = resolveModel(agent?.model ?? "inherit", input.modelContext, {
+	const { model, aliasFallback: modelAliasFallback } = resolveModel(agent?.model ?? "inherit", input.modelContext, {
 		resolveModelAlias: input.resolveModelAlias,
 	});
 
 	const name = buildAgentRunName(input.namePrefix, input.nameSuffix);
+	const externalSandboxLaunch = isExternalSandboxLaunch(
+		getBasecampEnv("BASECAMP_BASH_REVIEWER"),
+		getBasecampEnv("BASECAMP_EXTERNAL_SANDBOX"),
+		input.pi.getFlag("unsafe-edit-sandboxed") === true,
+	);
 	const environment = buildAgentEnv({
 		name,
 		parentSession: input.parentSession,
 		project: input.project,
+		externalSandboxLaunch,
 	});
 	// Stamp the child env with the agent's own workspace so pre-adoption daemon identity
 	// never reflects the parent's worktree.
@@ -241,6 +274,7 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 		sessionId: input.agentId,
 		extensionTools,
 		workspace: runWorkspace,
+		externalSandboxLaunch,
 	});
 
 	return {
@@ -249,6 +283,7 @@ export function buildAgentLaunchSpec(input: SharedAgentLaunchInput): SharedAgent
 			agent,
 			agentLabel: requested || "ad-hoc",
 			model,
+			modelAliasFallback,
 			name,
 			environment,
 			extensionTools,

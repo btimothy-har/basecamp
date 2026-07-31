@@ -5,6 +5,7 @@ EVAL_ENGINE ?= podman
 EVAL_ATTEMPTS ?= 1
 EVAL_CONCURRENCY ?= 1
 EVAL_MODEL ?= openai/gpt-5.6-sol
+EVAL_PROFILE ?= single
 EVAL_THINKING ?= xhigh
 EVAL_PI_VERSION ?= 0.80.7
 EVAL_JOBS_DIR ?= $(HOME)/evals/basecamp-terminal-bench/jobs
@@ -15,6 +16,7 @@ EVAL_COMMAND = uv run python -m evals.terminal_bench.run $(EVAL_SELECTION) \
 	--attempts $(EVAL_ATTEMPTS) \
 	--concurrency $(EVAL_CONCURRENCY) \
 	--model $(EVAL_MODEL) \
+	--profile $(EVAL_PROFILE) \
 	--thinking $(EVAL_THINKING) \
 	--pi-version $(EVAL_PI_VERSION) \
 	--jobs-dir "$(EVAL_JOBS_DIR)" \

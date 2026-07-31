@@ -8,7 +8,7 @@ import shlex
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Any, Final, override
+from typing import Any, ClassVar, Final, override
 
 from harbor.agents.installed.base import CliFlag
 from harbor.agents.installed.node_install import nvm_node_install_snippet
@@ -25,18 +25,6 @@ _CONTAINER_ARCHIVE: Final = "/tmp/basecamp-eval-source.tar"
 _CONTAINER_MODELS: Final = "/tmp/basecamp-eval-models.json"
 _CONTAINER_SOURCE: Final = "$HOME/.basecamp-eval/source"
 _CONTAINER_METADATA: Final = "/logs/agent/basecamp-eval.json"
-_PROFILE_ENV: Final = {
-    "BASECAMP_AGENT_DEPTH": "1",
-    "BASECAMP_AGENT_MAX_DEPTH": "1",
-    "BASECAMP_EXTERNAL_SANDBOX": "1",
-    # The trial container never receives basecamp's config, so the reviewer's
-    # `fast` alias cannot resolve and every gate verdict would reach the no-UI
-    # failsafe and hard-block. That measures a missing alias, not the agent, so
-    # the reviewer is off here; basecamp requires the sandbox signal above
-    # before honouring this. Recorded in each trial's metadata, because a score
-    # cannot be read without knowing the gate was absent.
-    "BASECAMP_BASH_REVIEWER": "off",
-}
 
 
 class BasecampRepositoryNotFoundError(RuntimeError):
@@ -105,7 +93,7 @@ def _resolve_commit(repository: Path, revision: str) -> str:
     return _run_git(repository, "revision resolution", "rev-parse", "--verify", f"{revision}^{{commit}}")
 
 
-def _create_archive(repository: Path, commit: str, archive: Path) -> str:
+def _create_archive(repository: Path, commit: str, archive: Path, members: tuple[str, ...] = _ARCHIVE_MEMBERS) -> str:
     _run_git(
         repository,
         "archive creation",
@@ -114,7 +102,7 @@ def _create_archive(repository: Path, commit: str, archive: Path) -> str:
         f"--output={archive}",
         commit,
         "--",
-        *_ARCHIVE_MEMBERS,
+        *members,
     )
     with archive.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
@@ -122,6 +110,24 @@ def _create_archive(repository: Path, commit: str, archive: Path) -> str:
 
 class BasecampPiSingle(Pi):
     """Pi with Basecamp's worker-like, single-process surface."""
+
+    # Committed content packaged into the trial container, and the profile's
+    # session-surface env. Class attributes (not module constants) so profile
+    # subclasses override them without duplicating the install machinery.
+    ARCHIVE_MEMBERS: ClassVar[tuple[str, ...]] = _ARCHIVE_MEMBERS
+    APT_PACKAGES: ClassVar[tuple[str, ...]] = ("ca-certificates", "coreutils", "curl", "tar")
+    PROFILE_ENV: ClassVar[dict[str, str]] = {
+        "BASECAMP_AGENT_DEPTH": "1",
+        "BASECAMP_AGENT_MAX_DEPTH": "1",
+        "BASECAMP_EXTERNAL_SANDBOX": "1",
+        # The trial container never receives basecamp's config, so the reviewer's
+        # `fast` alias cannot resolve and every gate verdict would reach the no-UI
+        # failsafe and hard-block. That measures a missing alias, not the agent, so
+        # the reviewer is off here; basecamp requires the sandbox signal above
+        # before honouring this. Recorded in each trial's metadata, because a score
+        # cannot be read without knowing the gate was absent.
+        "BASECAMP_BASH_REVIEWER": "off",
+    }
 
     CLI_FLAGS = [
         *Pi.CLI_FLAGS,
@@ -160,8 +166,8 @@ class BasecampPiSingle(Pi):
         profile_env.update(model_config.resolve_provider_environment(model_name, profile_env))
         if self._pi_models:
             profile_env.update(model_config.resolve_model_environment(self._pi_models, profile_env))
-        self._credential_environment_names = tuple(sorted(set(profile_env) - set(_PROFILE_ENV)))
-        profile_env.update(_PROFILE_ENV)
+        self._credential_environment_names = tuple(sorted(set(profile_env) - set(self.PROFILE_ENV)))
+        profile_env.update(self.PROFILE_ENV)
         super().__init__(
             *args,
             model_name=model_name,
@@ -182,7 +188,7 @@ class BasecampPiSingle(Pi):
     async def _upload_source(self, environment: BaseEnvironment) -> str:
         with tempfile.TemporaryDirectory(prefix="basecamp-eval-") as directory:
             archive = Path(directory) / "source.tar"
-            digest = _create_archive(self._basecamp_repository, self._basecamp_commit, archive)
+            digest = _create_archive(self._basecamp_repository, self._basecamp_commit, archive, self.ARCHIVE_MEMBERS)
             await environment.upload_file(archive, _CONTAINER_ARCHIVE)
         return digest
 
@@ -264,14 +270,12 @@ class BasecampPiSingle(Pi):
             raise RuntimeProbeError(output)
         return versions
 
-    async def _upload_metadata(
-        self,
-        environment: BaseEnvironment,
-        digest: str,
-        runtime: dict[str, str],
-    ) -> None:
+    async def _install_profile_extras(self, environment: BaseEnvironment) -> None:
+        """Profile-specific install steps, run after the basecamp source install."""
+
+    def _build_metadata(self, digest: str, runtime: dict[str, str]) -> dict[str, Any]:
         metadata: dict[str, Any] = {
-            "profile": _PROFILE,
+            "profile": self.name(),
             "basecamp_commit": self._basecamp_commit,
             "basecamp_archive_sha256": digest,
             "pi_version": self._pi_version,
@@ -292,6 +296,15 @@ class BasecampPiSingle(Pi):
                 "providers": self._pi_models.providers,
                 "environment_names": self._pi_models.environment_names,
             }
+        return metadata
+
+    async def _upload_metadata(
+        self,
+        environment: BaseEnvironment,
+        digest: str,
+        runtime: dict[str, str],
+    ) -> None:
+        metadata = self._build_metadata(digest, runtime)
         with tempfile.TemporaryDirectory(prefix="basecamp-eval-metadata-") as directory:
             path = Path(directory) / "basecamp-eval.json"
             path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
@@ -302,11 +315,12 @@ class BasecampPiSingle(Pi):
         digest = await self._upload_source(environment)
         await self.exec_as_root(
             environment,
-            command="apt-get update && apt-get install -y ca-certificates coreutils curl tar",
+            command=f"apt-get update && apt-get install -y {' '.join(self.APT_PACKAGES)}",
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
         await self._install_pi(environment)
         await self._install_basecamp(environment, digest)
+        await self._install_profile_extras(environment)
         await self._install_models(environment)
         await self._probe_model(environment)
         runtime = await self._probe_runtime(environment)
