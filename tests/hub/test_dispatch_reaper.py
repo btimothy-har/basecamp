@@ -435,6 +435,9 @@ def test_reconcile_orphaned_runs_teardown_with_branch_fields(
     teardowns: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: True)
     monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
+    # Teardown is gated on provable death — patch the gate so the real ps probe never
+    # runs against the fake pgid (host-process-table dependence).
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: True)
     monkeypatch.setattr(
         "basecamp.hub.swarm.process.teardown_agent_workspace",
         lambda wt, **kw: teardowns.append((wt, kw)),
@@ -472,6 +475,9 @@ def test_reconcile_orphaned_runs_pre_upgrade_spec_non_force_removes_worktree(
     teardowns: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: True)
     monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
+    # Teardown is gated on provable death — patch the gate so the real ps probe never
+    # runs against the fake pgid (host-process-table dependence).
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: True)
     monkeypatch.setattr(
         "basecamp.hub.swarm.process.teardown_agent_workspace",
         lambda wt, **kw: teardowns.append((wt, kw)),
