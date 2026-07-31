@@ -55,6 +55,8 @@ export type MockExecResult = { code: number; stdout: string; stderr: string; kil
 export class MockPi {
 	tools: RegisteredTool[] = [];
 	handlers = new Map<string, ((event: any, ctx: any) => unknown)[]>();
+	/** Scriptable launch flags for tests that exercise flag-dependent behavior. */
+	flags: Record<string, unknown> = {};
 	/** Scriptable exec for tests that exercise git-backed provisioning; null result falls through to ok. */
 	execScript: ((cmd: string, args: string[], opts?: { cwd?: string }) => MockExecResult | null) | null = null;
 	execCalls: Array<{ cmd: string; args: string[] }> = [];
@@ -74,6 +76,10 @@ export class MockPi {
 
 	getSessionName(): string {
 		return "session-name";
+	}
+
+	getFlag(name: string): unknown {
+		return this.flags[name];
 	}
 
 	getAllTools(): unknown[] {

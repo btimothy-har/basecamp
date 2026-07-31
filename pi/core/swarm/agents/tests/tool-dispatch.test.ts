@@ -102,6 +102,61 @@ describe("dispatch_agent", () => {
 		}
 	});
 
+	it("dispatch_agent propagates the sandbox trio only under the full launch state", async () => {
+		trackSkillInvocation("agents");
+		const prior = {
+			reviewer: process.env.BASECAMP_BASH_REVIEWER,
+			sandbox: process.env.BASECAMP_EXTERNAL_SANDBOX,
+		};
+		process.env.BASECAMP_BASH_REVIEWER = "off";
+		process.env.BASECAMP_EXTERNAL_SANDBOX = "1";
+
+		const dispatchSpec = async (sandboxedFlag: boolean) => {
+			const connection = new MockConnection();
+			const { pi, tools } = createMockPi();
+			pi.flags["unsafe-edit-sandboxed"] = sandboxedFlag;
+			registerDaemonTools(pi, async () => connection, daemonToolDeps);
+			const dispatchTool = toolByName(tools, "dispatch_agent");
+			const executePromise = dispatchTool.execute("1", { task: "hello" }, new AbortController().signal, () => {}, {
+				model: "claude-sonnet",
+				sessionManager: { getSessionId: () => "session-id" },
+			});
+			await new Promise((resolve) => setImmediate(resolve));
+			const outbound = connection.sent[0] as Extract<Frame, { type: "dispatch" }>;
+			connection.emit({
+				type: "dispatch_ack",
+				v: PROTOCOL_VERSION,
+				run_id: outbound.run_id,
+				status: "spawned",
+				reason: null,
+			});
+			await executePromise;
+			return outbound.spec;
+		};
+
+		try {
+			// Env pair present but no parent launch flag: the pair must not reach the child
+			// through the {...processEnvForSpawn(), ...plan.environment} merge, and the child
+			// argv must not carry the flag.
+			const bare = await dispatchSpec(false);
+			assert.equal(bare.env.BASECAMP_BASH_REVIEWER, undefined);
+			assert.equal(bare.env.BASECAMP_EXTERNAL_SANDBOX, undefined);
+			assert.equal(bare.argv.includes("--unsafe-edit-sandboxed"), false);
+
+			// Full launch state: pair + flag propagate together.
+			const sandboxed = await dispatchSpec(true);
+			assert.equal(sandboxed.env.BASECAMP_BASH_REVIEWER, "off");
+			assert.equal(sandboxed.env.BASECAMP_EXTERNAL_SANDBOX, "1");
+			assert.equal(sandboxed.argv.includes("--unsafe-edit-sandboxed"), true);
+			assert.equal(sandboxed.argv.includes("--unsafe-edit"), false);
+		} finally {
+			if (prior.reviewer === undefined) delete process.env.BASECAMP_BASH_REVIEWER;
+			else process.env.BASECAMP_BASH_REVIEWER = prior.reviewer;
+			if (prior.sandbox === undefined) delete process.env.BASECAMP_EXTERNAL_SANDBOX;
+			else process.env.BASECAMP_EXTERNAL_SANDBOX = prior.sandbox;
+		}
+	});
+
 	it("dispatch_agent uses buildPiArgs final task arg for long task text", async () => {
 		trackSkillInvocation("agents");
 		const longTask = "x".repeat(9_000);

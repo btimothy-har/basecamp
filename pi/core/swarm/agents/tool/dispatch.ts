@@ -117,6 +117,7 @@ export function registerDispatchAgentTool(
 			// dispatch keeps the workspace; the daemon owns teardown from acceptance on.
 			let provision: AgentWorkspaceProvision | null = null;
 			let agentLabel = requestedAgent ?? "ad-hoc";
+			let modelAliasFallback: string | null = null;
 			let dispatched = false;
 			// Whether the final attempt's dispatch frame reached the socket. Reset per attempt so it
 			// reflects the last attempt only; a post-send failure leaves teardown to the daemon.
@@ -160,6 +161,7 @@ export function registerDispatchAgentTool(
 
 						const { plan } = agentLaunch;
 						agentLabel = plan.agentLabel ?? "ad-hoc";
+						modelAliasFallback = plan.modelAliasFallback;
 						const taskSpec = plan.args.at(-1);
 						if (!taskSpec) throw new Error("Unable to build async task argument.");
 
@@ -210,12 +212,18 @@ export function registerDispatchAgentTool(
 				// The closure assigned this; TS's flow analysis cannot see across the callback.
 				const live = provision as AgentWorkspaceProvision | null;
 				const setupNote = live?.setupWarning ? `\n⚠ ${live.setupWarning}` : "";
+				const modelNote = modelAliasFallback
+					? `\nℹ model alias \`${modelAliasFallback}\` is not configured; the agent rides the session model.`
+					: "";
 				const branchNote = live?.branch
 					? ` → branch \`${live.branch}\` (when it finishes, \`git merge\` it to integrate; retasking the handle continues the same branch)`
 					: "";
 				return {
 					content: [
-						{ type: "text", text: `⏳ dispatched ${agentLabel} — handle ${agentHandle}${branchNote}${setupNote}` },
+						{
+							type: "text",
+							text: `⏳ dispatched ${agentLabel} — handle ${agentHandle}${branchNote}${setupNote}${modelNote}`,
+						},
 					],
 					details: { agentHandle, agent: agentLabel } satisfies DispatchDetails,
 				};

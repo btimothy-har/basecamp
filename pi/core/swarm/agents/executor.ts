@@ -15,9 +15,12 @@ const AGENT_BASE = path.join(os.tmpdir(), "basecamp-agents");
 const TASK_ARG_LIMIT = 8000;
 const VALID_THINKING_LEVELS = new Set(["off", "minimal", "low", "medium", "high", "xhigh"]);
 // Daemon report identity must be minted per run, and the bash-reviewer opt-out
-// pair must never reach a daemon-spawned agent: children do not inherit the
-// launch flags that complete the opt-out, so propagating the env half alone
-// would be dead weight at best and a partial disable signal at worst.
+// pair is stripped unconditionally here: this sanitize layer is spread first at
+// the dispatch merge, so buildAgentEnv (spread second) is the single place that
+// decides whether the pair reaches a child — and it re-adds the pair only when
+// the parent's full external-sandbox launch state holds (isExternalSandboxLaunch),
+// in which case the child argv also carries --unsafe-edit-sandboxed. An
+// environment-only chain can never assemble the complete disable state.
 const RESTRICTED_AGENT_SPAWN_ENV_VARS = new Set([
 	"BASECAMP_RUN_ID",
 	"BASECAMP_REPORT_TOKEN",
@@ -27,6 +30,22 @@ const RESTRICTED_AGENT_SPAWN_ENV_VARS = new Set([
 	"BASECAMP_BASH_REVIEWER",
 	"BASECAMP_EXTERNAL_SANDBOX",
 ]);
+
+/**
+ * Whether this process was launched in the full external-sandbox state: the
+ * bash-reviewer opt-out env pair plus the --unsafe-edit-sandboxed launch flag
+ * (the same trio pi/bash-reviewer requires to stand down). Only under this
+ * predicate does a dispatched child inherit the env pair and the launch flag —
+ * the flag is emitted solely when the parent's own argv carries it, so the
+ * propagation chain is transitively rooted in a human-issued launch flag.
+ */
+export function isExternalSandboxLaunch(
+	reviewerEnv: string | undefined,
+	sandboxEnv: string | undefined,
+	sandboxedFlag: boolean,
+): boolean {
+	return reviewerEnv === "off" && sandboxEnv === "1" && sandboxedFlag;
+}
 
 export function sanitizeAgentSpawnEnv(input: Record<string, string>): Record<string, string> {
 	const output: Record<string, string> = {};
@@ -87,6 +106,9 @@ export interface PiArgsOpts {
 	sessionId?: string;
 	extensionTools: string[];
 	workspace: RunWorkspace;
+	// Parent's full external-sandbox launch state (isExternalSandboxLaunch): the only
+	// case in which a child's argv carries --unsafe-edit-sandboxed.
+	externalSandboxLaunch: boolean;
 }
 
 export function ensureAgentDir(name: string): string {
@@ -151,6 +173,8 @@ export function buildPiArgs(
 ): { args: string[]; agentDir: string } {
 	const agentDir = ensureAgentDir(opts.name);
 	const args = ["pi", "--mode", "json", "-p"];
+
+	if (opts.externalSandboxLaunch) args.push("--unsafe-edit-sandboxed");
 
 	if (opts.model) args.push("--model", opts.model);
 

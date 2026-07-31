@@ -24,6 +24,7 @@ describe("agent launch helpers", () => {
 					name: "agent-name",
 					parentSession: "dispatcher-node",
 					project: "child-project",
+					externalSandboxLaunch: false,
 				});
 
 				assert.equal(env.BASECAMP_PROJECT, "child-project");
@@ -43,6 +44,65 @@ describe("agent launch helpers", () => {
 				if (priorAgentHandle === undefined) delete process.env.BASECAMP_AGENT_HANDLE;
 				else process.env.BASECAMP_AGENT_HANDLE = priorAgentHandle;
 			}
+		});
+	});
+
+	describe("sandbox-signal propagation", () => {
+		function withSandboxPair<T>(fn: () => T): T {
+			const prior = {
+				reviewer: process.env.BASECAMP_BASH_REVIEWER,
+				sandbox: process.env.BASECAMP_EXTERNAL_SANDBOX,
+			};
+			process.env.BASECAMP_BASH_REVIEWER = "off";
+			process.env.BASECAMP_EXTERNAL_SANDBOX = "1";
+			try {
+				return fn();
+			} finally {
+				if (prior.reviewer === undefined) delete process.env.BASECAMP_BASH_REVIEWER;
+				else process.env.BASECAMP_BASH_REVIEWER = prior.reviewer;
+				if (prior.sandbox === undefined) delete process.env.BASECAMP_EXTERNAL_SANDBOX;
+				else process.env.BASECAMP_EXTERNAL_SANDBOX = prior.sandbox;
+			}
+		}
+
+		const buildOpts = (externalSandboxLaunch: boolean) => ({
+			name: "agent-name",
+			parentSession: "dispatcher-node",
+			project: "child-project",
+			externalSandboxLaunch,
+		});
+
+		it("strips the reviewer pair without the full external-sandbox launch state", () => {
+			withSandboxPair(() => {
+				const env = buildAgentEnv(buildOpts(false));
+				assert.equal(env.BASECAMP_BASH_REVIEWER, undefined);
+				assert.equal(env.BASECAMP_EXTERNAL_SANDBOX, undefined);
+			});
+		});
+
+		it("propagates the reviewer pair under the full external-sandbox launch state", () => {
+			withSandboxPair(() => {
+				const env = buildAgentEnv(buildOpts(true));
+				assert.equal(env.BASECAMP_BASH_REVIEWER, "off");
+				assert.equal(env.BASECAMP_EXTERNAL_SANDBOX, "1");
+			});
+		});
+
+		it("keeps the pair out of the merged dispatch env — the merge that leaked it", () => {
+			// Regression for the two-layer contract: the dispatch tool spreads
+			// {...processEnvForSpawn(), ...plan.environment}. processEnvForSpawn strips the
+			// pair unconditionally, so buildAgentEnv's omission (not the sanitize) is what
+			// decides the merged result. A parent with the env pair but no launch flag must
+			// produce a merged env without the pair.
+			withSandboxPair(() => {
+				const merged = { ...processEnvForSpawn(), ...buildAgentEnv(buildOpts(false)) };
+				assert.equal(merged.BASECAMP_BASH_REVIEWER, undefined);
+				assert.equal(merged.BASECAMP_EXTERNAL_SANDBOX, undefined);
+
+				const sandboxed = { ...processEnvForSpawn(), ...buildAgentEnv(buildOpts(true)) };
+				assert.equal(sandboxed.BASECAMP_BASH_REVIEWER, "off");
+				assert.equal(sandboxed.BASECAMP_EXTERNAL_SANDBOX, "1");
+			});
 		});
 	});
 
