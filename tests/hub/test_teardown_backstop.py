@@ -223,6 +223,10 @@ def test_reconcile_one_row_failure_does_not_abort_remaining_rows(
 
     monkeypatch.setattr("basecamp.hub.swarm.process._process_group_is_runner", lambda _pgid: True)
     monkeypatch.setattr("basecamp.hub.swarm.process.terminate_process_group", lambda _pgid, **_kw: None)
+    # Teardown is gated on provable death, not on having terminated a runner — without
+    # this patch the real ps probe runs against pgids 1111/2222, making the test depend
+    # on the host process table.
+    monkeypatch.setattr("basecamp.hub.swarm.process._process_group_verified_dead", lambda _pgid: True)
     monkeypatch.setattr("basecamp.hub.swarm.process.teardown_agent_workspace", flaky_teardown)
     store.create_run(
         run_id="run-explodes",
