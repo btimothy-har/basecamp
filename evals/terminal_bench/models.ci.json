@@ -48,6 +48,72 @@
 						"high": "high",
 						"xhigh": "max"
 					}
+				},
+				{
+					"id": "qwen/qwen3.8-max",
+					"name": "Qwen3.8 Max",
+					"reasoning": true,
+					"input": ["text"],
+					"contextWindow": 1000000,
+					"maxTokens": 130000,
+					"cost": {
+						"input": 2.0,
+						"output": 6.0,
+						"cacheRead": 0.25,
+						"cacheWrite": 2.5
+					},
+					"thinkingLevelMap": {
+						"off": null,
+						"minimal": "low",
+						"low": "low",
+						"medium": "low",
+						"high": "high",
+						"xhigh": "max"
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4-pro",
+					"name": "DeepSeek V4 Pro",
+					"reasoning": true,
+					"input": ["text"],
+					"contextWindow": 1000000,
+					"maxTokens": 384000,
+					"cost": {
+						"input": 0.435,
+						"output": 0.87,
+						"cacheRead": 0.003625,
+						"cacheWrite": 0.003625
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": "low",
+						"low": "low",
+						"medium": "low",
+						"high": "high",
+						"xhigh": "max"
+					}
+				},
+				{
+					"id": "deepseek/deepseek-v4-flash-0731",
+					"name": "DeepSeek V4 Flash 0731",
+					"reasoning": true,
+					"input": ["text"],
+					"contextWindow": 1000000,
+					"maxTokens": 65536,
+					"cost": {
+						"input": 0.09,
+						"output": 0.18,
+						"cacheRead": 0.018,
+						"cacheWrite": 0.018
+					},
+					"thinkingLevelMap": {
+						"off": "none",
+						"minimal": "low",
+						"low": "low",
+						"medium": "low",
+						"high": "high",
+						"xhigh": "max"
+					}
 				}
 			]
 		}

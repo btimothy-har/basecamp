@@ -42,14 +42,25 @@ def test_amd64_preset_expands_to_five_shards_per_model() -> None:
     assert {entry["model"] for entry in entries} == {"openrouter/z-ai/glm-5.2"}
 
 
-def test_both_models_cross_product_with_shards() -> None:
-    entries = include(models="both")
+def test_all_models_cross_product_with_shards() -> None:
+    entries = include(models="all")
+    slugs = ("glm-5.2", "kimi-k3", "qwen3.8-max", "deepseek-v4-pro", "deepseek-v4-flash-0731")
 
-    assert len(entries) == 10
-    assert {entry["slug"] for entry in entries} == {"glm-5.2", "kimi-k3"}
-    for slug in ("glm-5.2", "kimi-k3"):
+    assert len(entries) == 5 * len(slugs)
+    assert {entry["slug"] for entry in entries} == set(slugs)
+    for slug in slugs:
         shards = [entry["shard"] for entry in entries if entry["slug"] == slug]
         assert shards == ["1", "2", "3", "long", "mem"]
+
+
+def test_every_leg_is_an_openrouter_id_backed_by_the_ci_models_file() -> None:
+    models_file = Path(__file__).resolve().parents[2] / "evals/terminal_bench/models.ci.json"
+    configured = {model["id"] for model in json.loads(models_file.read_text())["providers"]["openrouter"]["models"]}
+
+    for entry in include(models="all"):
+        provider, _, model_id = entry["model"].partition("/")
+        assert provider == "openrouter"
+        assert model_id in configured
 
 
 def test_long_and_mem_shard_concurrency_is_capped_below_short_shards() -> None:
@@ -92,8 +103,8 @@ def test_smoke_run_is_one_serial_job_on_a_tight_budget() -> None:
 
 
 def test_per_model_thinking_resolves_defaults_and_explicit_level_overrides() -> None:
-    assert {entry["thinking"] for entry in include(models="both")} == {"xhigh"}
-    assert {entry["thinking"] for entry in include(models="both", thinking="low")} == {"low"}
+    assert {entry["thinking"] for entry in include(models="all")} == {"xhigh"}
+    assert {entry["thinking"] for entry in include(models="all", thinking="low")} == {"low"}
 
 
 def test_config_summary_reports_resolved_values() -> None:
@@ -105,7 +116,7 @@ def test_config_summary_reports_resolved_values() -> None:
 
 def test_shard_count_output_matches_the_matrix_size() -> None:
     assert build()["shard-count"] == "5"
-    assert build(models="both")["shard-count"] == "10"
+    assert build(models="all")["shard-count"] == "25"
     assert build(task_set="all")["shard-count"] == "1"
 
 
