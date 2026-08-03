@@ -3,7 +3,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { isCopilotMode, PLAN_TOOL_NAME } from "#core/agent-mode/copilot.ts";
+import { isCopilotMode } from "#core/agent-mode/copilot.ts";
 import { getAgentMode } from "#core/agent-mode/index.ts";
 import { type CatalogItem, listCatalogItemsByType } from "#core/catalog/index.ts";
 import { isSubagent } from "#core/host/env.ts";
@@ -119,7 +119,6 @@ export interface AssembleOptions {
 	workspace: WorkspaceState | null;
 	project: ProjectState | null;
 	effectiveCwd: string;
-	toolItems: CatalogItem[];
 	skillItems: CatalogItem[];
 	agentItems: CatalogItem[];
 	contextFiles: ContextFile[];
@@ -129,7 +128,7 @@ export interface AssembleOptions {
 }
 
 export function assemblePrompt(opts: AssembleOptions): string {
-	const { workspace, project, effectiveCwd, toolItems, skillItems, agentItems, contextFiles, modelId } = opts;
+	const { workspace, project, effectiveCwd, skillItems, agentItems, contextFiles, modelId } = opts;
 	const agentMode = getAgentMode();
 	const workingStyle = project?.workingStyle ?? "engineering";
 	const parts: string[] = [];
@@ -168,14 +167,10 @@ export function assemblePrompt(opts: AssembleOptions): string {
 	const craft = loadPromptFile("craft.md").trim();
 	if (craft) parts.push(craft);
 
-	// Copilot is a locked, launch-only mode that stages work via launch_workstream and never implements in-session,
-	// so plan() is hidden from its capabilities index (it is also hard-blocked at call time by pi-tasks).
-	const capabilityToolItems = isCopilotMode(agentMode)
-		? toolItems.filter((item) => item.name !== PLAN_TOOL_NAME)
-		: toolItems;
+	// Tool contracts are deliberately absent here: they reach the model through the API
+	// tools array. Copilot's plan() exclusion is the hard tool_call block in pi-tasks.
 	parts.push(
 		buildCapabilitiesIndex({
-			toolItems: capabilityToolItems,
 			skillItems,
 			agentItems,
 			includeAgents: !opts.agentPrompt,
@@ -206,7 +201,6 @@ export function registerPrompt(pi: ExtensionAPI): void {
 		const project = getProjectState();
 		const effectiveCwd = getWorkspaceEffectiveCwd();
 		const catalogContext = { cwd: effectiveCwd };
-		const toolItems = listCatalogItemsByType("tools", catalogContext);
 		const skillItems = listCatalogItemsByType("skills", catalogContext);
 		const agentItems = listCatalogItemsByType("agents", catalogContext);
 		const contextFiles = discoverContextFiles(effectiveCwd);
@@ -224,7 +218,6 @@ export function registerPrompt(pi: ExtensionAPI): void {
 				workspace,
 				project,
 				effectiveCwd,
-				toolItems,
 				skillItems,
 				agentItems,
 				contextFiles,

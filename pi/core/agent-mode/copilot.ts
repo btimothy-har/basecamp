@@ -2,10 +2,11 @@
  * Copilot mode specifics.
  *
  * copilot is the locked, launch-only agent mode: entered solely via `pi --copilot`,
- * immutable once set, and it hides the plan() tool. This module gathers what is
- * peculiar to copilot — the launch predicate, the mode predicate, and the name of
- * the built-in tool it disables — so the generic state machine in index.ts stays
- * free of copilot special-casing.
+ * immutable once set, and it blocks plan() at call time (the tool stays registered
+ * — and therefore visible in the API tools array — because it must remain callable
+ * in every other mode). This module gathers what is peculiar to copilot — the
+ * launch predicate, the mode predicate, and the name of the tool it blocks — so
+ * the generic state machine in index.ts stays free of copilot special-casing.
  *
  * The launch predicate reads argv rather than `pi.getFlag("copilot")` because Pi
  * applies CLI flag values only after every extension factory has run. Consumers
@@ -22,7 +23,7 @@
 
 import type { AgentMode } from "./index.ts";
 
-/** The Pi built-in plan() tool that copilot mode hides. */
+/** The plan() tool that copilot mode blocks at call time (pi/tasks/tools/guards.ts). */
 export const PLAN_TOOL_NAME = "plan";
 
 /** Registered by registerSession, read here — one name so the two cannot drift. */

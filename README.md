@@ -213,7 +213,7 @@ basecamp replaces the default system prompt via a `before_agent_start` hook. Thi
 - **Consistency** — Same behavior across sessions; immune to upstream prompt changes
 - **Customization** — Prompts designed for your specific workflow
 
-Pi's tool definitions and skill listings are sourced dynamically and included in the assembled prompt.
+Pi's skill and agent listings are sourced dynamically and included in the assembled prompt; tool contracts reach the model through the API tools array and are never listed in the prompt.
 
 ### Prompt Assembly
 
@@ -228,7 +228,7 @@ voice.md (output shape; primary sessions) then craft.md (code quality; always)
          ↓
 environment.md (CLI usage, Python/uv)
          ↓
-capabilities index (tools, skills, and parent-session agents)
+capabilities index (skills and parent-session agents; tool contracts ride the API tools array)
          ↓
 project context (configured context plus AGENTS.md/CLAUDE.md)
          ↓

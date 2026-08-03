@@ -1,5 +1,8 @@
 /**
- * Capability catalog providers for Pi-native tools and skills.
+ * Capability catalog provider for Pi-native skills.
+ *
+ * There is deliberately no tools provider: tool contracts reach the model
+ * through the API tools array, so the prompt never lists them.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -7,21 +10,6 @@ import { isModelInvocationDisabled } from "#core/skills/skill-content.ts";
 import { registerCatalogProvider } from "./index.ts";
 
 export function registerCatalogProviders(pi: ExtensionAPI): void {
-	registerCatalogProvider({
-		id: "tools",
-		list: () => {
-			const activeNames = new Set(pi.getActiveTools());
-			return pi
-				.getAllTools()
-				.filter((tool) => activeNames.has(tool.name))
-				.map((tool) => ({
-					type: "tools" as const,
-					name: tool.name,
-					description: tool.description,
-				}));
-		},
-	});
-
 	registerCatalogProvider({
 		id: "skills",
 		list: () =>
