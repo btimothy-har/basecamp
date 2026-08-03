@@ -9,7 +9,10 @@ on:
         options:
         - glm-5.2
         - kimi-k3
-        - both
+        - qwen3.8-max
+        - deepseek-v4-pro
+        - deepseek-v4-flash-0731
+        - all
         default: glm-5.2
       task-set:
         description: Task selection preset (docker-smoke proves the pipeline with one short task)
@@ -48,7 +51,7 @@ on:
   # schedule:
   # - cron: "0 6 * * 1"
   # Scheduled runs fall back via the || expressions in the setup job
-  # (inputs.* are empty): both models at per-model defaults.
+  # (inputs.* are empty): every model leg at per-model defaults.
 
 # Scheduled runs share one group so a weekly run never overlaps itself, while
 # each manual dispatch gets its own group keyed by run id. Serializing manual
@@ -82,9 +85,9 @@ jobs:
       id: matrix
       env:
         # Scheduled runs see empty inputs.*; the fallbacks give the weekly run
-        # both models at per-model thinking defaults, while ad hoc dispatches
+        # every model leg at per-model thinking defaults, while ad hoc dispatches
         # default to a single glm-5.2 leg via the input defaults above.
-        MODELS: ${{ inputs.models || 'both' }}
+        MODELS: ${{ inputs.models || 'all' }}
         TASK_SET: ${{ inputs.task-set || 'docker-amd64' }}
         ATTEMPTS: ${{ inputs.attempts || '3' }}
         CONCURRENCY: ${{ inputs.concurrency || '4' }}

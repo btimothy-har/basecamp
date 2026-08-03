@@ -20,10 +20,17 @@ from .run import PRESET_NAMES, ShardProfile, resolve_tasks, shard_plan
 _MODELS: Final = {
     "glm-5.2": "openrouter/z-ai/glm-5.2",
     "kimi-k3": "openrouter/moonshotai/kimi-k3",
+    "qwen3.8-max": "openrouter/qwen/qwen3.8-max",
+    "deepseek-v4-pro": "openrouter/deepseek/deepseek-v4-pro",
+    # Pinned snapshot, not the rolling deepseek-v4-flash alias: an eval leg has
+    # to name the exact weights it scored.
+    "deepseek-v4-flash-0731": "openrouter/deepseek/deepseek-v4-flash-0731",
 }
-# One level per model. xhigh maps to each provider's maximum effort via the
-# thinkingLevelMap in models.ci.json.
-_DEFAULT_THINKING: Final = {"glm-5.2": "xhigh", "kimi-k3": "xhigh"}
+# One level per model, keyed so a leg can diverge; every leg currently runs at
+# xhigh, which maps to each provider's maximum effort via the thinkingLevelMap
+# in models.ci.json.
+_DEFAULT_THINKING: Final = dict.fromkeys(_MODELS, "xhigh")
+_ALL_MODELS: Final = "all"
 _PER_MODEL: Final = "per-model"
 _PI_VERSION_PATTERN: Final = re.compile(r"\d+\.\d+\.\d+")
 
@@ -58,7 +65,7 @@ def _positive_int(name: str, value: str) -> int:
 
 
 def _model_slugs(models: str) -> tuple[str, ...]:
-    if models == "both":
+    if models == _ALL_MODELS:
         return tuple(_MODELS)
     if models in _MODELS:
         return (models,)
