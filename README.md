@@ -228,7 +228,7 @@ voice.md (output shape; primary sessions) then craft.md (code quality; always)
          ↓
 environment.md (CLI usage, Python/uv)
          ↓
-capabilities index (tools, skills, and parent-session agents)
+capabilities index (skills and parent-session agents; tool contracts ride the API tools array)
          ↓
 project context (configured context plus AGENTS.md/CLAUDE.md)
          ↓

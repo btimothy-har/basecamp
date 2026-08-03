@@ -2,7 +2,7 @@
 
 The context/prompt layer — assembles the replacement system prompt on every agent start.
 
-Basecamp fully *replaces* pi's default system prompt rather than appending to it, so this domain must provide everything: environment, working style, project context, and the tool/skill/agent index. It binds `before_agent_start`, builds the prompt, and returns it.
+Basecamp fully *replaces* pi's default system prompt rather than appending to it, so this domain must provide everything: environment, working style, project context, and the skill/agent index. Tools are the one capability the prompt never lists — their contracts (description + parameter schema) reach the model through the API tools array on every request, so a prompt listing would be a second copy of the same text in the same cached prefix. It binds `before_agent_start`, builds the prompt, and returns it.
 
 ## Architecture: 6 categories, 9 blocks
 
@@ -42,7 +42,7 @@ Mode and style are the *what* and the *how* of a session. Test a fragment by ask
 
 Consequences worth stating, because each was a live duplication:
 
-- **Tool mechanics never go in a prompt fragment.** `buildCapabilitiesIndex` injects every registered tool description verbatim, so restating a calling contract in a fragment presents it twice in one prompt. Put the contract in the tool description; keep only policy a tool cannot assert (for example "always maintain tasks") in the style.
+- **Tool mechanics never go in a prompt fragment.** The API tools array delivers every registered tool description verbatim (plus its parameter schema), so restating a calling contract in a fragment presents it twice in one request. Put the contract in the tool description; keep only policy a tool cannot assert (for example "always maintain tasks") in the style. The same rule is why `buildCapabilitiesIndex` lists skills and agents but no tools.
 - **Cross-tool sequencing goes in a skill**, not a fragment — no single tool description owns a multi-tool workflow. The `workstreams` skill is the worked example.
 - **Machine facts stay in `environment.md`, even when a skill covers the topic.** Python/uv lives here; `python-development` owns how to write good Python.
 - **Taste never goes in `environment.md`.** Facts are not preferences.
@@ -91,11 +91,11 @@ Copilot is a distinct *activity* — orient the repo, make the choice set clear,
 
 What remains inline is a short "Work with the user" section that names which artifact to lead with — the repo picture, the choice set, or the recommended workstream. That reads as mode content (a *what*, not a *how*), and the call is genuinely arguable: it sits inside the mode because a single-purpose `styles/copilot.md` would hold ~50 words that only copilot ever loads, so the **consumer-divergence test rejects it** — the boundary would add no composition, only taxonomy. When ownership and divergence conflict, divergence wins: it is about composition value, ownership only about tidiness. Not every mode needs a style.
 
-The `copilot` mode is load-bearing beyond prose: `isCopilotMode` suppresses the style, hides `plan` from the capabilities index, hard-blocks the `plan` tool call in `#tasks`, and locks shift+tab. Do not remove it.
+The `copilot` mode is load-bearing beyond prose: `isCopilotMode` suppresses the style, hard-blocks the `plan` tool call in `#tasks`, and locks shift+tab. Do not remove it. (`plan` stays registered — and therefore visible in the tools array — because it must remain callable in every other mode; the call-time block is the gate.)
 
-Because copilot is launch-only and immutable, capabilities can be scoped by **gating registration** rather than filtering the index — see `pi/workstreams/index.ts`. The gating predicate must also be resolvable at extension-load time, which is why copilot-launch reads `process.argv` rather than `pi.getFlag`: Pi applies flag values only after extensions activate. An unregistered tool can never become callable mid-session, so unlike `plan` it needs no call-time block.
+Because copilot is launch-only and immutable, capabilities can be scoped by **gating registration** — see `pi/workstreams/index.ts`. The gating predicate must be resolvable at extension-load time, which is why copilot-launch reads `process.argv` rather than `pi.getFlag`: Pi applies flag values only after extensions activate. An unregistered tool can never become callable mid-session, so unlike `plan` it needs no call-time block.
 
-The workstream **tool contracts live in the tool descriptions**, which the index already injects; `modes/copilot.md` keeps only the handful of facts no single tool description can assert (list before create, an edit does not reach a running session, launching is not starting, cross-repo launch, pull-based handles). A `workstreams` skill was tried and removed: ~320 of its 422 words restated those descriptions, and the ~100 that remained were too few to justify a file the copilot would have to load in every session.
+The workstream **tool contracts live in the tool descriptions**, which the tools array already delivers; `modes/copilot.md` keeps only the handful of facts no single tool description can assert (list before create, an edit does not reach a running session, launching is not starting, cross-repo launch, pull-based handles). A `workstreams` skill was tried and removed: ~320 of its 422 words restated those descriptions, and the ~100 that remained were too few to justify a file the copilot would have to load in every session.
 
 ## Skill lifecycle language
 
