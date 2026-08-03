@@ -1,16 +1,18 @@
 /**
  * Shared capability catalog.
  *
- * Extensions register lightweight providers for capability metadata (tools,
- * skills, agents). Core consumes the catalog for prompt capability summaries,
- * while feature modules keep ownership of their own domain-specific discovery.
+ * Extensions register lightweight providers for capability metadata (skills,
+ * agents). Core consumes the catalog for prompt capability summaries, while
+ * feature modules keep ownership of their own domain-specific discovery.
+ * Tools are not catalogued: their contracts reach the model through the API
+ * tools array, never through the prompt.
  *
  * Re-registering a provider with the same id replaces the previous provider;
  * the composition root re-registers everything on each load (including
  * /reload), so the registry is plain module state.
  */
 
-export type CatalogType = "tools" | "skills" | "agents" | (string & {});
+export type CatalogType = "skills" | "agents" | (string & {});
 
 export interface CatalogItem {
 	type: CatalogType;

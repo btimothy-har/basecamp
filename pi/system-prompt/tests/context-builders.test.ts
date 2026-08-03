@@ -81,8 +81,6 @@ describe("capabilities index", () => {
 			"- marimo — Reactive notebooks.",
 		]);
 	});
-
-
 });
 
 describe("unsafe-edit context", () => {
