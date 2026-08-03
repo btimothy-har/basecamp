@@ -35,7 +35,6 @@ function workspace(overrides: Partial<WorkspaceState>): WorkspaceState {
 describe("capabilities index", () => {
 	it("distinguishes loading a skill from applying it", () => {
 		const index = buildCapabilitiesIndex({
-			toolItems: [],
 			skillItems: [],
 			agentItems: [],
 			includeAgents: false,
@@ -47,30 +46,43 @@ describe("capabilities index", () => {
 		assert.doesNotMatch(index, /skill\(\{ name:/);
 	});
 
-	it("flattens a multi-line tool description onto one index line", () => {
-		// Tool descriptions are authored as multi-line prose but the index is a one-line-per-item
+	it("lists no tools — tool contracts ride the API tools array", () => {
+		const index = buildCapabilitiesIndex({
+			skillItems: [{ type: "skills", name: "sql", description: "SQL guidance." }],
+			agentItems: [{ type: "agents", name: "scout", description: "Codebase investigation." }],
+			includeAgents: true,
+		});
+
+		assert.match(index, /^Available in this session: 1 skills, 1 agents\.$/m);
+		assert.doesNotMatch(index, /\btools\b/i);
+	});
+
+	it("flattens a multi-line skill description onto one index line", () => {
+		// Descriptions are authored as multi-line prose but the index is a one-line-per-item
 		// list, so a leaked newline would corrupt every line after it.
-		const toolItems: CatalogItem[] = [
+		const skillItems: CatalogItem[] = [
 			{
-				type: "tools",
-				name: "bash",
-				description: "\n  Run a shell command.\n\n\tSupports:\n    - pipes\n    - redirects\n  ",
+				type: "skills",
+				name: "sql",
+				description: "\n  SQL guidance.\n\n\tCovers:\n    - CTEs\n    - schemas\n  ",
 			},
-			{ type: "tools", name: "ls", description: "List a directory." },
+			{ type: "skills", name: "marimo", description: "Reactive notebooks." },
 		];
 
-		const index = buildCapabilitiesIndex({ toolItems, skillItems: [], agentItems: [], includeAgents: false });
+		const index = buildCapabilitiesIndex({ skillItems, agentItems: [], includeAgents: false });
 
 		const lines = index.split("\n");
-		const heading = lines.indexOf("Tools (2):");
+		const heading = lines.indexOf("Skills (2):");
 		assert.notEqual(heading, -1);
 		// every whitespace run — newlines, tabs, indentation — collapses to a single space,
 		// and leading/trailing whitespace is dropped
 		assert.deepEqual(lines.slice(heading + 1, heading + 3), [
-			"- bash — Run a shell command. Supports: - pipes - redirects",
-			"- ls — List a directory.",
+			"- sql — SQL guidance. Covers: - CTEs - schemas",
+			"- marimo — Reactive notebooks.",
 		]);
 	});
+
+
 });
 
 describe("unsafe-edit context", () => {

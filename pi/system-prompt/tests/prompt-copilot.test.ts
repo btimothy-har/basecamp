@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import { describe, it } from "node:test";
-import type { CatalogItem } from "#core/catalog/index.ts";
 import { assemblePrompt } from "#system-prompt/prompt.ts";
 import { useAgentMode, useTempHome } from "./helpers.ts";
 
@@ -18,7 +17,6 @@ describe("assemblePrompt copilot", () => {
 			workspace: null,
 			project: null,
 			effectiveCwd: "/repo",
-			toolItems: [],
 			skillItems: [],
 			agentItems: [],
 			contextFiles: [],
@@ -45,7 +43,6 @@ describe("assemblePrompt copilot", () => {
 			workspace: null,
 			project: null,
 			effectiveCwd: "/repo",
-			toolItems: [],
 			skillItems: [],
 			agentItems: [],
 			contextFiles: [],
@@ -73,50 +70,15 @@ describe("assemblePrompt copilot", () => {
 		assert.doesNotMatch(prompt, /plan\(\)/);
 		assert.doesNotMatch(prompt, /siblings, not replacements/);
 
-		// per-call contracts belong to the tool descriptions the index already injects
+		// per-call contracts belong to the tool descriptions in the API tools array
 		assert.doesNotMatch(prompt, /Record-only: it does not provision a worktree/);
 		assert.doesNotMatch(prompt, /bumping its version and keeping the old version/);
 		assert.doesNotMatch(prompt, /provision its `copilot\/<slug>` worktree \(idempotent\)/);
 		assert.doesNotMatch(prompt, /set_workstream_status/);
-	});
 
-	it("hides the plan tool from the copilot capabilities index but keeps it in other modes", async (t) => {
-		const toolItems: CatalogItem[] = [
-			{ type: "tools", name: "plan", description: "Submit a plan" },
-			{ type: "tools", name: "bash", description: "Run a command" },
-		];
-		await useTempHome(t);
-
-		useAgentMode(t, "copilot");
-		const copilotPrompt = assemblePrompt({
-			workspace: null,
-			project: null,
-			effectiveCwd: "/repo",
-			toolItems,
-			skillItems: [],
-			agentItems: [],
-			contextFiles: [],
-			readOnly: false,
-		});
-
-		assert.match(copilotPrompt, /Tools \(1\):/);
-		assert.match(copilotPrompt, /^- bash — Run a command$/m);
-		assert.doesNotMatch(copilotPrompt, /^- plan —/m);
-
-		useAgentMode(t, "work");
-		const workPrompt = assemblePrompt({
-			workspace: null,
-			project: null,
-			effectiveCwd: "/repo",
-			toolItems,
-			skillItems: [],
-			agentItems: [],
-			contextFiles: [],
-			readOnly: false,
-		});
-
-		assert.match(workPrompt, /Tools \(2\):/);
-		assert.match(workPrompt, /^- plan — Submit a plan$/m);
+		// no per-tool listing in any mode: tool contracts ride the API tools array, and
+		// copilot's plan() exclusion is the hard tool_call block in pi-tasks
+		assert.doesNotMatch(prompt, /^Tools \(\d+\):$/m);
 	});
 
 	it("places Repo Logseq after project context and before the environment block", async (t) => {
@@ -134,7 +96,6 @@ describe("assemblePrompt copilot", () => {
 				warnings: [],
 			},
 			effectiveCwd: "/repo",
-			toolItems: [],
 			skillItems: [],
 			agentItems: [],
 			contextFiles: [],
@@ -160,7 +121,6 @@ describe("assemblePrompt copilot", () => {
 			workspace: null,
 			project: null,
 			effectiveCwd: "/repo",
-			toolItems: [],
 			skillItems: [],
 			agentItems: [],
 			contextFiles: [],

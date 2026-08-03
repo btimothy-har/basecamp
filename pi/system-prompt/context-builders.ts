@@ -102,11 +102,12 @@ function ensureBlankLine(lines: string[]): void {
 /**
  * Build a compact capabilities index for the system prompt.
  *
- * Lists capability names and descriptions grouped by type. Full skill
- * instructions remain on demand through the `skill` tool.
+ * Lists skill and agent names with descriptions. Tools are deliberately
+ * absent: their contracts already reach the model through the API tools
+ * array, so a prompt listing would be a second copy of the same text.
+ * Full skill instructions remain on demand through the `skill` tool.
  */
 export function buildCapabilitiesIndex(opts: {
-	toolItems: CatalogItem[];
 	skillItems: CatalogItem[];
 	agentItems: CatalogItem[];
 	includeAgents: boolean;
@@ -115,14 +116,12 @@ export function buildCapabilitiesIndex(opts: {
 	const agentItems = opts.includeAgents ? opts.agentItems : [];
 
 	const summaryCounts = [
-		`${opts.toolItems.length} tools`,
 		`${opts.skillItems.length} skills`,
 		...(opts.includeAgents ? [`${agentItems.length} agents`] : []),
 	];
 	lines.push(`Available in this session: ${summaryCounts.join(", ")}.`);
 	lines.push("");
 
-	pushCapabilitySection(lines, "Tools", opts.toolItems);
 	pushCapabilitySection(lines, "Skills", opts.skillItems);
 	pushCapabilitySection(lines, "Agents", agentItems);
 
