@@ -45,7 +45,7 @@ on:
       pi-version:
         description: Pi version under evaluation
         type: string
-        default: "0.80.7"
+        default: "0.83.0"
   # Weekly cron (Monday 06:00 UTC) intentionally disabled until the first
   # dispatched runs prove the pipeline. Re-enable by restoring:
   # schedule:
@@ -92,7 +92,7 @@ jobs:
         ATTEMPTS: ${{ inputs.attempts || '3' }}
         CONCURRENCY: ${{ inputs.concurrency || '4' }}
         THINKING: ${{ inputs.thinking || 'per-model' }}
-        PI_VERSION: ${{ inputs.pi-version || '0.80.7' }}
+        PI_VERSION: ${{ inputs.pi-version || '0.83.0' }}
       run: |
         set -euo pipefail
         # Validation, the model legs table, and the leg x shard cross product

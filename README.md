@@ -367,7 +367,7 @@ make eval EVAL_ATTEMPTS=3 EVAL_CONCURRENCY=2
 
 # Change model/runtime settings
 make eval EVAL_MODEL=shopify/fireworks:accounts/fireworks/models/glm-5p2 \
-  EVAL_THINKING=high EVAL_PI_VERSION=0.80.7
+  EVAL_THINKING=high EVAL_PI_VERSION=0.83.0
 
 # Use Docker, omit models.json, or change the result root
 make eval EVAL_ENGINE=docker EVAL_EXTRA=--no-models \
