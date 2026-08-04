@@ -12,6 +12,10 @@ on:
         - qwen3.8-max
         - deepseek-v4-pro
         - deepseek-v4-flash-0731
+        - gpt-5.6-terra
+        - gpt-5.6-sol
+        - opus-5
+        - opus-4.8
         - all
         default: glm-5.2
       task-set:
@@ -41,6 +45,9 @@ on:
         - medium
         - high
         - xhigh
+        # Only the Anthropic/OpenAI legs distinguish max from xhigh; on the
+        # open-weight legs their maps already send provider-max at xhigh.
+        - max
         default: per-model
       pi-version:
         description: Pi version under evaluation

@@ -44,7 +44,17 @@ def test_amd64_preset_expands_to_five_shards_per_model() -> None:
 
 def test_all_models_cross_product_with_shards() -> None:
     entries = include(models="all")
-    slugs = ("glm-5.2", "kimi-k3", "qwen3.8-max", "deepseek-v4-pro", "deepseek-v4-flash-0731")
+    slugs = (
+        "glm-5.2",
+        "kimi-k3",
+        "qwen3.8-max",
+        "deepseek-v4-pro",
+        "deepseek-v4-flash-0731",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "opus-5",
+        "opus-4.8",
+    )
 
     assert len(entries) == 5 * len(slugs)
     assert {entry["slug"] for entry in entries} == set(slugs)
@@ -61,6 +71,29 @@ def test_every_leg_is_an_openrouter_id_backed_by_the_ci_models_file() -> None:
         provider, _, model_id = entry["model"].partition("/")
         assert provider == "openrouter"
         assert model_id in configured
+
+
+def test_only_the_frontier_legs_separate_max_from_the_xhigh_they_run_at() -> None:
+    """The open-weight maps already send provider-max at xhigh, so the Anthropic and
+    OpenAI legs are the only ones where the workflow's `max` override changes effort."""
+    models_file = Path(__file__).resolve().parents[2] / "evals/terminal_bench/models.ci.json"
+    levels = {
+        model["id"]: model["thinkingLevelMap"]
+        for model in json.loads(models_file.read_text())["providers"]["openrouter"]["models"]
+    }
+    frontier = {
+        "openai/gpt-5.6-terra",
+        "openai/gpt-5.6-sol",
+        "anthropic/claude-opus-5",
+        "anthropic/claude-opus-4.8",
+    }
+
+    for model_id in frontier:
+        assert levels[model_id]["xhigh"] == "xhigh"
+        assert levels[model_id]["max"] == "max"
+    for model_id in set(levels) - frontier:
+        assert levels[model_id]["xhigh"] == "max"
+        assert "max" not in levels[model_id]
 
 
 def test_long_and_mem_shard_concurrency_is_capped_below_short_shards() -> None:
@@ -116,7 +149,7 @@ def test_config_summary_reports_resolved_values() -> None:
 
 def test_shard_count_output_matches_the_matrix_size() -> None:
     assert build()["shard-count"] == "5"
-    assert build(models="all")["shard-count"] == "25"
+    assert build(models="all")["shard-count"] == "45"
     assert build(task_set="all")["shard-count"] == "1"
 
 
