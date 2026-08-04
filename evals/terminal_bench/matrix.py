@@ -25,10 +25,22 @@ _MODELS: Final = {
     # Pinned snapshot, not the rolling deepseek-v4-flash alias: an eval leg has
     # to name the exact weights it scored.
     "deepseek-v4-flash-0731": "openrouter/deepseek/deepseek-v4-flash-0731",
+    # Frontier legs, also via OpenRouter so the whole matrix keeps one credential
+    # and one canary. Neither vendor publishes dated snapshots here, so these four
+    # name rolling aliases and a score cannot pin the weights the way the DeepSeek
+    # Flash leg does.
+    "gpt-5.6-terra": "openrouter/openai/gpt-5.6-terra",
+    "gpt-5.6-sol": "openrouter/openai/gpt-5.6-sol",
+    "opus-5": "openrouter/anthropic/claude-opus-5",
+    "opus-4.8": "openrouter/anthropic/claude-opus-4.8",
 }
-# One level per model, keyed so a leg can diverge; every leg currently runs at
-# xhigh, which maps to each provider's maximum effort via the thinkingLevelMap
-# in models.ci.json.
+# One level per model, keyed so a leg can diverge; every leg runs at xhigh. For
+# the open-weight legs that is already the provider's ceiling (their maps top out
+# by sending "max"), while the Anthropic/OpenAI legs expose a further "max" above
+# xhigh. They stay at xhigh deliberately: both vendors name xhigh as the setting
+# for coding and agentic work and warn that max overthinks, and these tasks run in
+# CPU-capped containers where extra reasoning buys wall clock against the agent
+# timeout. Reach max through the workflow's thinking override to A/B it.
 _DEFAULT_THINKING: Final = dict.fromkeys(_MODELS, "xhigh")
 _ALL_MODELS: Final = "all"
 _PER_MODEL: Final = "per-model"
