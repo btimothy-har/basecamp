@@ -199,7 +199,7 @@ def test_every_shard_leg_passes_launcher_validation() -> None:
             concurrency=entry["concurrency"],
             model=entry["model"],
             thinking=entry["thinking"],
-            pi_version="0.80.7",
+            pi_version="0.83.0",
             models_file=None,
             jobs_dir=Path("/tmp/jobs"),
             install_only=False,

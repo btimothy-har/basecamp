@@ -254,7 +254,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--concurrency", type=_positive_int, default=1)
     parser.add_argument("--model", default="openai/gpt-5.6-sol")
     parser.add_argument("--thinking", default="xhigh")
-    parser.add_argument("--pi-version", default="0.80.7")
+    parser.add_argument("--pi-version", default="0.83.0")
     parser.add_argument("--models-file", type=Path, default=_DEFAULT_MODELS_FILE)
     parser.add_argument("--no-models", action="store_true")
     parser.add_argument("--jobs-dir", type=Path, default=_DEFAULT_JOBS_DIR)

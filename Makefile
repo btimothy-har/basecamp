@@ -6,7 +6,7 @@ EVAL_ATTEMPTS ?= 1
 EVAL_CONCURRENCY ?= 1
 EVAL_MODEL ?= openai/gpt-5.6-sol
 EVAL_THINKING ?= xhigh
-EVAL_PI_VERSION ?= 0.80.7
+EVAL_PI_VERSION ?= 0.83.0
 EVAL_JOBS_DIR ?= $(HOME)/evals/basecamp-terminal-bench/jobs
 EVAL_EXTRA ?=
 
