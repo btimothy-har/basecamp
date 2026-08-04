@@ -19,7 +19,6 @@ def options(tmp_path: Path, **overrides) -> run.LaunchOptions:
         "attempts": 1,
         "concurrency": 1,
         "model": "openai/gpt-5.6-sol",
-        "profile": "single",
         "thinking": "xhigh",
         "pi_version": "0.80.7",
         "models_file": tmp_path / "models.json",

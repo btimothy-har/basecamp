@@ -198,7 +198,6 @@ def test_every_shard_leg_passes_launcher_validation() -> None:
             attempts=2,
             concurrency=entry["concurrency"],
             model=entry["model"],
-            profile="single",
             thinking=entry["thinking"],
             pi_version="0.80.7",
             models_file=None,

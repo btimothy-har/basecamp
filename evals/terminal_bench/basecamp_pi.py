@@ -21,6 +21,7 @@ _PROFILE: Final = "basecamp-pi-single"
 _PI_PACKAGE: Final = "@earendil-works/pi-coding-agent"
 _NODE_MAJOR: Final = 24
 _ARCHIVE_MEMBERS: Final = ("package.json", "package-lock.json", "pi")
+_APT_PACKAGES: Final = ("ca-certificates", "coreutils", "curl", "tar")
 _CONTAINER_ARCHIVE: Final = "/tmp/basecamp-eval-source.tar"
 _CONTAINER_MODELS: Final = "/tmp/basecamp-eval-models.json"
 _CONTAINER_SOURCE: Final = "$HOME/.basecamp-eval/source"
@@ -93,7 +94,7 @@ def _resolve_commit(repository: Path, revision: str) -> str:
     return _run_git(repository, "revision resolution", "rev-parse", "--verify", f"{revision}^{{commit}}")
 
 
-def _create_archive(repository: Path, commit: str, archive: Path, members: tuple[str, ...] = _ARCHIVE_MEMBERS) -> str:
+def _create_archive(repository: Path, commit: str, archive: Path) -> str:
     _run_git(
         repository,
         "archive creation",
@@ -102,7 +103,7 @@ def _create_archive(repository: Path, commit: str, archive: Path, members: tuple
         f"--output={archive}",
         commit,
         "--",
-        *members,
+        *_ARCHIVE_MEMBERS,
     )
     with archive.open("rb") as source:
         return hashlib.file_digest(source, "sha256").hexdigest()
@@ -111,11 +112,7 @@ def _create_archive(repository: Path, commit: str, archive: Path, members: tuple
 class BasecampPiSingle(Pi):
     """Pi with Basecamp's worker-like, single-process surface."""
 
-    # Committed content packaged into the trial container, and the profile's
-    # session-surface env. Class attributes (not module constants) so profile
-    # subclasses override them without duplicating the install machinery.
-    ARCHIVE_MEMBERS: ClassVar[tuple[str, ...]] = _ARCHIVE_MEMBERS
-    APT_PACKAGES: ClassVar[tuple[str, ...]] = ("ca-certificates", "coreutils", "curl", "tar")
+    # The profile's session-surface env.
     PROFILE_ENV: ClassVar[dict[str, str]] = {
         "BASECAMP_AGENT_DEPTH": "1",
         "BASECAMP_AGENT_MAX_DEPTH": "1",
@@ -188,7 +185,7 @@ class BasecampPiSingle(Pi):
     async def _upload_source(self, environment: BaseEnvironment) -> str:
         with tempfile.TemporaryDirectory(prefix="basecamp-eval-") as directory:
             archive = Path(directory) / "source.tar"
-            digest = _create_archive(self._basecamp_repository, self._basecamp_commit, archive, self.ARCHIVE_MEMBERS)
+            digest = _create_archive(self._basecamp_repository, self._basecamp_commit, archive)
             await environment.upload_file(archive, _CONTAINER_ARCHIVE)
         return digest
 
@@ -270,9 +267,6 @@ class BasecampPiSingle(Pi):
             raise RuntimeProbeError(output)
         return versions
 
-    async def _install_profile_extras(self, environment: BaseEnvironment) -> None:
-        """Profile-specific install steps, run after the basecamp source install."""
-
     def _build_metadata(self, digest: str, runtime: dict[str, str]) -> dict[str, Any]:
         metadata: dict[str, Any] = {
             "profile": self.name(),
@@ -315,12 +309,11 @@ class BasecampPiSingle(Pi):
         digest = await self._upload_source(environment)
         await self.exec_as_root(
             environment,
-            command=f"apt-get update && apt-get install -y {' '.join(self.APT_PACKAGES)}",
+            command=f"apt-get update && apt-get install -y {' '.join(_APT_PACKAGES)}",
             env={"DEBIAN_FRONTEND": "noninteractive"},
         )
         await self._install_pi(environment)
         await self._install_basecamp(environment, digest)
-        await self._install_profile_extras(environment)
         await self._install_models(environment)
         await self._probe_model(environment)
         runtime = await self._probe_runtime(environment)
