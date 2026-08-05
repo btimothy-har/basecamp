@@ -1,4 +1,4 @@
-# workstreams
+# Workstreams
 
 A standalone feature domain: durable, repo-neutral internal coordination state for copilot-staged work, built on the agent-dispatch primitive (`#core/swarm`). A workstream is persisted in the daemon's SQLite store (`~/.pi/basecamp/swarm/daemon.db`, tables `workstreams` and `workstream_agents`, beside `agents`/`runs`).
 

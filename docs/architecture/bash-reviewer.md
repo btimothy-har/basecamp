@@ -1,4 +1,4 @@
-# bash-reviewer
+# Bash reviewer posture
 
 Basecamp bash reviewer — the `tool_call` hook that decides whether a `bash` command runs.
 

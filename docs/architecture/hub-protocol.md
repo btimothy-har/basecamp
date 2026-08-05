@@ -1,4 +1,4 @@
-# Pi Swarm Daemon Protocol
+# Hub protocol
 
 Protocol version: `28`
 

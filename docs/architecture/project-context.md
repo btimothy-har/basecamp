@@ -1,4 +1,4 @@
-# project
+# Project context internals
 
 The active project's working environment — *which project the session is in, its context, and where the agent works*. A `pi/core/project/` subsystem registered by `registerCore` (via `registerProject`). `basecamp.workspace` (`src/basecamp/workspace/`) is the Python side: per-repo worktree-setup environments + interactive CLI menus.
 

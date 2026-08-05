@@ -1,4 +1,4 @@
-# code-review
+# Code review flow
 
 `/code-review [additional instructions]` is a thin primary-only prompt command that unconditionally directs the agent to load and apply the model-invocable `code-review` skill. The skill is the authoritative method for an independent review of the current branch: it dispatches fixed and risk-driven report-only reviewers, and the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill and result tool are never exposed in subagents.
 

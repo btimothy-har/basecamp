@@ -1,4 +1,4 @@
-# git
+# Worktree lifecycle & teardown
 
 Git mechanics used by the workspace runtime, swarm, and repository-status UI.
 
