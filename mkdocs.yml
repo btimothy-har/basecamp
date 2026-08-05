@@ -76,7 +76,7 @@ nav:
       - Foundations:
           - Core Substrate: architecture/core.md
           - Framework UI: architecture/ui.md
-          - System Prompt & Assembly: architecture/system-prompt.md
+          - System Prompt: architecture/system-prompt.md
           - Project Context Internals: architecture/project-context.md
       - Agents & Workspaces:
           - The Agent-Dispatch Model: architecture/agent-dispatch.md

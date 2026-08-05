@@ -1,6 +1,6 @@
 # Session Modes & Working Styles
 
-basecamp replaces Pi's default system prompt and assembles its own from layers — constraints, posture, style, capabilities, project context, and environment. Two of those layers are yours to choose: the **session mode** sets the agent's posture, and the **working style** sets its role. The full assembly is in [System Prompt & Assembly](../architecture/system-prompt.md).
+basecamp replaces Pi's default system prompt and assembles its own from layers — constraints, posture, style, capabilities, project context, and environment. Two of those layers are yours to choose: the **session mode** sets the agent's posture, and the **working style** sets its role. The full assembly is in [System Prompt](../architecture/system-prompt.md).
 
 ## Session Modes
 
