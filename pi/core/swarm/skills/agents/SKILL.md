@@ -22,7 +22,7 @@ Default to the narrowest agent that fits:
 Every dispatched agent runs in its **own transient workspace** with full write tools. The posture is anchored on the deliverable, not the tools:
 
 - **Ad-hoc dispatch** (no `agent`) is the default worker — it mints an `agent/<handle>` branch from your **clean** HEAD (a dirty tree fails the dispatch with "commit your WIP first"), commits its change, and you `git merge` the branch. Run several in parallel for file-disjoint tasks. Want a specialist to implement? Dispatch an ad-hoc worker with a specialist-flavored brief.
-- **Report personas** (`scout`, `devils-advocate`, `code-clarity-specialist`, `conventions-specialist`, `docs-specialist`, `general-reviewer`, `integration-specialist`, `security-specialist`, `testing-specialist`) get branchless detached workspaces based on your current state — uncommitted WIP included, via snapshot. They see your live work, write freely for scratch exploration, and everything vanishes at run end; their report is the only deliverable.
+- **Report personas** (`scout`, `devils-advocate`, `code-clarity-specialist`, `conventions-specialist`, `data-model-specialist`, `docs-specialist`, `general-reviewer`, `integration-specialist`, `security-specialist`, `testing-specialist`) get branchless detached workspaces based on your current state — uncommitted WIP included, via snapshot. They see your live work, write freely for scratch exploration, and everything vanishes at run end; their report is the only deliverable.
 
 Do not dispatch agents for trivial one-step work you can do directly.
 
