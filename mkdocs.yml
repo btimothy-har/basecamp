@@ -12,6 +12,7 @@ theme:
   name: material
   features:
     - navigation.sections
+    - navigation.collapse
     - navigation.indexes
     - navigation.top
     - toc.follow
@@ -69,21 +70,25 @@ nav:
       - Worktree environments: configuration/worktree-environments.md
       - Model aliases: configuration/model-aliases.md
   - Architecture:
-      - System prompt & assembly: architecture/system-prompt.md
-      - The agent-dispatch model: architecture/agent-dispatch.md
-      - Worktree lifecycle & teardown: architecture/worktree-lifecycle.md
-      - Browser automation policy: architecture/browser-policy.md
-      - Bash reviewer posture: architecture/bash-reviewer.md
-      - Continuation guard: architecture/continuation-guard.md
-      - Code review flow: architecture/code-review.md
-      - Diff surface internals: architecture/diff-surface.md
-      - Hub protocol: architecture/hub-protocol.md
-      - Hub daemon & dashboard topology: architecture/hub-daemon.md
-      - Workstreams: architecture/workstreams.md
-      - Pull-request skill: architecture/pull-request.md
-      - Engineering domain: architecture/engineering.md
-      - Core substrate: architecture/core.md
-      - Framework UI: architecture/ui.md
-      - Project context internals: architecture/project-context.md
+      - Foundations:
+          - Core substrate: architecture/core.md
+          - Framework UI: architecture/ui.md
+          - System prompt & assembly: architecture/system-prompt.md
+          - Project context internals: architecture/project-context.md
+      - Agents & workspaces:
+          - The agent-dispatch model: architecture/agent-dispatch.md
+          - Worktree lifecycle & teardown: architecture/worktree-lifecycle.md
+          - Workstreams: architecture/workstreams.md
+          - Hub daemon & dashboard topology: architecture/hub-daemon.md
+          - Hub protocol: architecture/hub-protocol.md
+      - Guardrails & review:
+          - Bash reviewer posture: architecture/bash-reviewer.md
+          - Continuation guard: architecture/continuation-guard.md
+          - Code review flow: architecture/code-review.md
+          - Diff surface internals: architecture/diff-surface.md
+      - Feature domains:
+          - Browser automation policy: architecture/browser-policy.md
+          - Pull-request skill: architecture/pull-request.md
+          - Engineering domain: architecture/engineering.md
   - Evaluation:
       - Terminal-Bench & CI: evaluation.md

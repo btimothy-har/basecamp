@@ -1,6 +1,6 @@
 # basecamp
 
-Project-aware Pi extension for AI coding agents. Configures project context, manages isolated git worktrees, and supports workflow automation.
+An opinionated harness for AI coding agents, built as a [Pi](https://github.com/earendil-works/pi) extension. It shapes every session with a system prompt you control, loads the project you're working in, provisions disposable worktrees for parallel work, and dispatches isolated agents you merge like branches.
 
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
@@ -9,22 +9,18 @@ basecamp setup
 pi
 ```
 
-## Why basecamp?
+## What's in it
 
-Working with AI coding agents across multiple projects brings friction:
+- **System prompt** — fully replaced and layered (mode, style, voice, craft, environment, capabilities, project context), overridable per piece
+- **Projects & context** — detects the repo you launch in; loads its config, working style, and `AGENTS.md`
+- **Worktrees** — planning in the protected checkout; approved work in a labeled worktree so parallel sessions don't collide
+- **Agents** — scouts, reviewers, and workers, each in its own workspace; integrated with `git merge`
+- **Guardrails** — a bash reviewer on every command, a continuation guard on every stop
+- **Review** — `/diff` and `/skill:code-review` for reviewing a branch
 
-- **Scattered context** — each project needs different prompts, working styles, and domain knowledge
-- **Branch conflicts** — parallel conversations on the same repo compete for the working directory
-- **Repetitive setup** — re-configuring directories and prompts for each session
+## Read more
 
-Basecamp solves this with a Pi extension that:
-
-1. **Replaces the default system prompt** — full control over behavior, consistency across sessions, tailored to your workflow
-2. **Configures project context** — detects configured projects from the repo you launch Pi in and loads project-specific prompts automatically
-3. **Supports isolated worktrees** — planning starts in the protected repo root; approved implementation work activates a labeled worktree
-4. **Manages multi-repo projects** — groups related repositories under one project definition
-5. **Keeps source files focused** — supplies soft per-type limits and a hidden, non-blocking reminder after oversized structured edits
-
-## Next steps
-
-See the **Getting Started** guide for installation and your first session, then **Using basecamp** for slash commands, worktrees, review, and agents.
+- [Getting started](getting-started/installation.md) — install and your first session
+- [Using basecamp](using/slash-commands.md) — commands, worktrees, diff review, subagents, the dashboard
+- [Configuration](configuration/projects.md) — projects, worktree environments, model aliases
+- [Architecture](architecture/core.md) — how the prompt, dispatch, worktrees, guardrails, and hub fit together
