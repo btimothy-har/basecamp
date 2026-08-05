@@ -1,6 +1,6 @@
 # basecamp
 
-An opinionated harness for AI coding agents, built as a [Pi](https://github.com/earendil-works/pi) extension. It shapes every session with a system prompt you control, loads the project you're working in, provisions disposable worktrees for parallel work, and dispatches isolated agents you merge like branches.
+An opinionated harness for AI coding agents, built as a [Pi](https://github.com/earendil-works/pi) extension. Rather than leave the agent to its defaults, basecamp imposes a workflow — prompt, posture, guardrails, and dispatch — that shapes how it works on every session.
 
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
@@ -11,12 +11,10 @@ pi
 
 ## What's in it
 
-- **System prompt** — fully replaced and layered (mode, style, voice, craft, environment, capabilities, project context), overridable per piece
-- **Projects & context** — detects the repo you launch in; loads its config, working style, and `AGENTS.md`
-- **Worktrees** — planning in the protected checkout; approved work in a labeled worktree so parallel sessions don't collide
-- **Agents** — scouts, reviewers, and workers, each in its own workspace; integrated with `git merge`
-- **Guardrails** — a bash reviewer on every command, a continuation guard on every stop
-- **Review** — `/diff` and `/skill:code-review` for reviewing a branch
+- **Modular system prompt** — fully replaced and layered (mode, posture, style, voice, craft, environment, capabilities, project context); each piece overridable
+- **Cross-repo context** — groups related repositories into one project and loads their config, working style, and `AGENTS.md`
+- **Worktree management** — disposable, isolated worktrees so parallel sessions don't fight over the working directory
+- **Agent swarms** — scouts, reviewers, and workers dispatched into their own workspaces and merged back as branches
 
 ## Read more
 
