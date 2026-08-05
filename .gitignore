@@ -215,6 +215,9 @@ __marimo__/
 # Overmind
 overmind.sock
 
+# MkDocs build output
+site/
+
 uv.lock
 pnpm-lock.yaml
 pnpm-workspace.yaml
