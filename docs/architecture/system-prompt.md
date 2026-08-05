@@ -1,4 +1,4 @@
-# System prompt & assembly
+# System Prompt & Assembly
 
 The context/prompt layer — assembles the replacement system prompt on every agent start.
 

@@ -1,4 +1,4 @@
-# Hub daemon & dashboard topology
+# Hub Daemon & Dashboard Topology
 
 `basecamp.hub` is the host-global daemon every session and agent connects to. One process owns two isolated FastAPI apps:
 

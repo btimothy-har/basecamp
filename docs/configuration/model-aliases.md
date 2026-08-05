@@ -1,4 +1,4 @@
-# Model aliases
+# Model Aliases
 
 Model aliases map a short name to a model, so you can refer to models by a stable label instead of a `provider/modelId` string. They live in the `model_aliases` section of `~/.pi/basecamp/config.json`:
 

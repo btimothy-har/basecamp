@@ -1,4 +1,4 @@
-# Pull-request skill
+# Pull-Request Skill
 
 A primary-only feature domain that exposes `/pull-request [additional instructions]` as a thin action prompt and `pull-request` as its matching model-invocable guidance skill. The command unconditionally directs the agent to load and apply the skill; the skill is authoritative for handling PRs across drafting, publication, CI, readiness, and requested reviews. It never merges, closes, or approves a PR.
 

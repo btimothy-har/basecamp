@@ -1,4 +1,4 @@
-# Hub protocol
+# Hub Protocol
 
 Protocol version: `28`
 

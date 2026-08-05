@@ -1,4 +1,4 @@
-# Managing projects
+# Managing Projects
 
 Project configuration is managed through the projects menu:
 

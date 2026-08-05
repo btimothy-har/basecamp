@@ -1,4 +1,4 @@
-# Diff surface internals
+# Diff Surface Internals
 
 Basecamp's diff/review surface, filling the gap left when Companion was retired: `/diff` opens [hunk](https://github.com/modem-dev/hunk) in a split Herdr pane, blocks the session while you review, and returns your inline annotations as line-anchored feedback. `annotate_changeset` lets the working agent put its own rationale beside the same diff.
 

@@ -1,4 +1,4 @@
-# Agents dashboard
+# Agents Dashboard
 
 Open the global, read-only session dashboard from any directory:
 

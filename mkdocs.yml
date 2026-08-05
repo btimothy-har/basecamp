@@ -56,42 +56,42 @@ nav:
   - Home: index.md
   - Getting Started:
       - Installation: getting-started/installation.md
-      - Your first session: getting-started/first-session.md
-      - Managing projects: getting-started/managing-projects.md
+      - Your First Session: getting-started/first-session.md
+      - Managing Projects: getting-started/managing-projects.md
   - Using basecamp:
       - Slash Commands: using/slash-commands.md
       - Skills: using/skills.md
       - Session Modes & Working Styles: using/session-modes.md
-      - Git worktrees: using/worktrees.md
-      - Reviewing a diff: using/diff-review.md
-      - Browser automation: using/browser-automation.md
-      - Frontend design: using/frontend-design.md
+      - Git Worktrees: using/worktrees.md
+      - Reviewing a Diff: using/diff-review.md
+      - Browser Automation: using/browser-automation.md
+      - Frontend Design: using/frontend-design.md
       - Subagents: using/subagents.md
-      - Agents dashboard: using/agents-dashboard.md
+      - Agents Dashboard: using/agents-dashboard.md
   - Configuration:
       - Projects: configuration/projects.md
-      - Worktree environments: configuration/worktree-environments.md
-      - Model aliases: configuration/model-aliases.md
+      - Worktree Environments: configuration/worktree-environments.md
+      - Model Aliases: configuration/model-aliases.md
   - Architecture:
       - Foundations:
-          - Core substrate: architecture/core.md
+          - Core Substrate: architecture/core.md
           - Framework UI: architecture/ui.md
-          - System prompt & assembly: architecture/system-prompt.md
-          - Project context internals: architecture/project-context.md
-      - Agents & workspaces:
-          - The agent-dispatch model: architecture/agent-dispatch.md
-          - Worktree lifecycle & teardown: architecture/worktree-lifecycle.md
+          - System Prompt & Assembly: architecture/system-prompt.md
+          - Project Context Internals: architecture/project-context.md
+      - Agents & Workspaces:
+          - The Agent-Dispatch Model: architecture/agent-dispatch.md
+          - Worktree Lifecycle & Teardown: architecture/worktree-lifecycle.md
           - Workstreams: architecture/workstreams.md
-          - Hub daemon & dashboard topology: architecture/hub-daemon.md
-          - Hub protocol: architecture/hub-protocol.md
-      - Guardrails & review:
-          - Bash reviewer posture: architecture/bash-reviewer.md
-          - Continuation guard: architecture/continuation-guard.md
-          - Code review flow: architecture/code-review.md
-          - Diff surface internals: architecture/diff-surface.md
-      - Feature domains:
-          - Browser automation policy: architecture/browser-policy.md
-          - Pull-request skill: architecture/pull-request.md
-          - Engineering domain: architecture/engineering.md
+          - Hub Daemon & Dashboard Topology: architecture/hub-daemon.md
+          - Hub Protocol: architecture/hub-protocol.md
+      - Guardrails & Review:
+          - Bash Reviewer Posture: architecture/bash-reviewer.md
+          - Continuation Guard: architecture/continuation-guard.md
+          - Code Review Flow: architecture/code-review.md
+          - Diff Surface Internals: architecture/diff-surface.md
+      - Feature Domains:
+          - Browser Automation Policy: architecture/browser-policy.md
+          - Pull-Request Skill: architecture/pull-request.md
+          - Engineering Domain: architecture/engineering.md
   - Evaluation:
       - Terminal-Bench & CI: evaluation.md

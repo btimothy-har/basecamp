@@ -1,4 +1,4 @@
-# The agent-dispatch model
+# The Agent-Dispatch Model
 
 Core's adapter for Basecamp's async-agent runtime — a peer of `core/hub` (the daemon connection) that turns "there is a socket to the daemon" into "you can dispatch, wait on, message, and cancel agents." It is **substrate, not a feature**: multiple domains build on it, so it lives in `core` (registered by `registerCore` via `registerSwarm`, right after the hub connector) and is imported as `#core/swarm/agents/*`.
 

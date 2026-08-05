@@ -1,4 +1,4 @@
-# Your first session
+# Your First Session
 
 Launch sessions with plain Pi from the repo or subdirectory you want to work in. Basecamp detects the git repository root and loads the matching project when its `repo_root` is configured.
 

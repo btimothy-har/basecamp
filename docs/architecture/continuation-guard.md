@@ -1,4 +1,4 @@
-# Continuation guard
+# Continuation Guard
 
 Basecamp task lifecycle + planning — goal tracking, task state machine, the `plan()` handoff, and workflow skills.
 

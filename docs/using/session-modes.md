@@ -1,4 +1,4 @@
-# Prompt System
+# Session Modes & Working Styles
 
 basecamp replaces the default system prompt via a `before_agent_start` hook. This gives you:
 

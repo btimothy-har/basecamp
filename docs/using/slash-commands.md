@@ -1,4 +1,4 @@
-# Slash commands
+# Slash Commands
 
 | Command | Description |
 |---------|-------------|
@@ -7,5 +7,3 @@
 | `/diff [last]` | Review this branch's changes in hunk and send your inline notes back to the agent (`/diff last` reviews only what changed since your last `/diff`) |
 | `/title [text]` | Generate a session title from the conversation, or set one manually |
 | `/model-aliases` | Manage model aliases (list, add, edit, remove) |
-
-User-invoked skills (`/skill:pull-request`, `/skill:code-review`) are listed under [Skills](skills.md).

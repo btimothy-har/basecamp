@@ -1,4 +1,4 @@
-# Browser automation policy
+# Browser Automation Policy
 
 Primary-session browser automation through the pinned official Playwright CLI and a Basecamp-owned agent skill.
 

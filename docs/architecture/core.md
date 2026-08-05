@@ -1,4 +1,4 @@
-# Core substrate
+# Core Substrate
 
 The always-present foundation domain for basecamp. `pi/core` is the first module the composition root (`pi/extension.ts`) registers; every other domain may import it freely (`#core/*`). `src/basecamp/core` is the Python side (`basecamp.core`: settings, paths, files, exceptions, plus the project-config schema, migrations, directories, and its management CLI).
 
