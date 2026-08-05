@@ -17,8 +17,8 @@ Environments are stored under the `environments` section of `~/.pi/basecamp/conf
 
 basecamp ships no default — a repo with no environment is a clean no-op.
 
-When basecamp creates a new execution worktree — via a plan handoff or `/worktree` — it runs the repo's setup command once before the session proceeds. The command runs as `bash -lc "<command>"` with the worktree as its working directory, and sees the `BASECAMP_*` environment plus `BASECAMP_REPO_ROOT` (the protected checkout path), so it can copy or symlink artifacts like `.venv` or `node_modules` from the source checkout. basecamp doesn't prescribe what the command does.
+Whenever a worktree is created, basecamp runs the repo's setup command once before the session proceeds. It runs as `bash -lc "<command>"` from the new worktree, with the `BASECAMP_*` environment and `BASECAMP_REPO_ROOT` (the protected checkout path) available, so it can copy or symlink artifacts like `.venv` or `node_modules` from the source checkout. basecamp doesn't prescribe what the command does.
 
-Setup is bounded and best-effort: it's awaited with a 3-minute timeout, so work never hangs on it. If it times out or exits non-zero, the failure is recorded and basecamp continues — the worktree activates and the session starts regardless. It runs only on creation, not when resuming, attaching, or switching worktrees.
+Setup is bounded and best-effort: a 3-minute timeout, and on a timeout or non-zero exit the failure is recorded but basecamp continues — the worktree activates and the session starts regardless. It only runs on creation, never on resume, attach, or switch.
 
 For anything beyond a one-liner, point the command at a script you keep outside the repo — e.g. `"bash ~/.pi/basecamp/worktree-setup.sh"`.
