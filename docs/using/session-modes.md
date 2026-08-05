@@ -4,13 +4,13 @@ basecamp replaces Pi's default system prompt and assembles its own from layers: 
 
 ## Session Modes
 
-The mode sets the agent's posture. It's shown as a tag in the footer (`[analysis]`, `[explore]`, `[copilot]`); **work** has no tag because it's the default. Cycle between them with **shift+tab**:
+The mode sets the agent's posture. Cycle between **analysis**, **explore**, and **work** with **shift+tab**:
 
-| Mode | Footer | Posture |
-|------|--------|---------|
-| **Analysis** | `[analysis]` | Research and data analysis: answer questions with evidence (queries, metrics, investigation), without implementing |
-| **Explore** | `[explore]` | Planning: understand the problem and design a plan before implementing |
-| **Work** | (none) | Implement and integrate (the default) |
+| Mode | Posture |
+|------|---------|
+| **Analysis** | Research and data analysis: answer questions with evidence (queries, metrics, investigation), without implementing |
+| **Explore** | Planning: understand the problem and design a plan before implementing |
+| **Work** | Implement and integrate (the default) |
 
 **Copilot** is a launch-only mode (`pi --copilot`) for steering work across a repo rather than implementing in-session. It keeps a current map of what's active, waiting, blocked, stale, or proposed, and turns the focus you choose into an execution-ready workstream that another session picks up. It doesn't write code itself; it stages work with `launch_workstream`. It's immutable (shift+tab can't enter or leave it) and takes precedence over `pi --workstream`.
 
