@@ -26,6 +26,9 @@ jobs:
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+      - name: Sync docs assets
+        run: bash scripts/sync-docs-assets.sh
+
       - name: Deploy Docs
         env:
           DEPLOY_SERVICE: basecamp-docs
