@@ -59,8 +59,9 @@ nav:
       - Your first session: getting-started/first-session.md
       - Managing projects: getting-started/managing-projects.md
   - Using basecamp:
-      - Slash commands: using/slash-commands.md
-      - Session modes & working styles: using/session-modes.md
+      - Slash Commands: using/slash-commands.md
+      - Skills: using/skills.md
+      - Session Modes & Working Styles: using/session-modes.md
       - Git worktrees: using/worktrees.md
       - Reviewing a diff: using/diff-review.md
       - Browser automation: using/browser-automation.md
