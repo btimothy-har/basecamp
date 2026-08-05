@@ -64,8 +64,6 @@ nav:
       - Session Modes & Working Styles: using/session-modes.md
       - Git Worktrees: using/worktrees.md
       - Reviewing a Diff: using/diff-review.md
-      - Browser Automation: using/browser-automation.md
-      - Frontend Design: using/frontend-design.md
       - Subagents: using/subagents.md
       - Agents Dashboard: using/agents-dashboard.md
   - Configuration:
