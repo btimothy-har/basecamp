@@ -41,7 +41,7 @@ This step selects reviewers only. Do not create findings, tell reviewers a suspe
 
 ## 4. Dispatch the seven fixed reviewers
 
-Call `dispatch_agent` for all eight in parallel. Reviewers are report-only by contract: they must not commit, and anything they leave uncommitted is discarded with their workspace:
+Call `dispatch_agent` for all seven in parallel. Reviewers are report-only by contract: they must not commit, and anything they leave uncommitted is discarded with their workspace:
 
 | agent | dimension |
 |---|---|
@@ -52,7 +52,6 @@ Call `dispatch_agent` for all eight in parallel. Reviewers are report-only by co
 | `conventions-specialist` | `conventions` |
 | `general-reviewer` | `general` |
 | `integration-specialist` | `integration` |
-| `data-model-specialist` | `data-model` |
 
 Give every reviewer this self-contained brief:
 
@@ -64,15 +63,17 @@ Give every reviewer this self-contained brief:
 >
 > Return verified findings only. Give each finding a `critical|high|medium|low` severity, a repository-relative location when one exists, a concise title, self-contained evidence and impact, and the smallest sufficient remediation direction. Questions, praise, preferences, and unsupported possibilities are not findings. Do not modify files or write fixes.
 
-Collect all eight handles.
+Collect all seven handles.
 
 ## 5. Dispatch adaptive general reviewers
 
 The fixed specialists provide baseline coverage. Use `general-reviewer` as the elastic deep-review layer: call `dispatch_agent` for one additional report-only general reviewer for each material, non-overlapping aspect discovered in step 3.
 
+Dispatch the `data-model-specialist` (dimension `data-model`) when the diff has data-model signals — SQL files, dbt models (`models/`, `stg_`, `fct_`, `dim_`), schema definitions (`schema.yml`, `sources.yml`), warehouse configurations, or migration scripts. This is a conditional named specialist, not a fixed reviewer: skip it when the diff contains no SQL or data-model files.
+
 | diff signal | focused trace |
 |---|---|
-| Persisted model, schema, query, or migration | Grain, joins, fan-out, null retention, time semantics, consumers, migration and rollback behavior. The fixed `data-model-specialist` covers baseline model structure, data-flow lineage, naming, testing, and materialization; dispatch an adaptive general reviewer only for aspects beyond that lens, such as migration and rollback behavior |
+| Persisted model, schema, query, or migration | Grain, joins, fan-out, null retention, time semantics, consumers, migration and rollback behavior. The `data-model-specialist` covers model structure, data-flow lineage, naming, testing, and materialization; dispatch an adaptive general reviewer only for aspects beyond that lens, such as migration and rollback behavior |
 | Public API, protocol, event, or cross-runtime contract | Producer/consumer shape, version overlap, compatibility, errors, rollout, and recovery |
 | UI plus backend or data change | User action through backing reads, labels, formulas, filters, windows, loading/error states, and final output |
 | Async job, queue, retry, checkpoint, or CI workflow | Partial failure, idempotency, cancellation, retry, deduplication, terminal status, and operator recovery |
@@ -83,7 +84,7 @@ The fixed specialists provide baseline coverage. Use `general-reviewer` as the e
 
 Give each adaptive general reviewer the fixed brief plus one named contract, boundary, or lifecycle to trace. Never prescribe a suspected finding. Dispatch multiple general reviewers in parallel when the aspects are genuinely distinct.
 
-Add another narrow specialist only when its lens itself needs a second independent pass—for example, a material auth/trust-boundary change may justify another `security-specialist`, and a complex regression harness may justify another `testing-specialist`. Do not duplicate a fixed specialist by default. Add every adaptive handle to the review set.
+Add another narrow specialist only when its lens itself needs a second independent pass—for example, a material auth/trust-boundary change may justify another `security-specialist`, and a complex regression harness may justify another `testing-specialist`. The `data-model-specialist` is conditionally dispatched in step 5, not a fixed reviewer. Do not duplicate a fixed specialist by default. Add every adaptive handle to the review set.
 
 ## 6. Collect reports
 
