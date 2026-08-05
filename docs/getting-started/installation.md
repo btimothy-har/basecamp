@@ -1,8 +1,19 @@
 # Installation
 
-Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-works/pi).
+## Requirements
 
-`/diff` additionally requires [hunk](https://github.com/modem-dev/hunk) (`npm i -g hunkdiff`, `brew install hunk`, or nixpkgs) and a [Herdr](https://herdr.dev) session; without both it reports what is missing and does nothing.
+- **[uv](https://docs.astral.sh/uv/)** — Python package manager; installs and manages Python 3.12+
+- **[pi](https://github.com/earendil-works/pi)** — the AI coding agent harness that basecamp extends
+- **Git** — for project detection and isolated worktrees
+
+Optional, for `/diff` (reviewing changes in [hunk](https://github.com/modem-dev/hunk)):
+
+- **[hunk](https://github.com/modem-dev/hunk)** — `npm i -g hunkdiff`, `brew install hunk`, or nixpkgs
+- **[Herdr](https://herdr.dev)** — a running Herdr session
+
+`/diff` needs both; without them it reports what is missing and does nothing.
+
+## Install
 
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
