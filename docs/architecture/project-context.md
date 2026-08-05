@@ -62,7 +62,7 @@ Page names are flat (`__`-joined) and filename-safe: `logseq.ts` depends on page
 - ## [[repo__btimothy-har__basecamp]]
 	- ### [[work__btimothy-har__basecamp__quiet-heron-drift]] · `gentle-marten-tide`
 		- Reframed around journals; dropped status/priority/updated.
-		- CI red on #318 — root cause is the boundary check.
+		- CI red on #318: root cause is the boundary check.
 	- ### [[work__btimothy-har__basecamp__third-slug]]
 		- Shaped scope; no workstream staged yet.
 ```
