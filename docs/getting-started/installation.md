@@ -18,12 +18,10 @@ Optional, for `/diff` (reviewing changes in [hunk](https://github.com/modem-dev/
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
 cd basecamp
-uv run install.py           # interactive (prompts for editable mode)
-uv run install.py -e        # editable (recommended for development)
-uv run install.py --no-editable
+uv run install.py
 ```
 
-This installs the Python tool `basecamp`, prompts for optional Basecamp Pi package groups, and saves installer metadata to `~/.pi/basecamp/config.json`.
+This installs the `basecamp` Python tool (a non-editable snapshot) and the Pi extension — prompting for optional package groups — and saves installer metadata to `~/.pi/basecamp/config.json`. To reconfigure later, run `basecamp install`; to iterate on the CLI against your working tree, run `uv run basecamp <cmd>` rather than reinstalling.
 
 Then initialize the environment:
 
