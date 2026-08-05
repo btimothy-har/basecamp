@@ -50,3 +50,40 @@ markdown_extensions:
 
 nav:
   - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Your first session: getting-started/first-session.md
+      - Managing projects: getting-started/managing-projects.md
+  - Using basecamp:
+      - Slash commands: using/slash-commands.md
+      - Session modes & working styles: using/session-modes.md
+      - Git worktrees: using/worktrees.md
+      - Reviewing a diff: using/diff-review.md
+      - Browser automation: using/browser-automation.md
+      - Frontend design: using/frontend-design.md
+      - Subagents: using/subagents.md
+      - Agents dashboard: using/agents-dashboard.md
+  - Configuration:
+      - projects.json reference: configuration/projects.md
+      - Project context: configuration/project-context.md
+      - Worktree environments: configuration/worktree-environments.md
+      - Model aliases: configuration/model-aliases.md
+  - Architecture:
+      - System prompt & assembly: architecture/system-prompt.md
+      - The agent-dispatch model: architecture/agent-dispatch.md
+      - Worktree lifecycle & teardown: architecture/worktree-lifecycle.md
+      - Browser automation policy: architecture/browser-policy.md
+      - Bash reviewer posture: architecture/bash-reviewer.md
+      - Continuation guard: architecture/continuation-guard.md
+      - Code review flow: architecture/code-review.md
+      - Diff surface internals: architecture/diff-surface.md
+      - Hub protocol: architecture/hub-protocol.md
+      - Hub daemon & dashboard topology: architecture/hub-daemon.md
+      - Workstreams: architecture/workstreams.md
+      - Pull-request skill: architecture/pull-request.md
+      - Engineering domain: architecture/engineering.md
+      - Core substrate: architecture/core.md
+      - Framework UI: architecture/ui.md
+      - Project context internals: architecture/project-context.md
+  - Evaluation:
+      - Terminal-Bench & CI: evaluation.md

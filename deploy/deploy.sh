@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# This script runs via a non-login SSH shell, so the Home Manager profile
+# (podman) is not on PATH by default. The systemd unit sets its own PATH.
+export PATH="$HOME/.nix-profile/bin:$PATH"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_CONTEXT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SERVICE_NAME="basecamp-docs"

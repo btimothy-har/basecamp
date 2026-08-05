@@ -1,6 +1,6 @@
 # core/swarm — the agent-dispatch primitive
 
-Core's adapter for Basecamp's async-agent runtime — a peer of [`core/hub`](../hub) (the daemon connection) that turns "there is a socket to the daemon" into "you can dispatch, wait on, message, and cancel agents." It is **substrate, not a feature**: multiple domains build on it, so it lives in `core` (registered by `registerCore` via `registerSwarm`, right after the hub connector) and is imported as `#core/swarm/agents/*`.
+Core's adapter for Basecamp's async-agent runtime — a peer of `core/hub` (the daemon connection) that turns "there is a socket to the daemon" into "you can dispatch, wait on, message, and cancel agents." It is **substrate, not a feature**: multiple domains build on it, so it lives in `core` (registered by `registerCore` via `registerSwarm`, right after the hub connector) and is imported as `#core/swarm/agents/*`.
 
 It rides entirely on `#core/hub`: the WebSocket transport, ensure-daemon, node identity, and the wire-protocol contract (`protocol/`) all live there. The Python daemon it talks to is `basecamp.hub` (`src/basecamp/hub/`); the server side of this primitive is `basecamp.hub.swarm`. The on-disk runtime path is `~/.pi/basecamp/swarm/`.
 
@@ -25,7 +25,7 @@ Future agent-powered capabilities are expected to be new domains that consume `#
 
 ## Agent lifecycle
 
-Dispatched agents can be stopped with the `cancel_agent` tool, which cancels an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are also reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See [`core/hub/protocol/PROTOCOL.md`](../hub/protocol/PROTOCOL.md).
+Dispatched agents can be stopped with the `cancel_agent` tool, which cancels an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are also reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See [PROTOCOL.md](hub-protocol.md).
 
 ## Agent execution posture
 

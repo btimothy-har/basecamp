@@ -27,6 +27,14 @@
 		}
 	},
 	"files": {
-		"includes": ["**", "!**/node_modules", "!**/.venv", "!**/__pycache__", "!**/dist", "!pi/core/hub/protocol/frames"]
+		"includes": [
+			"**",
+			"!**/node_modules",
+			"!**/.venv",
+			"!**/__pycache__",
+			"!**/dist",
+			"!**/site",
+			"!pi/core/hub/protocol/frames"
+		]
 	}
 }
