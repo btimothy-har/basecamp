@@ -1,14 +1,23 @@
 # Skills
 
-basecamp comes bundled with several built-in skills — scoped capabilities with their own guidance that the agent loads as the work calls for them.
+basecamp comes bundled with several built-in skills — scoped capabilities with their own guidance. The agent loads them as the work calls for them, and you can also invoke any directly with `/skill:<name>`.
 
-## User-invoked skills
+## User-invoked only
 
-Two skills you invoke yourself with `/skill:<name>`. They're hidden from the agent — it can't load them on its own.
+The agent can't load these on its own — you trigger them with `/skill:<name>`.
 
-| Command | Description |
-|---------|-------------|
-| `/skill:pull-request` | Prepare or publish a pull request and carry it through CI |
-| `/skill:code-review` | Run an independent multi-agent review of the current branch |
+- **`code-review`** — an independent multi-agent review of the current branch. Dispatches reviewer specialists; you synthesize their reports and a verdict is computed over the final set.
 
-Both are primary-only. `/skill:pull-request` opens every PR as a draft and drives it through CI — it asks before marking one ready and never merges on its own. `/skill:code-review` dispatches reviewer specialists, you synthesize their reports, and a verdict is computed over the final set.
+## User and agent invoked
+
+The agent loads these as needed; you can also invoke any with `/skill:<name>`.
+
+- **`pull-request`** — prepare, publish, and carry a PR through CI (opens as draft, asks before ready, never merges)
+- **`agents`** — delegate bounded work to agents
+- **`gather`** — requirements gathering
+- **`planning`** — planning
+- **`frontend-design`** — building interfaces
+- **`playwright-cli`** — browser automation
+- **`data-analysis`**, **`data-warehousing`**, **`sql`** — data work and warehouse modeling
+- **`python-development`**, **`pi-development`**, **`marimo`** — language and tooling guidance
+- **`copilot`** — repo-memory curation (copilot mode)
