@@ -23,7 +23,7 @@ In a session:
 
 Opens a TUI to list, add, edit, rename, and delete aliases (it needs an interactive UI).
 
-From the shell — the same write path the TUI uses:
+From the shell (the same write path the TUI uses):
 
 ```bash
 basecamp config alias set fast anthropic/claude-haiku-4-5
@@ -33,11 +33,11 @@ basecamp config alias          # interactive menu
 basecamp config edit           # hand-edit config.json directly
 ```
 
-Basecamp (Python) is the sole writer of `config.json`. The Pi extension reads aliases in-process, but every change — from the TUI or the CLI — goes through one flock'd settings write, so the file is never written from two places at once.
+Basecamp (Python) is the sole writer of `config.json`. The Pi extension reads aliases in-process, but every change (from the TUI or the CLI) goes through one flock'd settings write, so the file is never written from two places at once.
 
 ## Aliases basecamp resolves itself
 
-Two aliases aren't just convenience labels — basecamp looks them up for specific jobs:
+Two aliases aren't just convenience labels: basecamp looks them up for specific jobs:
 
-- **`fast`** — the model the [bash reviewer](../architecture/bash-reviewer.md) uses to judge each gated `bash` command. It runs on every command, so point it at a cheap, fast model. Without a `fast` alias the reviewer can't reach a model and falls back to fail-closed: gated commands are blocked rather than judged.
-- **`title`** — the model that generates session titles. Optional: if unset, title generation uses the active session model.
+- **`fast`**: the model the [bash reviewer](../architecture/bash-reviewer.md) uses to judge each gated `bash` command. It runs on every command, so point it at a cheap, fast model. Without a `fast` alias the reviewer can't reach a model and falls back to fail-closed: gated commands are blocked rather than judged.
+- **`title`**: the model that generates session titles. Optional: if unset, title generation uses the active session model.

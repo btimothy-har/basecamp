@@ -2,14 +2,14 @@
 
 ## Requirements
 
-- **[uv](https://docs.astral.sh/uv/)** — Python package manager; installs and manages Python 3.12+
-- **[pi](https://github.com/earendil-works/pi)** — the AI coding agent harness that basecamp extends
-- **Git** — for project detection and isolated worktrees
+- **[uv](https://docs.astral.sh/uv/)**: Python package manager; installs and manages Python 3.12+
+- **[pi](https://github.com/earendil-works/pi)**: the AI coding agent harness that basecamp extends
+- **Git**: for project detection and isolated worktrees
 
 Optional, for `/diff` (reviewing changes in [hunk](https://github.com/modem-dev/hunk)):
 
-- **[hunk](https://github.com/modem-dev/hunk)** — `npm i -g hunkdiff`, `brew install hunk`, or nixpkgs
-- **[Herdr](https://herdr.dev)** — a running Herdr session
+- **[hunk](https://github.com/modem-dev/hunk)**: `npm i -g hunkdiff`, `brew install hunk`, or nixpkgs
+- **[Herdr](https://herdr.dev)**: a running Herdr session
 
 `/diff` needs both; without them it reports what is missing and does nothing.
 

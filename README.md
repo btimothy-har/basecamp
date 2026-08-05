@@ -15,16 +15,16 @@ Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-w
 
 ## What basecamp does
 
-- **Replaces the default system prompt** — full control over agent behavior, consistent across sessions
-- **Configures project context** — detects the repo you launch in and loads matching prompts automatically
-- **Provisions isolated worktrees** — planning starts in the protected checkout; approved work activates a labeled worktree
-- **Manages multi-repo projects** — groups related repositories under one project definition
-- **Dispatches subagents** — scouts, reviewers, and workers each in their own isolated workspace
-- **Keeps source files focused** — soft per-type caps with a non-blocking reminder after oversized edits
+- **Replaces the default system prompt**: full control over agent behavior, consistent across sessions
+- **Configures project context**: detects the repo you launch in and loads matching prompts automatically
+- **Provisions isolated worktrees**: planning starts in the protected checkout; approved work activates a labeled worktree
+- **Manages multi-repo projects**: groups related repositories under one project definition
+- **Dispatches subagents**: scouts, reviewers, and workers each in their own isolated workspace
+- **Keeps source files focused**: soft per-type caps with a non-blocking reminder after oversized edits
 
 ## Documentation
 
-Full documentation lives at **[basecamp.playground.tools](https://basecamp.playground.tools/)** — installation, usage, configuration, and architecture.
+Full documentation lives at **[basecamp.playground.tools](https://basecamp.playground.tools/)**: installation, usage, configuration, and architecture.
 
 The repo's source for the site is under `docs/` (MkDocs Material); `make docs` serves it locally.
 

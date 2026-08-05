@@ -1,6 +1,6 @@
 # Engineering Domain
 
-Basecamp engineering policy and skills — file focus, frontend design, data analysis, Python, SQL, dbt, marimo, and Pi development.
+Basecamp engineering policy and skills: file focus, frontend design, data analysis, Python, SQL, dbt, marimo, and Pi development.
 
 ## What it does
 

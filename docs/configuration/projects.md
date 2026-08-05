@@ -1,6 +1,6 @@
 # Projects
 
-A basecamp project groups one or more repositories and gives them shared configuration — a working style, allowed directories, and project context. Basecamp detects the active project from the git root of the directory you launch Pi in.
+A basecamp project groups one or more repositories and gives them shared configuration: a working style, allowed directories, and project context. Basecamp detects the active project from the git root of the directory you launch Pi in.
 
 ## Defining projects
 
@@ -43,7 +43,7 @@ Root `~/.pi/basecamp/config.json` holds installer-owned metadata (`install_dir`,
 
 Project context is extra prompt material basecamp loads for the active project. There are two ways to provide it:
 
-- **`AGENTS.md` in the repo** — the default for single-repo projects. Put agent-facing context (conventions, gotchas, pointers to depth) at the repository root.
-- **A context file** — for multi-repo projects needing shared cross-repo context. Set the `context` field to a file stem (no `.md`); basecamp loads `~/.pi/basecamp/workspace/context/{name}.md`. For example, `"context": "pipeline"` loads `~/.pi/basecamp/workspace/context/pipeline.md`.
+- **`AGENTS.md` in the repo**: the default for single-repo projects. Put agent-facing context (conventions, gotchas, pointers to depth) at the repository root.
+- **A context file**: for multi-repo projects needing shared cross-repo context. Set the `context` field to a file stem (no `.md`); basecamp loads `~/.pi/basecamp/workspace/context/{name}.md`. For example, `"context": "pipeline"` loads `~/.pi/basecamp/workspace/context/pipeline.md`.
 
 Both are additive: when present, the configured context file and the repo's `AGENTS.md` are loaded together.

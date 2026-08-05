@@ -66,7 +66,7 @@ Dispatched agents run as full `pi` processes spawned by the daemon in their own 
 
 Dispatched-run processes are freed three ways so they cannot leak as long-running memory:
 
-- Dispatcher disconnect: when a dispatcher's connection drops, the daemon schedules a grace-period reaper for that `node_id`. If the same node does not re-register within the window, its still-live dispatched runs are terminated, marked `failed` with `error: "dispatcher_disconnected"`, and their waiters are woken. A reconnecting session (reload/resume) cancels the pending reaper and reclaims its in-flight agents. The grace period is `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default `3600`; invalid or negative values fall back to the default). There is no wall-clock cap on run duration — only the disconnect grace.
+- Dispatcher disconnect: when a dispatcher's connection drops, the daemon schedules a grace-period reaper for that `node_id`. If the same node does not re-register within the window, its still-live dispatched runs are terminated, marked `failed` with `error: "dispatcher_disconnected"`, and their waiters are woken. A reconnecting session (reload/resume) cancels the pending reaper and reclaims its in-flight agents. The grace period is `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default `3600`; invalid or negative values fall back to the default). There is no wall-clock cap on run duration; only the disconnect grace.
 - Explicit cancellation: the `cancel` / `cancel_ack` frames (below), which cancel the target and its whole dispatch subtree.
 - Startup reconciliation: on daemon start every non-terminal run is marked `failed` with `error: "daemon_restart_reconciled"`, and orphaned process groups left by a prior daemon are best-effort killed, gated by an identity check (the group leader's command must match the runner) so a reused process-group id is never signalled.
 
@@ -114,9 +114,9 @@ Important fields:
 - `agent_type`: immutable per handle after the first dispatch.
 - `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
 - `spec`: opaque TypeScript-authored spawn spec.
-- `spec.owned_worktree`: optional; the run's own transient worktree. The daemon force-removes it when the run exits (normal reap and crash-restart reconcile) — uncommitted state is discarded by design; commits are the only durable output of a run.
-- `spec.owned_branch` / `spec.branch_base` / `spec.branch_created`: optional; the run's per-agent branch (`agent/<handle>`), the commit OID it started from, and whether this dispatch minted the branch. Only deliverable runs (the `worker` persona) carry a branch; report runs (every other persona and ad-hoc dispatch) and asks are branchless — they send `owned_branch` null and `branch_created` false. After worktree removal the daemon deletes `owned_branch` only when `branch_created` is true and `rev-list <branch_base>..<branch>` is empty — a continued or commit-bearing branch always survives teardown.
-- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's registered session file or daemon-managed agent session sidecar and forks it (`pi --fork`) into a new answerer session — used by the agent ask capability. The answerer runs the uniform toolset in a branchless detached workspace that is force-removed at run end (isolation via the disposable workspace, not a read-only posture); it never mints a branch, so nothing it writes survives. Omitted/null for normal dispatch. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated. If no safe fork source exists, the target is reported as unavailable without distinguishing missing, unauthorized, or non-forkable targets.
+- `spec.owned_worktree`: optional; the run's own transient worktree. The daemon force-removes it when the run exits (normal reap and crash-restart reconcile); uncommitted state is discarded by design; commits are the only durable output of a run.
+- `spec.owned_branch` / `spec.branch_base` / `spec.branch_created`: optional; the run's per-agent branch (`agent/<handle>`), the commit OID it started from, and whether this dispatch minted the branch. Only deliverable runs (the `worker` persona) carry a branch; report runs (every other persona and ad-hoc dispatch) and asks are branchless; they send `owned_branch` null and `branch_created` false. After worktree removal the daemon deletes `owned_branch` only when `branch_created` is true and `rev-list <branch_base>..<branch>` is empty; a continued or commit-bearing branch always survives teardown.
+- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's registered session file or daemon-managed agent session sidecar and forks it (`pi --fork`) into a new answerer session (used by the agent ask capability). The answerer runs the uniform toolset in a branchless detached workspace that is force-removed at run end (isolation via the disposable workspace, not a read-only posture); it never mints a branch, so nothing it writes survives. Omitted/null for normal dispatch. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated. If no safe fork source exists, the target is reported as unavailable without distinguishing missing, unauthorized, or non-forkable targets.
 
 New run rows persist `dispatcher_id` as the registered `node_id` that sent `dispatch`.
 
@@ -184,7 +184,7 @@ The only correct answer is a `pong` carrying the same `nonce`:
 {"type":"pong","v":28,"nonce":"ping-01"}
 ```
 
-An unsolicited `pong` is inert and must not close the connection. The daemon also sends `ping` as its **incumbent-liveness probe**: when a second connection registers an already-connected `node_id`, the daemon pings the incumbent and waits for a `pong` echoing that nonce. A pong keeps the incumbent's session and the newcomer is rejected with `duplicate_node_connection`; only an unanswered probe releases the node id. A completed write is not sufficient evidence — a frozen peer's transport still accepts bytes — which is why the answer is required. Blind takeover is never performed.
+An unsolicited `pong` is inert and must not close the connection. The daemon also sends `ping` as its **incumbent-liveness probe**: when a second connection registers an already-connected `node_id`, the daemon pings the incumbent and waits for a `pong` echoing that nonce. A pong keeps the incumbent's session and the newcomer is rejected with `duplicate_node_connection`; only an unanswered probe releases the node id. A completed write is not sufficient evidence (a frozen peer's transport still accepts bytes), which is why the answer is required. Blind takeover is never performed.
 
 ### `list_agents` client → daemon
 
@@ -368,7 +368,7 @@ Fields:
 
 ### `attach_workstream_agent` client → daemon
 
-Attaches the requester's own session as a workstream agent. Every `pi --workstream` session appends a row — additive, concurrent, never overwriting.
+Attaches the requester's own session as a workstream agent. Every `pi --workstream` session appends a row: additive, concurrent, never overwriting.
 
 Important fields:
 - `request_id`: public request correlation id.
@@ -442,4 +442,4 @@ A minimal client flow is:
 2. Send `register` with `v: 28`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
 4. Use the `agent_handle` with `wait` (carrying a `request_id` the result echoes) or discover agents through `list_agents`.
-5. Answer every daemon `ping` with a same-nonce `pong`. The daemon probes an incumbent connection this way before admitting a duplicate registration for the same `node_id`, and an unanswered probe is what releases the id to the newcomer — so a client that stops answering loses its registration to the next session that resumes.
+5. Answer every daemon `ping` with a same-nonce `pong`. The daemon probes an incumbent connection this way before admitting a duplicate registration for the same `node_id`, and an unanswered probe is what releases the id to the newcomer, so a client that stops answering loses its registration to the next session that resumes.

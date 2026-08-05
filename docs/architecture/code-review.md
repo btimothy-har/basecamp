@@ -43,24 +43,24 @@ Enter deliberately does **not** open the comment box, and every exit from the bo
 
 "Comment" is the word throughout the domain; "reaction" belongs to the packet schema, and `CommentStore.toComments()` feeds `AnnotateResult.reactions` at that boundary.
 
-**`CommentStore` is the single source of truth; the `Editor` is a buffer, never an authority.** `Editor.submitValue()` empties itself *before* invoking `onSubmit`, so reading `getText()` anywhere on a submit path reads an empty editor and erases the comment — the defect this layout exists to prevent. The store is therefore seeded into the editor on focus-in and written back only from values carried on `CardEvent`s, and `reduceCard` drops a `blurEditor` that arrives after a submit has already left editing mode. The same hazard is called out in `pi/core/escalate/dialog/index.ts`.
+**`CommentStore` is the single source of truth; the `Editor` is a buffer, never an authority.** `Editor.submitValue()` empties itself *before* invoking `onSubmit`, so reading `getText()` anywhere on a submit path reads an empty editor and erases the comment, the defect this layout exists to prevent. The store is therefore seeded into the editor on focus-in and written back only from values carried on `CardEvent`s, and `reduceCard` drops a `blurEditor` that arrives after a submit has already left editing mode. The same hazard is called out in `pi/core/escalate/dialog/index.ts`.
 
-Two consequences of that rule are easy to undo by accident. The blur path reads `getExpandedText()`, not `getText()`: a large paste sits in the buffer as a marker, and the next focus-in `setText()` clears the paste map, so storing the unexpanded marker loses the content permanently. And the comment box is a slot child of the card's `Container` rather than lines spliced into rendered output — its position must follow the component tree, because finding text is reviewer-authored and can contain any label string.
+Two consequences of that rule are easy to undo by accident. The blur path reads `getExpandedText()`, not `getText()`: a large paste sits in the buffer as a marker, and the next focus-in `setText()` clears the paste map, so storing the unexpanded marker loses the content permanently. And the comment box is a slot child of the card's `Container` rather than lines spliced into rendered output: its position must follow the component tree, because finding text is reviewer-authored and can contain any label string.
 
 ## Layout
 
-- `index.ts` — registers `report_findings` and exposes the prompt command and skill in primary sessions only.
-- `prompts/code-review.md` — thin command wrapper that loads and applies the skill with optional additional instructions.
-- `skills/code-review/SKILL.md` — authoritative orchestration contract.
-- `skills/code-review/references/review-method.md` — shared reviewer method and finding contract.
-- `tools.ts` — result tool and review-chair handoff.
-- `findings.ts` — dimensions, severities, scope, and tool schemas.
-- `synthesis.ts` — stable finding order and deterministic verdict.
-- `annotate/model.ts` — `CommentStore`, card state, and the pure `reduceCard` transitions.
-- `annotate/keys.ts` — keystroke-to-intent mapping for the list, card, and comment box.
-- `annotate/render.ts` — list and card text.
-- `annotate/index.ts` — the two `ui.custom` views and the list/card loop.
-- `artifact.ts` — private review packet.
+- `index.ts`: registers `report_findings` and exposes the prompt command and skill in primary sessions only.
+- `prompts/code-review.md`: thin command wrapper that loads and applies the skill with optional additional instructions.
+- `skills/code-review/SKILL.md`: authoritative orchestration contract.
+- `skills/code-review/references/review-method.md`: shared reviewer method and finding contract.
+- `tools.ts`: result tool and review-chair handoff.
+- `findings.ts`: dimensions, severities, scope, and tool schemas.
+- `synthesis.ts`: stable finding order and deterministic verdict.
+- `annotate/model.ts`: `CommentStore`, card state, and the pure `reduceCard` transitions.
+- `annotate/keys.ts`: keystroke-to-intent mapping for the list, card, and comment box.
+- `annotate/render.ts`: list and card text.
+- `annotate/index.ts`: the two `ui.custom` views and the list/card loop.
+- `artifact.ts`: private review packet.
 
 The feature reviews the current branch only. PR-number and arbitrary-branch targets are out of scope.
 
