@@ -1,6 +1,6 @@
 # basecamp
 
-An opinionated harness for AI coding agents, built as a [Pi](https://github.com/earendil-works/pi) extension. Without a harness, models are the equivalent of raw energy. basecamp creates the scaffold and environment that directs a model's attention and energy.
+An opinionated harness for AI coding agents, built as a [Pi](https://github.com/earendil-works/pi) extension. A model on its own is raw energy — powerful but undirected. basecamp is the scaffold that focuses it into work, shaping every session with its own prompt, posture, guardrails, and dispatch.
 
 ```bash
 git clone https://github.com/btimothy-har/basecamp.git
