@@ -10,6 +10,7 @@ site_dir: site
 
 theme:
   name: material
+  favicon: assets/favicon.svg
   features:
     - navigation.sections
     - navigation.collapse
