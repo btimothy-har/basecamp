@@ -68,8 +68,7 @@ nav:
       - Subagents: using/subagents.md
       - Agents dashboard: using/agents-dashboard.md
   - Configuration:
-      - projects.json reference: configuration/projects.md
-      - Project context: configuration/project-context.md
+      - Projects: configuration/projects.md
       - Worktree environments: configuration/worktree-environments.md
       - Model aliases: configuration/model-aliases.md
   - Architecture:
