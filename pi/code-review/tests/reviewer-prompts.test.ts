@@ -22,6 +22,7 @@ describe("reviewer persona methods", () => {
 			"docs-specialist": ["Review systematically", "Trace each claim to behavior", "Reconcile representations"],
 			"code-clarity-specialist": ["Assess maintainability", "Check semantic visibility", "Prioritize by impact"],
 			"conventions-specialist": ["Cite where each convention is established", "Locate the canonical owner"],
+			"data-model-specialist": ["Trace data flow to upstream models", "Verify grain and join correctness"],
 		};
 
 		for (const [reviewer, expected] of Object.entries(contracts)) {

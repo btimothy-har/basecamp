@@ -46,6 +46,10 @@ describe("ReportFindingsParams validation", () => {
 		assert.equal(Value.Check(ReportFindingsParams, payload({ ...validFinding, dimension: "performance" })), false);
 	});
 
+	it("accepts the data-model dimension", () => {
+		assert.equal(Value.Check(ReportFindingsParams, payload({ ...validFinding, dimension: "data-model" })), true);
+	});
+
 	it("rejects a finding missing the required dimension", () => {
 		assert.equal(
 			Value.Check(

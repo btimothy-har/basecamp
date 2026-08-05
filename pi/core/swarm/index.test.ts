@@ -96,6 +96,7 @@ describe("core/swarm primitive entrypoint", () => {
 			new Set([
 				"code-clarity-specialist",
 				"conventions-specialist",
+				"data-model-specialist",
 				"devils-advocate",
 				"docs-specialist",
 				"general-reviewer",

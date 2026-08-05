@@ -8,6 +8,7 @@ export const Dimension = Type.Union([
 	Type.Literal("conventions"),
 	Type.Literal("general"),
 	Type.Literal("integration"),
+	Type.Literal("data-model"),
 ]);
 export type Dimension = Static<typeof Dimension>;
 
