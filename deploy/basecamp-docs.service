@@ -1,0 +1,13 @@
+[Unit]
+Description=Docs site (basecamp)
+
+[Service]
+Environment=PATH=%h/.nix-profile/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStartPre=-%h/.nix-profile/bin/podman rm -f basecamp-docs
+ExecStart=%h/.nix-profile/bin/podman run --rm --name basecamp-docs -p 18001:80 basecamp-docs:latest
+ExecStop=%h/.nix-profile/bin/podman stop basecamp-docs
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
