@@ -1,16 +1,30 @@
 # Git Worktrees
 
-Before a worktree is active, the effective working directory is where you launched Pi; the repository root is the protected checkout boundary for workspace guards. When an implementation plan is approved, Basecamp uses the workspace service to prompt for an execution worktree using existing worktrees plus a suggested label derived from the plan goal.
+A worktree is a separate working directory for a git branch. basecamp uses them so parallel sessions never fight over your checkout: implementation work happens in its own worktree, and the repository's main checkout stays untouched.
 
-The workspace service owns the `~/.worktrees/<org>/<name>/<label>/` storage convention and `/tmp/pi/<org>/<name>` scratch directories. Directory labels are deliberately generic (`wt/<slug>`, or `copilot/<slug>` for workstreams) because the worktree is a disposable space; the branch it holds (`<user-prefix>/<session-tag>-<slug>`) is the durable identity of the work. Git is the source of truth for worktree registration; Basecamp consumes workspace state for project context and exposes `BASECAMP_*` env vars to child processes and integrated services.
+## How they activate
 
-- The protected checkout must be on the default branch before activation; a dirty checkout does not block it, since worktrees are cut from HEAD and uncommitted checkout changes stay where they are
-- Implementation edits happen in the active worktree, not the protected checkout
-- Relative file-tool paths target the active worktree after activation, preserving the launch subdirectory when applicable
-- Mutating `git`/`gh` commands run through the bash reviewer, and edits or git operations are blocked unless the effective cwd is inside the active execution worktree
-- `--worktree-dir` is an internal attach-only Pi flag for existing Git-registered worktrees; it does not create worktrees
-- Resumed/reloaded/forked sessions restore their last active worktree when still in the same repo
-- `/worktree` offers **Create new worktree** (prompts for a slug, provisions and activates it) alongside the list of live worktrees to switch to; `/worktree [label]` switches directly
-- Session-owned worktrees remain human-managed; outside Pi, use native Git commands (`git worktree list`, `git worktree remove`) to inspect or clean them up
-- Additional directories stay on their configured checkouts throughout the session
-- Only works with git repositories
+When you launch Pi, you start in the repository's protected checkout (its main directory), with no worktree active. When you approve an implementation plan, basecamp offers an execution worktree, suggests a label from the plan goal, and switches you into it. You can also create or switch worktrees any time with [`/worktree`](slash-commands.md).
+
+Before activation the protected checkout must be on the default branch. A dirty checkout doesn't block activation: worktrees are cut from HEAD, and any uncommitted changes in the checkout stay where they are.
+
+## Where they live
+
+Worktrees are stored under `~/.worktrees/<org>/<name>/<label>/`. The directory label is deliberately generic (`wt/<slug>`, or `copilot/<slug>` for workstreams) because the worktree is disposable; the branch it holds is the durable identity of the work. Git is the source of truth for which worktrees exist, and basecamp keeps no separate registry.
+
+## Working in a worktree
+
+Once a worktree is active:
+
+- Implementation edits happen in the worktree, not the protected checkout.
+- Relative file paths target the worktree (your launch subdirectory is preserved where applicable).
+- Mutating `git` and `gh` commands run through the bash reviewer, and edits or git operations are blocked unless your working directory is inside the active worktree.
+- Resumed, reloaded, or forked sessions restore their last worktree when still in the same repo.
+
+Additional directories configured for a project stay on their own checkouts throughout. Worktrees apply only to git repositories.
+
+## Managing worktrees
+
+Worktrees stay human-managed. Inside Pi, use `/worktree` to create one, switch between live ones, or `/worktree prune` to reclaim dormant ones. Outside Pi, use native git: `git worktree list` to inspect, `git worktree remove` to clean up.
+
+For the full lifecycle, lease protocol, and teardown rules, see [Worktree Lifecycle & Teardown](../architecture/worktree-lifecycle.md).
