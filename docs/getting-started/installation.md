@@ -21,7 +21,7 @@ cd basecamp
 uv run install.py
 ```
 
-This installs the `basecamp` Python tool (a non-editable snapshot) and the Pi extension — prompting for optional package groups — and saves installer metadata to `~/.pi/basecamp/config.json`. To reconfigure later, run `basecamp install`; to iterate on the CLI against your working tree, run `uv run basecamp <cmd>` rather than reinstalling.
+This installs the `basecamp` Python tool (a non-editable snapshot) and registers the Pi extension from the repo root. To reconfigure later, run `basecamp install`; to iterate on the CLI against your working tree, run `uv run basecamp <cmd>` rather than reinstalling.
 
 Then initialize the environment:
 
