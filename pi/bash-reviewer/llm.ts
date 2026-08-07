@@ -116,7 +116,7 @@ export function resolveGateToolChoice(model: Model<Api>): unknown {
 
 export async function runGate(opts: {
 	model: Model<Api>;
-	auth: { apiKey?: string; headers?: Record<string, string> };
+	auth: { apiKey?: string; headers?: Record<string, string | null> };
 	context: Context;
 	signal?: AbortSignal;
 	complete?: typeof defaultComplete;
@@ -135,6 +135,6 @@ export async function runGate(opts: {
 
 export async function resolveGateModel(
 	ctx: ExtensionContext,
-): Promise<{ model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string> } } | null> {
+): Promise<{ model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string | null> } } | null> {
 	return resolveAliasedModel(ctx, "fast");
 }

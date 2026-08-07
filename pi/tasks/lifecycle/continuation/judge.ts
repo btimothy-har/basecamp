@@ -84,7 +84,7 @@ export function resolveJudgeToolChoice(model: Model<Api>): unknown {
 // every failure path returns null and the caller treats null as "do not nudge".
 export async function runJudge(opts: {
 	model: Model<Api>;
-	auth: { apiKey?: string; headers?: Record<string, string> };
+	auth: { apiKey?: string; headers?: Record<string, string | null> };
 	context: Context;
 	subagent: boolean;
 	signal?: AbortSignal;
@@ -107,7 +107,7 @@ export async function runJudge(opts: {
 // null and the caller does not nudge.
 export async function resolveJudgeModel(
 	ctx: ExtensionContext,
-): Promise<{ model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string> } } | null> {
+): Promise<{ model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string | null> } } | null> {
 	const model = ctx.model;
 	if (!model) return null;
 	try {

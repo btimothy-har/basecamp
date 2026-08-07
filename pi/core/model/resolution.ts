@@ -42,7 +42,7 @@ export function resolveModelReference(ctx: ExtensionContext, modelReference: str
 export async function resolveAliasedModel(
 	ctx: ExtensionContext,
 	alias: string,
-): Promise<{ model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string> } } | null> {
+): Promise<{ model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string | null> } } | null> {
 	const reference = resolveModelAlias(alias);
 	if (!reference) return null;
 
