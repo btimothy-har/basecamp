@@ -32,7 +32,7 @@ export const CONTINUATION_NUDGE_TYPE = "basecamp-continuation-nudge";
 const JUDGE_TIMEOUT_MS = 20_000;
 const AUDIT_ENTRY_TYPE = "continuation-guard";
 
-type ResolvedJudgeModel = { model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string> } };
+type ResolvedJudgeModel = { model: Model<Api>; auth: { apiKey?: string; headers?: Record<string, string | null> } };
 
 export interface ContinuationGuardDeps {
 	planHandoffActive: () => boolean;

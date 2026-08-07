@@ -2,7 +2,7 @@ import type { Context, Model } from "@earendil-works/pi-ai";
 import { isTriviallySafe } from "./fast-path.ts";
 import { buildGateContext, type GateDecision } from "./llm.ts";
 
-export type ReviewAuth = { apiKey?: string; headers?: Record<string, string> };
+export type ReviewAuth = { apiKey?: string; headers?: Record<string, string | null> };
 
 const SUBAGENT_APPROVE_CATEGORIES = new Set<GateDecision["category"]>(["git-mutation"]);
 
