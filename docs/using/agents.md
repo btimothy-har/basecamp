@@ -1,13 +1,13 @@
 # Agents & Subagents
 
-Basecamp's primary session can dispatch subagents that run alongside yours, each in its own isolated workspace. Scouts investigate the codebase, reviewers critique a change, and a worker makes edits on a branch you merge. You watch every dispatched run from a global dashboard.
+Basecamp's primary session can dispatch subagents that run alongside yours, each in its own isolated workspace. Scouts investigate the codebase, reviewers critique a change, and a worker makes edits on a branch your session merges back in. You watch every dispatched run from a global dashboard.
 
 ## Agent Types
 
 Agents come in two postures, decided by what they do to your tree:
 
 - **Report agents** investigate or critique and return findings. They write nothing to your tree.
-- **Workers** make changes on an `agent/<handle>` branch you merge.
+- **Workers** make changes on an `agent/<handle>` branch the primary session merges.
 
 ### Report agents
 
@@ -29,7 +29,7 @@ The specialists apply a specific lens:
 
 ### Workers
 
-A worker is the general-purpose deliverable agent: a dispatch with no named agent makes changes rather than a report. It mints an `agent/<handle>` branch from your clean HEAD, commits its change, and leaves the branch for you to integrate with `git merge agent/<handle>`. A worker needs a clean checkout: a dirty HEAD fails the dispatch with commit-first guidance.
+A worker is the general-purpose deliverable agent: a dispatch with no named agent makes changes rather than a report. It mints an `agent/<handle>` branch from your clean HEAD, commits its change, and leaves the branch for the primary session to merge with `git merge agent/<handle>`. A worker needs a clean checkout: a dirty HEAD fails the dispatch with commit-first guidance.
 
 ## How dispatch works
 
