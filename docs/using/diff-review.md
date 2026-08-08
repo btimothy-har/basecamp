@@ -1,11 +1,29 @@
 # Reviewing a Diff
 
-`/diff` opens [hunk](https://github.com/modem-dev/hunk) in a split Herdr pane beside the session, showing everything the branch has changed since it left the default branch: committed and uncommitted work together, in one view. The session blocks while you read. Annotate any line with `c`, come back to pi, confirm, and your notes arrive as line-anchored feedback for the agent to act on. The pane closes behind you.
+`/diff` opens [hunk](https://github.com/modem-dev/hunk) beside your session and shows everything this branch has changed since it left the default branch: committed and uncommitted work, in one view. You annotate lines as you read; when you return to pi, your notes become line-anchored feedback the agent acts on.
 
-Each review is a checkpoint. `/diff` records where you finished, and `/diff last` shows only what moved since then, so you can review at intervals instead of re-reading the whole branch each time. `/diff last` never moves the checkpoint, so running it twice shows the same span; with no checkpoint yet (or one no longer in the branch's history, after a rebase) it falls back to the full diff and says so. Checkpoints are commits, so uncommitted work you already reviewed still appears in the next `/diff last`.
+## The review loop
 
-Blocking is deliberate: hunk keeps notes in memory only, so they have to be read while its window is still open. If the read fails, `/diff` says so and leaves the window up rather than reporting an empty review.
+1. Run `/diff`. hunk opens in a split pane beside your session.
+2. Read the diff, and press `c` on any line to leave a note.
+3. Return to pi and confirm. Your notes are sent to the agent, and the pane closes.
 
-Agents annotate the same diff through the `annotate_changeset` tool, recording their rationale beside the code they changed as they work; it accumulates and renders at your next review, then clears once you have seen it. Each annotation gets a key the agent can pass to `remove_annotation` to withdraw one its later edits invalidated. Rationale is anchored to the branch's review base, so notes written for another branch never render against these lines.
+Your session pauses while you review. That is deliberate: hunk keeps notes in memory only, so they must be captured before its window closes. If a capture ever fails, `/diff` tells you and leaves the pane open rather than reporting an empty review.
 
-`/diff` is primary-only and needs both Herdr and `hunk`; without them it reports what is missing and changes nothing.
+## Reviewing what changed: `/diff last`
+
+Each `/diff` marks a checkpoint at your current HEAD, and `/diff last` shows only what has moved since then. Review in passes instead of re-reading the whole branch each time.
+
+- `/diff last` never advances the checkpoint, so running it twice shows the same span.
+- With no checkpoint yet, or one a rebase has orphaned, it falls back to the full diff and says so.
+- A checkpoint is a commit, so uncommitted work you already reviewed still appears in the next `/diff last`.
+
+## Agent annotations
+
+Agents annotate the same diff as they work, recording the reasoning behind their changes. Those notes appear in the diff at your next review, then clear once you have seen them.
+
+## Requirements
+
+`/diff` is primary-only and needs both Herdr and `hunk`. If either is missing, it reports what is and changes nothing.
+
+For the internals behind checkpoints, annotation anchoring, and the sidecar model, see [Diff Surface Internals](../architecture/diff-surface.md).
