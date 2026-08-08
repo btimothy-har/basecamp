@@ -4,15 +4,20 @@ Basecamp's primary session can dispatch subagents that run alongside yours, each
 
 ## Agent Types
 
-Every named agent is report-only: it investigates or critiques and returns a report, but writes nothing to your tree.
+Agents come in two postures, decided by what they do to your tree:
 
-### General purpose
+- **Report agents** investigate or critique and return findings. They write nothing to your tree.
+- **Workers** make changes on an `agent/<handle>` branch you merge.
+
+### Report agents
+
+Every named agent is report-only. The general-purpose ones apply to any codebase or change:
 
 - **`scout`** — investigates the codebase and returns structured findings for follow-up work.
 - **`general-reviewer`** — correctness, logic, control and data flow, edge cases, design fit.
 - **`devils-advocate`** — a contrarian second opinion on a brief, assumption, or conclusion.
 
-### Specialists
+The specialists apply a specific lens:
 
 - **`security-specialist`** — injection, auth, secrets, input validation, data exposure.
 - **`testing-specialist`** — coverage gaps, edge cases, mock and assertion quality.
@@ -22,9 +27,9 @@ Every named agent is report-only: it investigates or critiques and returns a rep
 - **`integration-specialist`** — cross-layer contracts, producer and consumer parity, migrations.
 - **`docs-specialist`** — factual accuracy, completeness, clarity, long-term value.
 
-## Workers
+### Workers
 
-A dispatch with no named agent runs as a worker in deliverable posture. It mints an `agent/<handle>` branch from your clean HEAD, commits its change, and leaves the branch for you to integrate with `git merge agent/<handle>`. A worker needs a clean checkout: a dirty HEAD fails the dispatch with commit-first guidance.
+A worker is the general-purpose deliverable agent: a dispatch with no named agent makes changes rather than a report. It mints an `agent/<handle>` branch from your clean HEAD, commits its change, and leaves the branch for you to integrate with `git merge agent/<handle>`. A worker needs a clean checkout: a dirty HEAD fails the dispatch with commit-first guidance.
 
 ## How dispatch works
 
