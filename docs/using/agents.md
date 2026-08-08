@@ -47,16 +47,6 @@ basecamp agents
 
 It opens in your browser with a short-lived login; if no browser is available, it prints the URL instead. Run `basecamp agents` again when the login expires.
 
-The dashboard groups Root, Workstream, and Copilot sessions by repository and worktree, showing every connected session plus the most recent disconnected ones. Filters narrow by repository, worktree, status, and agent type. Session pages show goal and task history with the full agent tree; agent pages show ancestry, current task, skills, and recent activity.
+The dashboard lists your sessions and the agents each has dispatched, grouped by repository and worktree, with filters by status and agent type. It is a read-only, localhost-only view: no remote access, and no dispatch or mutation from the browser.
 
-## Dashboard security boundary
-
-The browser surface is deliberately narrower than the daemon:
-
-- It binds only `127.0.0.1:47658`; the port is fixed and a collision disables the dashboard without stopping the UDS hub.
-- It exposes no dispatch, cancel, messaging, mutation, workstream-management, or daemon WebSocket routes.
-- Browser payloads omit private IDs, paths, session files, prompts/specs, environment data, report tokens, raw tool inputs/results, hidden thinking, and full result/error bodies.
-- Authentication state and bootstrap nonces exist only in hub memory. The loopback HTTP cookie is host-only, `HttpOnly`, and `SameSite=Strict`; no login secret is written to disk.
-- The 24-hour disconnected-session window and 50-root loader ceiling are display rules, not retention policy. Older SQLite rows are left untouched, and live roots remain visible regardless of age.
-
-This is a single-user localhost surface, not a remote dashboard: there is no configurable bind address, TLS layer, CORS, or multi-user authorization. For the dual-app topology, auth lifecycle, and safe read model, see [Hub Daemon & Dashboard Topology](../architecture/hub-daemon.md).
+For the full topology, auth lifecycle, and security boundary, see [Hub Daemon & Dashboard Topology](../architecture/hub-daemon.md).
