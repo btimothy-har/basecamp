@@ -19,6 +19,6 @@ pi
 ## Read more
 
 - [Getting started](getting-started/installation.md): install and your first session
-- [Using basecamp](using/slash-commands.md): commands, worktrees, diff review, subagents, the dashboard
+- [Using basecamp](using/slash-commands.md): commands, worktrees, diff review, agents and the dashboard
 - [Configuration](configuration/projects.md): projects, worktree environments, model aliases
 - [Architecture](architecture/core.md): how the prompt, dispatch, worktrees, guardrails, and hub fit together
