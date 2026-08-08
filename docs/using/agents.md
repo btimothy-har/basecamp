@@ -33,9 +33,7 @@ A worker is the general-purpose deliverable agent: a dispatch with no named agen
 
 ## How dispatch works
 
-Every dispatched agent runs in its own transient git worktree, isolated from your session. Report agents get a branchless, detached copy of your current state (uncommitted work included) and leave nothing behind; their report is the deliverable. Workers branch and commit, as above. Workspaces are removed automatically when a run ends, so commits are the only durable output of a run.
-
-A session with no repository has no worktree to isolate, so its dispatches run report-only with no write tools.
+Every dispatched agent runs in its own transient git worktree, isolated from your session. Report agents get a detached copy of your current state (uncommitted work included) and leave nothing behind; workers branch and commit. Workspaces are removed when a run ends, so commits are the only durable output. A session with no repository has no worktree to isolate, so its dispatches run report-only with no write tools.
 
 For the dispatch primitive, agent lifecycle, and teardown rules, see [The Agent-Dispatch Model](../architecture/agent-dispatch.md).
 
@@ -47,9 +45,9 @@ Open the global, read-only session dashboard from any directory:
 basecamp agents
 ```
 
-The command starts or reuses the single Basecamp hub, mints a 30-second one-time browser login over the owner-only daemon socket, and opens the dashboard. If the system browser cannot be opened, it prints the short-lived fallback URL instead. Run the command again when browser authentication expires.
+It opens in your browser with a short-lived login; if no browser is available, it prints the URL instead. Run `basecamp agents` again when the login expires.
 
-The dashboard groups top-level Root, Workstream, and Copilot sessions by repository and worktree. It always includes every connected root, including sessions with no child agents, plus the five newest disconnected roots seen within the last 24 hours. An explicit **Load 5 more sessions** control expands disconnected history up to 50 roots; the selected session stays pinned while eligible. Filters cover repository, worktree, kind, live status, agent status, and agent type. Session pages show bounded goal-cycle/task history and recursive agent topology; public-handle agent pages show ancestry, descendants, current task, recent allowlisted activity, skills, previews, and at most three assistant messages. Polling pauses while the page is hidden and retains the last safe in-memory snapshot during a transient failure or busy refresh.
+The dashboard groups Root, Workstream, and Copilot sessions by repository and worktree, showing every connected session plus the most recent disconnected ones. Filters narrow by repository, worktree, status, and agent type. Session pages show goal and task history with the full agent tree; agent pages show ancestry, current task, skills, and recent activity.
 
 ## Dashboard security boundary
 
