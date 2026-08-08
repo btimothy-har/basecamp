@@ -1,13 +1,19 @@
-# Agents & Sub-Agents
+# Agents & Subagents
 
 Basecamp's primary session can dispatch subagents that run alongside yours, each in its own isolated workspace. Scouts investigate the codebase, reviewers critique a change, and a worker makes edits on a branch you merge. You watch every dispatched run from a global dashboard.
 
-## Named agents
+## Agent Types
 
-Every named agent is report-only: it investigates or critiques and returns a report, but writes nothing to your tree. Dispatch one of:
+Every named agent is report-only: it investigates or critiques and returns a report, but writes nothing to your tree.
+
+### General purpose
 
 - **`scout`** — investigates the codebase and returns structured findings for follow-up work.
 - **`general-reviewer`** — correctness, logic, control and data flow, edge cases, design fit.
+- **`devils-advocate`** — a contrarian second opinion on a brief, assumption, or conclusion.
+
+### Specialists
+
 - **`security-specialist`** — injection, auth, secrets, input validation, data exposure.
 - **`testing-specialist`** — coverage gaps, edge cases, mock and assertion quality.
 - **`code-clarity-specialist`** — simplification, structure, redundancy, pattern alignment.
@@ -15,7 +21,6 @@ Every named agent is report-only: it investigates or critiques and returns a rep
 - **`data-model-specialist`** — dbt and SQL model structure, grain, lineage, dimensional modeling.
 - **`integration-specialist`** — cross-layer contracts, producer and consumer parity, migrations.
 - **`docs-specialist`** — factual accuracy, completeness, clarity, long-term value.
-- **`devils-advocate`** — a contrarian second opinion on a brief, assumption, or conclusion.
 
 ## Workers
 

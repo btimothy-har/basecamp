@@ -64,7 +64,7 @@ nav:
       - Session Modes & Working Styles: using/session-modes.md
       - Git Worktrees: using/worktrees.md
       - Reviewing a Diff: using/diff-review.md
-      - Agents & Sub-Agents: using/agents.md
+      - Agents & Subagents: using/agents.md
   - Configuration:
       - Projects: configuration/projects.md
       - Worktree Environments: configuration/worktree-environments.md
