@@ -1,40 +1,73 @@
 # Core Substrate
 
-The always-present foundation domain for basecamp. `pi/core` is the first module the composition root (`pi/extension.ts`) registers; every other domain may import it freely (`#core/*`). `src/basecamp/core` is the Python side (`basecamp.core`: settings, paths, files, exceptions, plus the project-config schema, migrations, directories, and its management CLI).
+`pi/core` is the foundation domain, the always-present substrate every other domain builds on. The composition root (`pi/extension.ts`) registers it first, so its state is ready before any feature domain loads. Every domain may import `#core/*` freely; **core imports no other domain.** The dependency arrow points one way.
 
-## What it does
+The Python side is `src/basecamp/core` (`basecamp.core`): settings, paths, files, exceptions, the project-config schema and its migrations, and the management CLI.
 
-- **Host primitives** (`host/`): the boundary to the runtime we're hosted in: process exec + cwd provider (`host/exec.ts`), config-file IO (`host/config.ts`), and paths (`host/paths.ts`)
-- **Environment contract** (`host/env.ts`): typed `BASECAMP_*` env var getters/setters and agent-depth helpers
-- **Hub connector** (`hub/`): core's adapter for the hub daemon: the WebSocket transport + register/handshake, ensure-daemon (spawn/health/version), node-identity derivation, connection-status footer, and shared **wire protocol** (`hub/protocol/`: the TypeScript codec + frame types, JSON fixtures, and `PROTOCOL.md`, kept in lockstep with Python `basecamp.hub`). `registerCore` opens the connection at `session_start` for top-level sessions and daemon-spawned agents, exposing `awaitDaemonConnection`/`onDaemonConnect` to the agent-dispatch and workstream features.
-- **Agent-dispatch primitive** (`swarm/`): core's adapter for the async-agent runtime, a peer of `hub/`: the builtin agent catalog, the dispatch/ask/cancel/wait/peer tools, the launch-spec builder, the run reporter, and the active-agents widget, all over `#core/hub`. `registerCore` registers it right after the hub connector (`registerSwarm`, for top-level sessions and daemon-spawned agents alike). It is **substrate, not a feature**: multiple domains dispatch agents, so the `#code-review` and `#workstreams` feature domains build on it via `#core/swarm/agents/*`. The Python server side is `basecamp.hub.swarm`; the on-disk runtime path stays `~/.pi/basecamp/swarm/`.
-- **Ports** (seams core declares, other domains implement, each co-located with its concept, not bucketed): the tool/skill catalog (`catalog/`), model-alias resolution (`model/`), and the workspace service (`workspace/service.ts`)
-- **Reload-survival** (`global-registry.ts`): `processScoped`: the one place live state is pinned across `/reload`
-- **Session lifecycle**: agent-mode state machine (analysis/planning/work/copilot), session start (state load + mode restore), session shutdown, chat compaction
-- **State persistence**: file-backed session state (`~/.pi/basecamp/core/session-state/<session-id>.json`) with fork inheritance
-- **Skills** (`skills/`): the `skill()` tool, SKILL.md content parsing, and the invocation tracker (store + lifecycle in `tracker.ts`); the tool/skill catalog registry is its sibling `catalog/`
-- **Model** (`model/`): the alias provider seam + native config provider (reads the `model_aliases` section of `~/.pi/basecamp/config.json`; writes shell out to `basecamp config alias`) + the `/model-aliases` command, plus `model/resolution.ts` (string→Model, reasoning-effort, tool-choice)
-- **Escalate**: the `escalate` tool: pause and ask the user for a decision (primary sessions only)
-- **Framework UI** (`ui/`): the session's status footer, title auto-naming, and interactive mode editor: framework chrome, registered last by `registerCore`. Feature-specific widgets live with their own domains; only `formatTitle` is consumed externally (via `#core/ui/index.ts`).
-- **Project config** (`project/`): resolve repo → project → `BASECAMP_PROJECT`, the project-config schema, and nested-doc context injection. Core-owned but registered by the workspace module (its session_start hook needs workspace runtime state); prompt assembly lives in the workspace domain.
-- **Workspace defaults**: git detection at session_start (repo, remote, branch from `process.cwd()`); worktree operations (list/activate/attach) as thin git wrappers. The workspace module overrides these defaults with basecamp-config-aware values during registration.
+## Layering
 
-## Architecture
+```
+   Feature domains
+   code-review · workstreams · pull-request
+              │
+              │  import #core/*   (one-way: down only; core imports nothing)
+              ▼
+ ════════════════════════════════════════════════════
+   Core substrate    (pi/core, registered first)
+ ════════════════════════════════════════════════════
 
-Core is the foundation of the boundary rules (`scripts/check-boundaries.ts`): every context may import `#core/*`; core imports no other context. Cross-context imports go through the owning context's public index rather than deep internal paths.
+     swarm ──▶ hub              host · env
+     (agent-dispatch            session lifecycle · state
+      primitive)                skills · model · UI
+                                ports · project · workspace
 
-`#core/*` is free from **inside** core too, and a file reaches anything outside its own directory by alias rather than by climbing: `./sibling.ts` is the only legal relative form, and every `../` is spelled `#core/hub/protocol/index.ts`. This holds repo-wide: each context reaches its own files as `#<context>/…`, so a specifier states *where the target lives* instead of *how far up to climb*, and survives either file moving. It is enforced, not advisory: a reintroduced `../` fails the boundary check with the alias to use. Cross-context imports are unaffected and still go through `#<other>/index.ts`.
+              │
+              │  WebSocket over UDS
+              ▼
+   basecamp.hub    (daemon + swarm server)
+   basecamp.core   (settings · paths · config schema · CLI)
+```
 
-### State convention: wiring vs. surviving
+Two things in core are **primitives, not features**: the hub connector and the agent-dispatch primitive. They are peers of each other, and several feature domains build on them, which is why they live in core rather than in a domain that consumes them.
 
-There are two kinds of module state, with different rules:
+### The hub connector (`hub/`)
 
-- **Wiring**: providers and registries that the composition root re-establishes on every load (including `/reload`): cwd provider, catalog providers, model-alias providers, workspace service registration, workspace hooks. These are **plain module state** (`let`/`const` at module scope). Re-registration on reload is guaranteed because `extension.ts` runs every module's `register*` in a fixed order; converting these to module state also stops stale pre-reload listener closures from firing.
+Core's adapter for the hub daemon: the WebSocket transport, register/handshake, ensure-daemon (spawn, health, version), node-identity derivation, and the connection-status footer. It owns the shared wire protocol (`hub/protocol/`: the TypeScript codec, frame types, JSON fixtures, and `PROTOCOL.md`, kept in lockstep with Python `basecamp.hub`). `registerCore` opens the connection at `session_start` for top-level sessions and daemon-spawned agents, and exposes `awaitDaemonConnection` / `onDaemonConnect` to the features that need it.
 
-- **Surviving state**: live session data that must outlive `/reload` (pi re-imports the extension with fresh module instances, `moduleCache: false`): session state, agent mode, invoked skills, the workspace runtime service, project runtime, and the daemon WebSocket client. These use `processScoped(key, init)` from `global-registry.ts`, which stores the value on `globalThis` behind a `Symbol.for` key. Key strings are stable across releases; renaming one silently drops state at the next `/reload`.
+### The agent-dispatch primitive (`swarm/`)
 
-When adding state, default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session.
+Core's adapter for the async-agent runtime, riding on `#core/hub`. It owns the builtin agent catalog, the dispatch/ask/cancel/wait/peer tools, the launch-spec builder, the run reporter, and the active-agents widget. `registerCore` registers it (`registerSwarm`) right after the hub connector, for top-level sessions and daemon-spawned agents alike. It is **substrate, not a feature**: `#code-review` and `#workstreams` both dispatch agents, so they consume it via `#core/swarm/agents/*` rather than each owning a copy. The Python server side is `basecamp.hub.swarm`; the on-disk runtime path is `~/.pi/basecamp/swarm/`.
 
-### Init ordering
+## The rest of core
+
+- **Host primitives** (`host/`): the boundary to the runtime we are hosted in. Process exec and the cwd provider (`host/exec.ts`), config-file IO (`host/config.ts`), and paths (`host/paths.ts`).
+- **Environment contract** (`host/env.ts`): typed `BASECAMP_*` getters/setters and agent-depth helpers.
+- **Session lifecycle**: the agent-mode state machine (`analysis` / `planning` / `work` / `copilot`), session start (state load + mode restore), shutdown, and chat compaction.
+- **State persistence**: file-backed session state (`~/.pi/basecamp/core/session-state/<session-id>.json`) with fork inheritance.
+- **Reload survival** (`global-registry.ts`): `processScoped`, the one place live state is pinned across `/reload` (see [State convention](#state-convention-wiring-vs-surviving)).
+- **Skills** (`skills/`): the `skill()` tool, `SKILL.md` parsing, and the invocation tracker (`tracker.ts`). The tool/skill catalog registry is its sibling `catalog/`.
+- **Model** (`model/`): the alias provider seam, the native config provider (reads the `model_aliases` section of `~/.pi/basecamp/config.json`; writes shell out to `basecamp config alias`), the `/model-aliases` command, and `model/resolution.ts` (string → Model, reasoning-effort, tool-choice).
+- **Escalate**: the `escalate` tool pauses the session to ask the user for a decision (primary sessions only).
+- **Framework UI** (`ui/`): the status footer, title auto-naming, and the interactive mode editor (the framework chrome, registered last by `registerCore`). Feature-specific widgets live with their own domains; only `formatTitle` is consumed externally, via `#core/ui/index.ts`.
+- **Ports** (seams core declares and other domains implement, each co-located with its concept): the tool/skill catalog (`catalog/`), model-alias resolution (`model/`), and the workspace service (`workspace/service.ts`).
+- **Project config** (`project/`): resolve repo → project → `BASECAMP_PROJECT`, the project-config schema, and nested-doc context injection. Core-owned but registered by the workspace module, because its `session_start` hook needs workspace runtime state; prompt assembly lives in the workspace domain.
+- **Workspace defaults**: git detection at `session_start` (repo, remote, branch from `process.cwd()`) and worktree operations (list/activate/attach) as thin git wrappers. The workspace module overrides these with config-aware values during registration.
+
+## Boundary rule
+
+Core is the foundation of the repo-wide boundary rules (`scripts/check-boundaries.ts`): every context may import `#core/*`, and core imports no other context. Cross-context imports go through the owning context's public index, never deep internal paths.
+
+The `#core/*` alias is free from **inside** core too. A file reaches anything outside its own directory by alias, not by climbing: `./sibling.ts` is the only legal relative form, and every `../` is spelled `#core/hub/protocol/index.ts`. This holds repo-wide. Each context reaches its own files as `#<context>/…`, so a specifier states *where the target lives* rather than *how far up to climb*, and survives either file moving. It is enforced, not advisory: a reintroduced `../` fails the boundary check with the alias to use.
+
+## State convention: wiring vs. surviving
+
+Two kinds of module state, two rules.
+
+- **Wiring** is providers and registries the composition root re-establishes on every load, `/reload` included: the cwd provider, catalog providers, model-alias providers, workspace service registration, and workspace hooks. These are **plain module state** (`let` / `const` at module scope). Re-registration is guaranteed because `extension.ts` runs every module's `register*` in a fixed order, and keeping them as module state also stops stale pre-reload listener closures from firing.
+- **Surviving state** is live session data that must outlive `/reload` (Pi re-imports the extension with fresh module instances, `moduleCache: false`): session state, agent mode, invoked skills, the workspace runtime service, project runtime, and the daemon WebSocket client. These use `processScoped(key, init)` from `global-registry.ts`, which stores the value on `globalThis` behind a `Symbol.for` key. Key strings are stable across releases; renaming one silently drops state at the next `/reload`.
+
+Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session.
+
+## Init ordering
 
 `extension.ts` registers modules in a fixed order with core first, so core's `session_start` handlers run before any other module's. Later modules may assume core-owned state (session state, agent mode) is initialized for every lifecycle event.
