@@ -33,7 +33,7 @@ export const TASK_TRACKING_TOOLS = [
 	"get_task",
 	"delete_task",
 ] as const;
-export const SUBAGENT_SUPPORT_TOOLS = ["skill", ...TASK_TRACKING_TOOLS, "bq_query"] as const;
+export const SUBAGENT_SUPPORT_TOOLS = ["skill", ...TASK_TRACKING_TOOLS] as const;
 // The uniform toolset for every dispatched agent WITH a workspace: each run works in its
 // own transient worktree, so `write`/`edit` are safe — the workspace is the isolation
 // boundary, not the toolset. `bash` is not a mutation sandbox; worktree confinement holds.

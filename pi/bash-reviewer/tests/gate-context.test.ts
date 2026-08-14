@@ -34,11 +34,11 @@ describe("buildGateContext", () => {
 });
 
 describe("RULESET", () => {
-	// These were deterministic pre-LLM blocks before the command parser was deleted. The ruleset is
-	// now the only place they are enforced, so dropping one would otherwise be a silent regression.
-	it("carries the policies that used to be enforced without a model", () => {
+	// The ruleset is the only place these policies are enforced (no deterministic pre-LLM block
+	// remains), so dropping one would otherwise be a silent regression.
+	it("carries the policies enforced nowhere else", () => {
 		assert.match(RULESET, /bq query/);
-		assert.match(RULESET, /bq_query/);
+		assert.match(RULESET, /redirected to a local file/);
 		assert.match(RULESET, /git worktree/);
 		assert.match(RULESET, /recursive filesystem search/);
 	});
