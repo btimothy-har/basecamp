@@ -41,25 +41,18 @@ Determine the database from project context (dbt profiles, connection configs, e
 psql -h localhost -U username -d database_name -f script.sql
 ```
 
-For BigQuery, save SQL to a `.sql` file under the scratch directory (`/tmp/pi/**`), then use the `bq_query` tool instead of inline `bq query`. Include a short required `description` (TLDR, no raw SQL/result rows):
+For BigQuery, save SQL to a `.sql` file under the scratch directory (`/tmp/pi/**`) and run it with the bq CLI. Always redirect result rows to a local file — the bash reviewer denies row-returning bq invocations (`bq query`, `bq head`) that would stream results into the conversation:
 
-```text
-# Validate only
-bq_query({
-  path: "/tmp/pi/<repo>/query.sql",
-  description: "Estimate monthly active users by region",
-  dryRun: true,
-})
+```bash
+# Estimate scan size first
+bq query --use_legacy_sql=false --dry_run < /tmp/pi/<repo>/query.sql
 
-# Execute; results are written to scratch, CSV by default
-bq_query({
-  path: "/tmp/pi/<repo>/query.sql",
-  description: "Export monthly active users by region",
-  maxRows: 1000,
-})
+# Execute; write rows to a scratch file
+bq query --use_legacy_sql=false --format=csv --max_rows=1000 \
+  < /tmp/pi/<repo>/query.sql > /tmp/pi/<repo>/results.csv
 ```
 
-Required BigQuery parameters: `path`, `description`. Optional: `projectId`, `location`, `maxRows`, `outputFormat`, `dryRun`, `force`. Non-dry-run executions always run a dry-run preflight first. In interactive parent sessions, queries estimated over 1 TB or `SCRIPT`/non-authoritative estimates require user approval, and unknown/unparseable estimates block execution. In no-UI contexts, authoritative estimates at or below 5 TB execute after the dry run; estimates above 5 TB, unknown/unparseable estimates, and `SCRIPT`/non-authoritative estimates are soft-locked unless intentionally rerun with `force: true`. `force` bypasses all scan-approval gates (no-UI soft lock, estimate_unknown, interactive confirmation); it does not bypass dry-run failures, execution errors, or output privacy behavior. `maxRows` limits returned rows only, not scanned bytes. The tool returns a summary only; read the output file deliberately when you need row data.
+Check the dry-run estimate before executing a large scan — there is no other cost gate. Read the output file deliberately (`head`, `wc -l`) rather than dumping it into context. `--max_rows` limits returned rows only, not scanned bytes.
 
 ### Code Standards
 

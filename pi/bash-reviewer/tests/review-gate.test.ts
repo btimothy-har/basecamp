@@ -10,7 +10,7 @@ describe("reviewBashCommand", () => {
 	it("sends bq query commands to the gate rather than blocking them statically", async () => {
 		const harness = makeDeps({
 			runGate: async () =>
-				makeDecision("deny", 'Write the SQL to a .sql file and use bq_query({ path: "..." }).', {
+				makeDecision("deny", "Redirect bq query output to a local file to preserve context.", {
 					category: "bq-query",
 				}),
 		});
@@ -18,7 +18,7 @@ describe("reviewBashCommand", () => {
 		const outcome = await reviewBashCommand("bq query 'select 1'", harness.deps);
 
 		assert.equal(outcome?.block, true);
-		assert.match(outcome?.reason ?? "", /bq_query/);
+		assert.match(outcome?.reason ?? "", /local file/);
 		assert.equal(harness.resolveModelCalls(), 1);
 		assert.equal(harness.runGateCalls(), 1);
 		assert.equal(harness.auditEntries.length, 1);

@@ -52,8 +52,8 @@ export function basecampCorePaths(homeDir = os.homedir()): BasecampCorePaths {
 /**
  * True when `child` is `parent` itself or nested inside it — path-string
  * containment (no realpath/symlink resolution). The shared form previously
- * copied verbatim across workspace guards, worktree migration, agent
- * sandboxing, and bigquery. Convention: `(child, parent)`.
+ * copied verbatim across workspace guards, worktree migration, and agent
+ * sandboxing. Convention: `(child, parent)`.
  */
 export function isWithin(child: string, parent: string): boolean {
 	const relative = path.relative(parent, child);

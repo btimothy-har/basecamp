@@ -168,7 +168,6 @@ const SUPPORT_TOOLS = [
 	"complete_task",
 	"get_task",
 	"delete_task",
-	"bq_query",
 ];
 
 const PARENT_ONLY_TOOLS = ["plan", "escalate"];
@@ -288,13 +287,13 @@ describe("getBasecampExtensionToolNames", () => {
 				baseDir: extensionRoot,
 				path: path.join(extensionRoot, `${name}.ts`),
 			});
-			const tools = ["bq_query", "agent", "escalate", "report_findings"].map((name) => ({
+			const tools = ["update_goal", "agent", "escalate", "report_findings"].map((name) => ({
 				name,
 				sourceInfo: sourceInfo(name),
 			}));
 			const pi = { getAllTools: () => tools } as unknown as ExtensionAPI;
 
-			assert.deepEqual(getBasecampExtensionToolNames(pi, extensionRoot), ["bq_query"]);
+			assert.deepEqual(getBasecampExtensionToolNames(pi, extensionRoot), ["update_goal"]);
 		} finally {
 			fs.rmSync(extensionRoot, { recursive: true, force: true });
 		}
