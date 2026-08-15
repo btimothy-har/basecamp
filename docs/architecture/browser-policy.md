@@ -25,7 +25,7 @@ Use `eval` for a single page or element expression and `run-code` for multi-step
 
 ## Runtime policy
 
-- **Dependency**: `@playwright/cli` is exact-pinned in the root package and lockfile. Version 0.1.17 currently carries a Playwright 1.62 alpha runtime, so upgrades are deliberate. The shim never uses a global install or `npx`, and blocks the CLI's installation commands.
+- **Dependency**: `@playwright/cli` is exact-pinned in the root package and lockfile; upgrades are deliberate. The shim never uses a global install or `npx`, and blocks the CLI's installation commands.
 - **Browser**: headed Chrome by default. `PLAYWRIGHT_MCP_EXECUTABLE_PATH` takes precedence, followed by `BASECAMP_BROWSER_PATH`; on macOS the shim then checks Google Chrome and Brave. Other platforms use Playwright's Chrome-channel resolution. The pinned upstream Chromium launcher adds `--disable-blink-features=AutomationControlled`, which causes Chrome's generic unsupported-flag banner; Basecamp does not hide it with another flag.
 - **Profile**: `PLAYWRIGHT_MCP_ISOLATED=false` by default, so Playwright creates and owns a fresh persistent profile for its workspace/session. Basecamp does not force a user-data directory.
 - **Lifecycle**: the Playwright daemon preserves browser state across CLI commands. `playwright-cli close` stops the current browser session while retaining its managed profile. Basecamp does not kill CLI sessions on Pi shutdown.
@@ -35,10 +35,8 @@ The shim defaults `PLAYWRIGHT_MCP_HEADLESS=false`, `PLAYWRIGHT_MCP_ISOLATED=fals
 
 ## Legacy state
 
-The former Puppeteer profile at `~/.pi/basecamp/browser/profile` is not reused, migrated, chmodded, or deleted by the browser integration, and the integration never attaches to or terminates a legacy Chrome process listening on port 9222. Legacy state is handled separately after its browser is closed: `basecamp doctor --clean` is the one sanctioned path that reclaims the retired profile, and only once it is provably unused (no live `SingletonLock` holder, cold past the staleness threshold) and the user confirms.
+A retired profile at `~/.pi/basecamp/browser/profile` is never reused, migrated, modified, or deleted in normal operation, and the integration never attaches to or terminates a legacy Chrome process. `basecamp doctor --clean` is the one sanctioned path that reclaims it, and only once it is provably unused (its Chrome `SingletonLock` names no live pid, and it is cold past the staleness threshold) and the user confirms.
 
 ## Architecture posture
 
-`pi/browser/` exposes no custom browser tools and is **primary-only**: a top-level session discovers the `playwright-cli` skill on demand and gets one private PATH entry: a gated shim for the exact-pinned `@playwright/cli`. Subagents get neither, and the shim rejects `BASECAMP_AGENT_DEPTH > 0`. The shim blocks install commands and confines automatically named artifacts to a bounded private directory; an explicit filename remains the user-directed project-artifact escape hatch.
-
-Playwright owns a fresh managed profile. The retired `~/.pi/basecamp/browser/profile` and any legacy Chrome/CDP process are never migrated, modified, or terminated in normal operation. The sole exception is `basecamp doctor --clean`, which may reclaim the retired profile only when it is **provably unused** (superseded, unlocked (its Chrome `SingletonLock` names no live pid), and cold (past the staleness threshold)) and only after explicit user confirmation. It never touches a live process or a held/warm profile.
+`pi/browser/` exposes no custom browser tools and is **primary-only**: a top-level session discovers the `playwright-cli` skill on demand and gets one private PATH entry: a gated shim for the exact-pinned `@playwright/cli`. Subagents get neither, and the shim rejects `BASECAMP_AGENT_DEPTH > 0`. The shim blocks install commands and confines automatically named artifacts to a bounded private directory; an explicit filename remains the user-directed project-artifact escape hatch. Playwright owns a fresh managed profile (see Legacy state for the retired profile).
