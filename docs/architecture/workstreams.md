@@ -12,7 +12,7 @@ The record and its execution staging are decoupled: `create`/`edit` manage the d
 
 - **`create_workstream`**: creates a durable workstream record in the daemon from a dossier-backed brief (label, brief, optional constraints). Returns its internal `ws_<uuid>` id and readable three-word slug. Record-only: no worktree, no Herdr pane, no agent.
 - **`edit_workstream`**: revises an existing workstream's content (any of label, brief, constraints) **in place, bumping its version and keeping the old version**. Identity (id/slug), dossier pointer, worktree, and attached agents are unchanged; unspecified fields carry forward from the current version. Record-only.
-- **`launch_workstream`**: stages execution for an **existing** workstream (resolved by id/slug): provisions its `copilot/<slug>` worktree (idempotent), stamps a `basecamp staged <ts>` lock on it, and best-effort opens a Herdr pane on it. The staged lock keeps the session-start cold sweep from reaping the worktree before `pi --workstream` launches; it has a 1-hour TTL (re-launching re-stamps it once it reads as cold) and the launching session takes it over as its own session lease (see `docs/architecture/worktree-lifecycle.md`). Stamping is best-effort: a lock failure surfaces as a warning in the result rather than failing the launch, so a transient error never strands a created worktree without its setup hook. Carries the workstream into whatever repo the session is in. Returns transient setup/herdr status + `next_step`. Does not create a record and does not start an agent.
+- **`launch_workstream`**: stages execution for an **existing** workstream (resolved by id/slug): provisions its `copilot/<slug>` worktree (idempotent), stamps a staged lock on it, and best-effort opens a Herdr pane on it. The staged lock keeps the session-start cold sweep from reaping the worktree before `pi --workstream` launches, and the launching session takes it over as its own session lease (see `docs/architecture/worktree-lifecycle.md`). A lock failure surfaces as a warning in the result rather than failing the launch, so a transient error never strands a created worktree without its setup hook. Carries the workstream into whatever repo the session is in. Returns transient setup/herdr status + `next_step`. Does not create a record and does not start an agent.
 - **`list_workstreams`**: repo-neutral listing from the daemon. Filters by `repo`, `dossierPath`, `query` (slug/label substring), and `status` (`open`/`closed`). A single-identifier lookup (query only) returns the workstream detail with its joined agent rows and version history.
 - **`set_workstream_status`**: sets a workstream's status to `open` or `closed`.
 
@@ -22,7 +22,7 @@ A workstream's content (`label`/`brief`/`constraints`) is versioned. `create_wor
 
 ## `pi --workstream` startup flag
 
-`pi --workstream` is a boolean flag. Bare `--workstream` infers the workstream from the current `copilot/<slug>` worktree label; `--workstream=<slug|id>` resolves explicitly (the value is recovered from argv). On start it attaches the session as an additive workstream agent (appends a `workstream_agents` row, concurrent, never overwrites) and injects the brief. "Which repos touched" derives from agent rows.
+`pi --workstream` is a boolean flag. Bare `--workstream` infers the workstream from the current `copilot/<slug>` worktree label; `--workstream=<slug|id>` resolves explicitly (the value is recovered from argv). On a **genuinely fresh** start only (never on resume/reload/fork/compact) it attaches the session as an additive workstream agent (appends a `workstream_agents` row, concurrent, never overwrites) and injects the brief. "Which repos touched" derives from agent rows.
 
 ## Multi-agent and cross-repo carry
 
@@ -30,10 +30,4 @@ A workstream can have several agent sessions over time or concurrently; every `p
 
 ## Protocol
 
-Workstream management uses four WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream`/`revise_workstream` + acks, protocol v22) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents + version history). See [PROTOCOL.md](hub-protocol.md).
-
-## Workstream model
-
-Workstreams are durable, **repo-neutral** coordination state owned by the `workstreams` domain over `#core/swarm`, persisted in the daemon's SQLite store. Identity is an internal `ws_<uuid>` plus a globally-unique three-word `slug`; content (`label`/`brief`/`constraints`) is versioned with append-only history. Worktrees are **not** persisted; git stays the source of truth, and the `copilot/<slug>` worktree name encodes the slug.
-
-The model is multi-agent and repo-neutral: every `pi --workstream` session appends a `workstream_agents` row (additive, never overwriting), so "which repos a workstream touched" derives from its agent rows. Record shaping and execution staging are decoupled: `create_workstream`/`edit_workstream` manage the durable record, while `launch_workstream` provisions the worktree + pane and can launch into a different repo for cross-repo coordination without duplicating the record. The Logseq **dossier** (`work__<org>__<repo>__<slug>`) stays the user-facing record of priority, decisions, and blockers; one dossier may back many workstreams. On a **genuinely fresh** `--workstream` session only; never on resume/reload/fork/compact; the session attaches as an agent and the latest brief is injected.
+Workstream management uses four WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream`/`revise_workstream` + acks) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents + version history). See [PROTOCOL.md](hub-protocol.md).
