@@ -2,11 +2,7 @@
 
 `pi/core` is the foundation domain: the always-present substrate every other domain builds on. The composition root (`pi/extension.ts`) registers it first, so its state is ready before any feature domain loads. Every domain may import `#core/*` freely; **core imports no other domain.** The Python side is `basecamp.core` (settings, paths, files, exceptions, the project-config schema and migrations, and the management CLI).
 
-This page has two halves: the decisions that shape core, then a reference map of what lives where.
-
-## Architecture decisions
-
-### One-way layering
+## Layering
 
 ```
   Feature domains
@@ -28,27 +24,11 @@ This page has two halves: the decisions that shape core, then a reference map of
   basecamp.hub (daemon)  ·  basecamp.core
 ```
 
-Feature domains import `#core/*`; core imports nothing back. The dependency arrow points one way, enforced (see Boundary rule) rather than advisory.
-
-### Primitives, not features
+Feature domains import `#core/*`; core imports nothing back. The dependency arrow points one way.
 
 Two things in core are **primitives, not features**: the hub connector and the agent-dispatch primitive. Several feature domains build on them, which is why they live in core rather than in any one domain that consumes them. A capability with a single consumer belongs in that consumer's domain; core is for substrate.
 
-### Boundary rule
-
-Enforced by `scripts/check-boundaries.ts`: every context may import `#core/*`; core imports no other context; cross-context imports go through the owning context's public index. The alias is free from inside core too: `./sibling.ts` is the only legal relative form, every `../` is spelled `#core/hub/protocol/index.ts`, and this holds repo-wide (`#<context>/…`), so a specifier states *where the target lives* rather than how far to climb. A reintroduced `../` fails the check with the alias to use.
-
-### State convention: wiring vs. surviving
-
-**Wiring** is providers and registries the composition root re-establishes on every load (`/reload` included): plain module state. **Surviving state** is live session data that must outlive `/reload` (session state, agent mode, invoked skills, workspace/project runtime, the daemon WebSocket client): `processScoped(key, init)` from `global-registry.ts`, stored on `globalThis` behind a `Symbol.for` key. Keys are stable across releases; renaming one silently drops state at the next `/reload`. Default to plain module state; reach for `processScoped` only when losing the value would break the live session.
-
-### Init ordering
-
-`extension.ts` registers modules in a fixed order with core first, so later modules may assume core-owned state is initialized for every lifecycle event.
-
-## Subsystem reference
-
-What lives where in core.
+## Subsystems
 
 ### The hub connector
 
@@ -64,7 +44,7 @@ What lives where in core.
 
 ### Session lifecycle and state
 
-The agent-mode state machine (`analysis` / `planning` / `work` / `copilot`), session start (state load + mode restore), shutdown, and chat compaction. Session state is file-backed (`~/.pi/basecamp/core/session-state/`) with fork inheritance, and `global-registry.ts` provides `processScoped`, the one place live state survives `/reload` (see [State convention](#state-convention-wiring-vs-surviving)).
+The agent-mode state machine (`analysis` / `planning` / `work` / `copilot`), session start (state load + mode restore), shutdown, and chat compaction. Session state is file-backed (`~/.pi/basecamp/core/session-state/`) with fork inheritance, and live state survives `/reload` via `processScoped` from `global-registry.ts`.
 
 ### Tools and registries
 
