@@ -11,11 +11,11 @@
 
 The dashboard query always returns live roots plus a five-at-a-time, 24-hour disconnected-root prefix capped at 50, through a public-handle-only safe projection. One cancellation-safe worker owns snapshot projection at a time; overlapping refreshes fail fast as busy instead of queueing more store work. `docs/architecture/hub-protocol.md` is the canonical source for its scope, fields, bounds, and exclusions.
 
-Run the daemon through the `basecamp` CLI (entry point in `src/basecamp/cli.py`). Tests live in `tests/hub/`; dashboard model tests also run under `npm test`.
+Run the daemon through the `basecamp` CLI (entry point in `src/basecamp/cli.py`).
 
 ## Connection liveness and takeover
 
-A node id admits one connection at a time, but that guard cannot be a bare rejection: a session that died uncleanly (kill, sleep/wake) leaves a half-open socket whose handler only notices the close on its next read or write, and a reconnect refused with `duplicate_node_connection` locked the user out until the daemon restarted. Three things resolve it together.
+A node id admits one connection at a time, but that guard cannot be a bare rejection: a session that died uncleanly (kill, sleep/wake) leaves a half-open socket whose handler only notices the close on its next read or write. Three things resolve it together.
 
 Uvicorn's transport keepalive already closes a peer that stops answering protocol pings, in roughly forty seconds; that is stock behaviour, not something this daemon configures. What it does not cover is a peer whose transport still accepts bytes, which is the common shape of an unclean exit: a duplicate register would sit behind a `duplicate_node_connection` rejection for that whole window.
 
@@ -23,7 +23,7 @@ So a duplicate register **probes the incumbent** and requires an answer. The pro
 
 Waiting for a pong suspends, so the registration cannot simply claim the id afterwards: another register may have settled in between. `Registry.claim_connection` is a compare-and-set against the generation observed before the probe, and a racing registration is rejected rather than silently displacing the winner. Entries carry a monotonic **generation** for the same reason on the way out; `remove_connection` only clears the entry that is still its own, so a stale handler cannot remove or reap the connection that replaced it.
 
-The probe is only trustworthy if the read loop is responsive, which is why `wait` and `message_status(wait_until_delivery)` execute as tracked `asyncio` tasks rather than inline: previously a wait blocked its own socket for the full timeout, starving telemetry, dispatch, peer messages, and cancel, and delaying close discovery by exactly as long. `wait` therefore carries a `request_id` that the result echoes (v28), which also makes concurrent waits on one socket unambiguous for the client.
+The probe is only trustworthy if the read loop is responsive, which is why `wait` and `message_status(wait_until_delivery)` execute as tracked `asyncio` tasks rather than inline: an inline wait would block its own socket for the full timeout, starving telemetry, dispatch, peer messages, and cancel, and delaying close discovery by exactly as long. `wait` therefore carries a `request_id` that the result echoes (v28), which also makes concurrent waits on one socket unambiguous for the client.
 
 ## Agents dashboard architecture
 

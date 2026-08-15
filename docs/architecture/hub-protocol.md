@@ -12,20 +12,8 @@ Version handling:
 - The daemon validates `v` on every inbound frame.
 - If `v != 28`, the daemon sends an `error` frame with `code: "protocol_version"` and closes the connection.
 - The extension treats the protocol as a client-visible capability gate, not only a frame-shape version. A version mismatch restarts the host daemon during ensure-daemon.
-- v15 adds known-public-handle contact for `peer_message` and fork-`ask`: contact is authorized without a live relationship when the target is addressed by its known public handle (see below).
-- v16 adds registered session transcript paths for fork-ask and product-role metadata for peer-message display.
-- v17 adds safe current-task previews to `list_agents_result` rows.
-- v18 adds cancel-agent request/ack frames and dispatched-run lifecycle hardening: process-group spawn, dispatcher-disconnect grace reaping, and startup reconciliation of orphaned runs.
-- v19 adds workstream management frames (`create_workstream`/`attach_workstream_agent`/`update_workstream` + acks) and HTTP GET `/workstreams` read endpoints.
-- v20 added the retired `thread_report` raw-thread upload; v24 removed it.
-- v21 adds first-class node-identity facets (`repo`, `worktree_label`) to `register`, renames node roles to `agent` (user-facing) / `worker` (backgrounded) derived from `BASECAMP_USER_FACING`, and removes the retired `product_role` (register display role) and `run_kind` (dispatch/list mutative kind) fields along with the agent-role and mutative seams.
-- v22 adds the `revise_workstream`/`revise_workstream_ack` frames for in-place workstream content versioning: a revision bumps the workstream's `version`, snapshots the new content into a `workstream_versions` history table (the prior version is retained), and leaves identity/dossier/attached agents unchanged. `GET /workstreams/{id_or_slug}` now also returns the workstream's `version` and a `versions` history array.
-- v23 adds `owned_worktree` to dispatch specs so the daemon can reclaim mutative-agent worktrees on run exit.
-- v24 removes the retired `thread_report` frame.
-- v25 adds mutable session facets to `register`, the self-scoped `session_metadata` frame, and the read-only dashboard HTTP capability.
-- v26 removes the selected-agent run-message HTTP read and narrows `/runs/summary` to compact active-agent widget fields.
-- v27 adds `owned_branch`, `branch_base`, and `branch_created` to dispatch specs: every repo-backed run owns a transient workspace that the daemon force-removes on run exit, deleting the branch only when this run minted it and it gained no commits past its recorded base OID.
-- v28 adds `ping`/`pong` keepalive frames and a `request_id` on `wait`/`wait_result`. Waits and `message_status(wait_until_delivery)` now execute as daemon-side tasks instead of inline in the connection read loop, so a slow wait no longer starves other frames on that socket. The daemon also uses a `ping` frame as its incumbent-liveness probe before accepting a duplicate registration.
+
+Only the current version is speakable; this document specifies it in full. History lives in the repository.
 
 ## Transport
 
@@ -152,7 +140,7 @@ Waits for one or more public agent handles:
 }
 ```
 
-`agent_ids` remains for internal/backward-compatible callers. New LLM-facing callers should send `agent_handles`.
+`agent_handles` is the request surface; `agent_ids` is reserved for internal callers.
 
 The daemon runs the wait as its own task and echoes `request_id` on the result, so a client may have several waits in flight on one connection and correlate each answer exactly.
 
@@ -168,7 +156,7 @@ Returns one result per requested agent handle:
 - `running`: authorized current primary run is still non-terminal after timeout.
 - `unknown`: missing, unauthorized, no current primary run, or non-awaitable (including session handles) from the caller's perspective.
 
-The frame echoes the originating `request_id`. Result items contain `agent_handle` for handle-based requests and do not expose private `run_id`. `agent_id` may be present for legacy/id-based requests inside trusted extension-daemon plumbing and must not be shown as the public handle.
+The frame echoes the originating `request_id`. Result items contain `agent_handle` for handle-based requests and do not expose private `run_id`. An `agent_id`, when present in trusted extension-daemon plumbing, must not be shown as the public handle.
 
 ### `ping` / `pong` either direction
 
