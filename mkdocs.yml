@@ -70,15 +70,17 @@ nav:
       - Worktree Environments: configuration/worktree-environments.md
       - Model Aliases: configuration/model-aliases.md
   - Architecture:
-      - Foundations:
+      - Core & Framework:
           - Core Substrate: architecture/core.md
           - Framework UI: architecture/ui.md
+      - Session Context:
           - System Prompt: architecture/system-prompt.md
           - Project Context Internals: architecture/project-context.md
-      - Agents & Workspaces:
+      - Agent Runtime:
           - The Agent-Dispatch Model: architecture/agent-dispatch.md
           - Worktree Lifecycle & Teardown: architecture/worktree-lifecycle.md
           - Workstreams: architecture/workstreams.md
+      - Hub & Protocol:
           - Hub Daemon & Dashboard Topology: architecture/hub-daemon.md
           - Hub Protocol: architecture/hub-protocol.md
       - Guardrails & Review:
@@ -86,7 +88,7 @@ nav:
           - Continuation Guard: architecture/continuation-guard.md
           - Code Review Flow: architecture/code-review.md
           - Diff Surface Internals: architecture/diff-surface.md
-      - Feature Domains:
+      - Standalone Domains:
           - Browser Automation Policy: architecture/browser-policy.md
           - Pull-Request Skill: architecture/pull-request.md
           - Engineering Domain: architecture/engineering.md
