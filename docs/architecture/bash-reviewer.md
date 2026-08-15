@@ -12,11 +12,7 @@ Basecamp bash reviewer: the `tool_call` hook that decides whether a `bash` comma
 
 **A static check may only restrict, never grant permission.**
 
-The reviewer used to open with a 1230-line hand-rolled bash parser: it split a command into segments, classified each one, and returned `allow`, a deterministic `block`, or a `gate`. An `allow` short-circuited the whole reviewer; the command ran with no model consulted. That made the parser a permission-granting oracle, so every gap in it was a bypass.
-
-One review cycle found three. `$(( 1 << n ))` was misread as a heredoc opener that swallowed the following lines as data. `X='a;b' rm -rf /z` hid the executable behind a quote-blind split. `rm>file` fused into a single token that matched no command name. Three different bugs, one cause.
-
-**A better parser would not have fixed this.** `for f in *; do rm -rf $f; done`, `eval "rm -rf /x"`, `timeout 5 rm -rf /x`, `(rm -rf /x)` and `diff <(rm -rf /x) f` all returned `allow` with the splitter working perfectly, classification gaps, not tokenizer gaps, and the list of shell constructs still needing a classifier has no end. So the verdict was inverted rather than the parser repaired: from *allow unless it looks dangerous* to *allow only if it is recognized*. An unrecognized construct gates instead of passing, and the parser is gone.
+The earlier design opened with a hand-rolled bash parser whose `allow` verdict short-circuited the whole reviewer, running the command with no model consulted. That made the parser a permission-granting oracle: every gap in it was a bypass, and the gaps that mattered were classification gaps (`for` loops, `eval`, `timeout`, subshells, process substitution all passed with the tokenizer working perfectly) that a better parser would not have closed. So the verdict was inverted rather than the parser repaired: from *allow unless it looks dangerous* to *allow only if it is recognized*. An unrecognized construct gates instead of passing, and the parser is gone.
 
 ## Flow
 
