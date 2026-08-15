@@ -50,7 +50,7 @@ Repo memory is **durable context vs. live state**: a dossier holds what stays tr
 | `pages/work__<org>__<repo>__<slug>.md` | Durable context | Edit, rarely | Source of truth for durable framing |
 | `pages/repo__<org>__<repo>.md` | Repo anchor | Authored, sparse | Not a work record |
 
-Page names are flat (`__`-joined) and filename-safe: `logseq.ts` depends on pagename == filename, which is also what makes the dossier glob work.
+Page names are flat (`__`-joined) and filename-safe; `logseq.ts` depends on pagename == filename, which is also what makes the dossier glob work.
 
 **Dossier schema**: page properties `type:: work-dossier` and `repo:: [[repo__<org>__<repo>]]`, then sections `## Objective`, `## Context`, `## Decisions`. Deliberately no `status::`, `priority::`, `updated::`, `workstreams::`, and no `## Done signal`; status is the daemon's job (below), and the done signal is one of the workstream record's fields.
 
@@ -83,20 +83,14 @@ The context block sanctions reading the last **14 days** of journals plus a doss
 
 ### Guidance placement
 
-The page schema and write mechanics live in a copilot-only skill named `copilot` at `pi/core/project/skills/copilot/SKILL.md`, registered through a `resources_discover` handler gated on `isCopilotLaunch()`. The predicate is read inside the handler, so each discovery re-evaluates it rather than capturing it at registration. It is not in the manifest `pi.skills` array because that route is unconditional. `pi/system-prompt/defaults/modes/copilot.md` keeps only the charter plus a pointer to the skill.
+The page schema and write mechanics live in a copilot-only skill named `copilot` at `pi/core/project/skills/copilot/SKILL.md`, registered through a `resources_discover` handler gated on `isCopilotLaunch()`. It is not in the manifest `pi.skills` array because that route is unconditional. `pi/system-prompt/defaults/modes/copilot.md` keeps only the charter plus a pointer to the skill.
 
-A write rule is duplicated into the mode when a page would be actively wrong without it, because the skill is model-invoked rather than auto-loaded and a session can reach a write without loading it. Two qualify: memory is written for the user rather than as the agent's research notes, and nothing unverified reaches the page. Everything else (the page schema, the operational write rules, and the before/after contrast) lives only in the skill.
+A write rule is duplicated into the mode when a page would be actively wrong without it, because the skill is model-invoked rather than auto-loaded and a session can reach a write without loading it. Two qualify: memory is written for the user rather than as the agent's research notes, and nothing unverified reaches the page. Everything else lives only in the skill.
 
 ### Workstream interaction
 
 Logseq is the durable memory; workstreams are the user-facing execution surfaces. When copilot stages a workstream (via `launch_workstream`, owned by the swarm context) it provisions a `copilot/<slug>` worktree + Herdr pane and creates the workstream in the daemon; the user runs `pi --workstream` in that pane (bare form infers the slug from the worktree). Workstream agents never write Logseq and do not push updates to copilot.
 
-### Rejected alternatives
+## Rejected alternatives, briefly
 
-- **Cockpit `## Now` rollup cache**: reintroduces a second writer of state, the exact failure this design removes.
-- **Cockpit `## Index` section**: the dossier glob already serves copilot and a Logseq query serves the human; it would be a third copy.
-- **Dossier `workstreams::` property**: the journal records launches as events and `list_workstreams --dossierPath` already answers it for copilot.
-- **A separate `pi/repo-memory/` domain owning `logseq.ts` and the skill**: `pi/system-prompt/*.ts` imports `#core/*` exclusively, so moving the context builder out would make the prompt assembler depend on a feature domain for the first time. `pi/core/swarm/skills/agents/` is precedent for a skill living in core beside the capability it documents.
-- **Native Logseq namespaces (`repo/org/name`) instead of flat `__` names**: out of scope; it would break every existing page. Flat names keep page names identical to filenames, which is what makes the glob work.
-- **Writing `title::`**: never do it. It is Logseq's filename-to-display mapping for names with reserved characters and has known drift edge cases; our page names are already filename-safe and `logseq.ts` depends on pagename == filename.
-- **Naming the skill `repo-memory`**: it describes the content better, but the skill is reachable only from copilot sessions and `copilot` is what the user reaches for. The usual rule that a capability is named for what it is, not for who may call it, is deliberately not applied here.
+A cockpit `## Now` rollup or `## Index` would reintroduce a second writer of state or a third copy of what the dossier glob already serves. A dossier `workstreams::` property duplicates what `list_workstreams --dossierPath` answers. A separate `pi/repo-memory/` domain would make the prompt assembler depend on a feature domain for the first time. Flat `__` page names (rather than native Logseq namespaces) keep page names identical to filenames, which is what makes the dossier glob work; the same dependency is why `title::` is never written. The skill is named `copilot` rather than `repo-memory` because it is reachable only from copilot sessions.
