@@ -10,9 +10,7 @@ Basecamp bash reviewer: the `tool_call` hook that decides whether a `bash` comma
 
 ## The governing invariant
 
-**A static check may only restrict, never grant permission.**
-
-The earlier design opened with a hand-rolled bash parser whose `allow` verdict short-circuited the whole reviewer, running the command with no model consulted. That made the parser a permission-granting oracle: every gap in it was a bypass, and the gaps that mattered were classification gaps (`for` loops, `eval`, `timeout`, subshells, process substitution all passed with the tokenizer working perfectly) that a better parser would not have closed. So the verdict was inverted rather than the parser repaired: from *allow unless it looks dangerous* to *allow only if it is recognized*. An unrecognized construct gates instead of passing, and the parser is gone.
+**A static check may only restrict, never grant permission.** The verdict posture is *allow only if it is recognized*: an unrecognized construct gates instead of passing, so no static gap can ever grant a run.
 
 ## Flow
 
@@ -44,11 +42,17 @@ Search tools (`grep`, `rg`, `find`, `fd`, `ag`, `ack`) are deliberately **not** 
 
 Everything else reaches the model, which returns a `category` alongside its decision: `git-mutation`, `gh-publish`, `irreversible-remote`, `destructive-local`, `bq-query`, `wide-search`, or `other`. Downstream handling keys off it.
 
-The `RULESET` is **grouped by outcome**: deny rules (D1–D5), route_to_user rules (U1–U5), approve rules (A1–A3), under one precedence meta-rule: when several rules match, the most restrictive outcome wins. That single line replaces the per-rule cross-references a flat rule list needed ("defer to R5", "R2 already covers this"), which is what kept earlier revisions from staying self-consistent.
+The `RULESET` is **grouped by outcome**: deny rules (D1–D5), route_to_user rules (U1–U5), approve rules (A1–A3), under one precedence meta-rule: when several rules match, the most restrictive outcome wins.
 
 The gate's spatial concept is **cwd containment**, not worktree semantics. The input carries the directory the command runs from (the workspace effective cwd); file mutations targeting paths inside cwd or the system temp dir are approved as normal development work (A2), while mutations outside both route to the user as destructive (U4). The risk definitions reference the same boundary. The model is told nothing about worktrees versus the protected checkout, a deliberate trade: in a bare no-worktree session cwd *is* the protected checkout, and contained bash edits there approve as risk `local`. For bash this gate is the only mechanism; the workspace guard blocks structured `edit`/`write` in the checkout but never blocks bash, so this is a policy choice, not a coverage assumption: a checkout edit is a git-tracked, easily reverted change, squarely risk `local`, and hygiene steering (keep the checkout clean, earn a worktree) belongs to the agent prompt and the structured-write block, not to a blast-radius gate. Bash-side hygiene enforcement, if ever wanted, belongs in the workspace guard, which already rewrites the bash cwd when a worktree is active, not in this prompt.
 
+<<<<<<< HEAD
 Three policies live only in the ruleset: unredirected BigQuery row output (D3: `bq query`/`bq head` must redirect result rows to a local file so large result sets do not flood the agent's context; `--dry_run` and metadata subcommands such as `show`/`ls` are fine), recursive searches rooted at a system or home directory (D4), and mutating `git worktree` subcommands: add, move, remove, lock, unlock, prune (D2). `git worktree list` is read-only and approved, and D2 matches only the `git worktree` subcommand itself, never other commands that merely run inside a worktree directory. The first two are scope judgments the model makes better than a regex; telling redirected from unredirected output, or `grep -r foo /` from `grep -r foo ./src`, is exactly what the deleted parser kept getting wrong.
+||||||| parent of 24f02a66 (Apply strip-review to guardrails pages)
+Three policies that used to be deterministic pre-LLM blocks are gate deny rules: raw `bq query` through bash (D3), recursive searches rooted at a system or home directory (D4), and mutating `git worktree` subcommands: add, move, remove, lock, unlock, prune (D2). `git worktree list` is read-only and approved, and D2 matches only the `git worktree` subcommand itself, never other commands that merely run inside a worktree directory. The first two are scope judgments the model makes better than a regex; the old wide-search check needed tokenization just to tell `grep -r foo /` from `grep -r foo ./src`.
+=======
+Three policies are gate deny rules rather than deterministic pre-LLM blocks: raw `bq query` through bash (D3), recursive searches rooted at a system or home directory (D4), and mutating `git worktree` subcommands: add, move, remove, lock, unlock, prune (D2). `git worktree list` is read-only and approved, and D2 matches only the `git worktree` subcommand itself, never other commands that merely run inside a worktree directory. The first two are scope judgments the model makes better than a regex.
+>>>>>>> 24f02a66 (Apply strip-review to guardrails pages)
 
 **Fail-closed defence in depth survives without a parser.** A gate `approve` carrying `risk === "destructive"` is upgraded to `route_to_user`, so a single model slip toward approve still cannot silently force-push; the self-contradiction is caught by the reviewer rather than by the shell.
 
@@ -60,23 +64,13 @@ Subagent context is detected with `BASECAMP_AGENT_DEPTH > 0`. In a subagent, `ro
 
 ## Failsafe
 
-No resolvable model, no verdict returned, or any thrown error means prompt when there is an interactive UI and deny when there is not.
-
-Its blast radius is smaller than a pure gate-everything design would give: the fast path consults no model, so a missing `fast` alias no longer leaves a headless session unable to run any bash at all.
-
-## The recognizer is a seam
-
-`isTriviallySafe` has a single signature so its body can be swapped without touching the flow. The deferred option is an `sh-syntax` (WASM wrapper around mvdan/sh) AST recognizer: gate on parse error, allow only when every node is a recognized type, there is no redirection or substitution, and every executable is on the same allowlist. Same invariant, wider recognizer; it would buy `ls -la | head` and `cat a && cat b`.
-
-Deferred, not rejected. It adds a WASM dependency to the security control itself, in an extension whose entire runtime dependency set is three packages (`@playwright/cli`, `@sinclair/typebox`, `ws`), and the real-world gain is limited: read-only pipelines usually involve `grep`/`rg`, which gate anyway, and this harness gives the agent dedicated read and search tools instead of bash. **Adoption trigger**: every gate decision already writes an audit entry containing the command, so audit-log evidence of a high volume of gated-but-obviously-safe commands is what justifies paying that cost.
+No resolvable model, no verdict returned, or any thrown error means prompt when there is an interactive UI and deny when there is not. The fast path consults no model, so a missing `fast` alias degrades only the gate, not every bash call.
 
 ## Opting out
 
 The reviewer is skipped only when **three** signals agree: `BASECAMP_BASH_REVIEWER=off`, `BASECAMP_EXTERNAL_SANDBOX=1`, and the `--unsafe-edit-sandboxed` launch flag: the same flag the sandboxed-edit gate in `#core/project/workspace/session.ts` pairs with the sandbox env var. The two env vars are one channel (`process.env`, which a repo `.env` or a stray export can populate), so env alone must never strip the gate; the flag rides on argv, which a `.env` cannot forge. Daemon-spawned agents inherit the trio only as a whole: `#core/swarm`'s spawn env strips the pair unless the dispatching parent's **own argv** carries `--unsafe-edit-sandboxed` (`isExternalSandboxLaunch` in `pi/core/swarm/agents/executor.ts`), in which case the pair and the flag propagate to the child together; an externally sandboxed process tree stays sandboxed, while an env-only chain can never assemble the disable state. `loadDotenv` refuses every `BASECAMP_` key.
 
 The check runs **per call**, and the `tool_call` hook is always registered: an opted-out session still carries the reviewer, and `/reload` cannot silently change whether the gate exists.
-
-The Terminal-Bench eval profile is the only caller; it passes the flag on the pi command line alongside the env vars. There the trial container never receives basecamp's `config.json`, so the reviewer's `fast` alias cannot resolve; every gate verdict would fall through to the no-UI failsafe and hard-block a command the shipped reviewer would have judged on its merits. Scoring that measures a missing alias rather than the agent. Each trial's `basecamp-eval.json` records `bash_reviewer_enabled: false` so no score is read as if the gate were present.
 
 ## Temporary escape hatch
 

@@ -43,7 +43,7 @@ Enter deliberately does **not** open the comment box, and every exit from the bo
 
 "Comment" is the word throughout the domain; "reaction" belongs to the packet schema, and `CommentStore.toComments()` feeds `AnnotateResult.reactions` at that boundary.
 
-**`CommentStore` is the single source of truth; the `Editor` is a buffer, never an authority.** `Editor.submitValue()` empties itself *before* invoking `onSubmit`, so reading `getText()` anywhere on a submit path reads an empty editor and erases the comment, the defect this layout exists to prevent. The store is therefore seeded into the editor on focus-in and written back only from values carried on `CardEvent`s, and `reduceCard` drops a `blurEditor` that arrives after a submit has already left editing mode. The same hazard is called out in `pi/core/escalate/dialog/index.ts`.
+**`CommentStore` is the single source of truth; the `Editor` is a buffer, never an authority.** `Editor.submitValue()` empties itself *before* invoking `onSubmit`, so reading `getText()` anywhere on a submit path reads an empty editor and erases the comment. The store is therefore seeded into the editor on focus-in and written back only from values carried on `CardEvent`s, and `reduceCard` drops a `blurEditor` that arrives after a submit has already left editing mode.
 
 Two consequences of that rule are easy to undo by accident. The blur path reads `getExpandedText()`, not `getText()`: a large paste sits in the buffer as a marker, and the next focus-in `setText()` clears the paste map, so storing the unexpanded marker loses the content permanently. And the comment box is a slot child of the card's `Container` rather than lines spliced into rendered output: its position must follow the component tree, because finding text is reviewer-authored and can contain any label string.
 
@@ -63,7 +63,15 @@ Two consequences of that rule are easy to undo by accident. The blur path reads 
 - `artifact.ts`: private review packet.
 
 The feature reviews the current branch only. PR-number and arbitrary-branch targets are out of scope.
+<<<<<<< HEAD
 
 ## Review posture
 
 The model-invocable `code-review` skill runs an **independently sourced** review of the current branch. It dispatches seven fixed report-only lenses plus risk-driven adaptive general reviewers. The primary acts as review chair: it verifies and normalizes reports, semantically deduplicates shared root causes, reconciles severity, and summarizes the final set, but it must obtain an independent reviewer report before adding a concern it noticed itself. `report_findings` computes the verdict deterministically from that synthesized set; a per-finding `response` never changes it. Source selection and semantic deduplication are deliberately model judgment, raw reviewer reports/provenance are not retained, and the verdict is deterministic only after synthesis. The `/code-review` prompt owns only routing; all review policy stays in the skill.
+||||||| parent of 24f02a66 (Apply strip-review to guardrails pages)
+
+## Review posture
+
+`/skill:code-review` runs an **independently sourced** review of the current branch. It is user-invoked (`disable-model-invocation`, hidden from the model, primary-only) and dispatches seven fixed report-only lenses plus risk-driven adaptive general reviewers. The primary acts as review chair: it verifies and normalizes reports, semantically deduplicates shared root causes, reconciles severity, and summarizes the final set, but it must obtain an independent reviewer report before adding a concern it noticed itself. `report_findings` computes the verdict deterministically from that synthesized set; a per-finding `response` never changes it. Source selection and semantic deduplication are deliberately model judgment, raw reviewer reports/provenance are not retained, and the verdict is deterministic only after synthesis. Manual only.
+=======
+>>>>>>> 24f02a66 (Apply strip-review to guardrails pages)

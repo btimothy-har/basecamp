@@ -40,7 +40,7 @@ herdr pane close <pane_id>
 
 The default target is `merge-base(detectDefaultBranch(), HEAD)` passed as a **single** argument. `hunk diff <target>` becomes `git diff --no-ext-diff --find-renames <target>`, so one view carries committed *and* uncommitted work; three-dot `main...HEAD` would show only commits. On the default branch the merge-base is HEAD, degrading to a working-tree diff with no special case. `/diff last` substitutes the recorded checkpoint SHA as the target; nothing else in the flow changes.
 
-Verified against hunk 0.17.6 and herdr 0.7.5; both are pre-1.0 and host-installed, so these are observations of a moving target, not a contract.
+hunk and herdr are pre-1.0 and host-installed, so the behaviour recorded here is observation of a moving target, not a contract.
 
 ## Why the session blocks
 
@@ -89,4 +89,4 @@ Ranges are recorded against the new side of the diff at call time and are not re
 
 ## Boundaries
 
-Code review is untouched. `report_findings` and the `pi/code-review/annotate/` pane still own review findings; whether hunk should also render them is an open question.
+Code review is untouched: `report_findings` and the `pi/code-review/annotate/` pane own review findings.

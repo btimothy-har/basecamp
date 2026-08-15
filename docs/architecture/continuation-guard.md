@@ -11,10 +11,6 @@ Basecamp task lifecycle + planning: goal tracking, task state machine, the `plan
 
 > **Note**: The workstream domain (`launch_workstream`, `list_workstreams`, `set_workstream_status`, and the `pi --workstream` startup flag) is its own domain (`pi/workstreams/`), persisted in the daemon's SQLite store. The agent tools (`dispatch_agent`/`wait_for_agent`/`list_agents`) belong to the `#core/swarm` primitive.
 
-## Functional smoke cleanup
-
-For manual workstream smoke tests, use an obviously disposable label and verify only the behavior under test (staging, `pi --workstream` agent attachment, known-handle `message_agent`/`ask_agent` when forkable). Cleanup is manual by design: close the Herdr pane, remove the smoke worktree and branch through the normal reviewed workflow, and remove the workstream record or close it with `set_workstream_status`. Do not add cleanup automation casually; worktree, branch, and workstream-record mutation are destructive enough to need separate design.
-
 ## Continuation guard
 
 The domain owns the stop protocol: `escalate` when the user is needed, a work summary when the work is done, so it also owns catching stops that honor neither. `lifecycle/continuation/` hooks `agent_end` and, when a stop looks premature, queues one hidden `followUp`, which makes Pi continue the run.
