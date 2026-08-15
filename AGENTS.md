@@ -66,7 +66,7 @@ Every dispatched agent runs in its **own transient git worktree**; the posture i
 
 ### Agents Dashboard
 
-`basecamp agents` opens a read-only browser dashboard backed by a separate FastAPI app on `127.0.0.1:47658`, with process-memory-only nonce auth and a no-build packaged frontend. The hub ensure contract and one-hub invariant are shared between TypeScript and Python. See `docs/architecture/hub-daemon.md` for the dual-app topology, auth/session lifecycle, safe read model, and frontend constraints.
+`basecamp agents` opens a read-only browser dashboard backed by a separate FastAPI app on `127.0.0.1:47658`, with process-memory-only nonce auth and a no-build packaged frontend. The hub ensure contract and one-hub invariant are shared between TypeScript and Python. See `docs/architecture/hub-daemon.md` for the dual-app topology, auth/session lifecycle, safe read model, and the no-build frontend design.
 
 ### Evaluations
 
@@ -104,7 +104,7 @@ Model-alias resolution is owned by `pi/core/model`, backed by the `model_aliases
 
 ### State: wiring vs. surviving
 
-Two kinds of module state, two rules. **Wiring** — providers/registries the composition root re-establishes on every load (cwd provider, catalog, model aliases, allowed-roots) — is plain module state. **Surviving state** — live session data that must outlive `/reload` — uses `processScoped(key, init)` with keys stable across releases. Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session. See `docs/architecture/core.md` for the canonical pattern.
+Two kinds of module state, two rules. **Wiring** — providers/registries the composition root re-establishes on every load (cwd provider, catalog, model aliases, allowed-roots) — is plain module state. **Surviving state** — live session data that must outlive `/reload` — uses `processScoped(key, init)` with keys stable across releases; renaming a key silently drops state at the next `/reload`. Default to plain module state; reach for `processScoped` only when losing the value on `/reload` would break the live session. This section is the canonical pattern (the public `docs/architecture/core.md` carries the layering and subsystem map only).
 
 ### Environment Variable Chain
 
@@ -114,7 +114,7 @@ The worktree setup hook (the per-repo `environments.setup` command, run on creat
 
 ### Worktree Design
 
-Worktrees live **outside** the repo at `~/.worktrees/<org>/<name>/<label>/`; git is the source of truth (`git worktree list --porcelain`) and Basecamp keeps no parallel metadata registry. The session-worktree lifecycle (issue #310 Phase 2) makes the worktree a disposable cache of its branch, with the daemon owning the agent tier and TypeScript owning the session tier under one shared lease/teardown contract; branches are never auto-deleted. Phase 3 decoupled directory names from branch identity — a generic `wt/<slug>` worktree over a uniquely-named branch — and left bare `pi` in the protected checkout, so isolation is provisioned when work earns it. See `docs/architecture/worktree-lifecycle.md` for the full lease protocol, teardown matrix, legacy-root migration, and the Phase 3 decoupling.
+Worktrees live **outside** the repo at `~/.worktrees/<org>/<name>/<label>/`; git is the source of truth (`git worktree list --porcelain`) and Basecamp keeps no parallel metadata registry. The session-worktree lifecycle (issue #310 Phase 2) makes the worktree a disposable cache of its branch, with the daemon owning the agent tier and TypeScript owning the session tier under one shared lease/teardown contract; branches are never auto-deleted. Phase 3 decoupled directory names from branch identity — a generic `wt/<slug>` worktree over a uniquely-named branch — and left bare `pi` in the protected checkout, so isolation is provisioned when work earns it. See `docs/architecture/worktree-lifecycle.md` for the full lease protocol, teardown matrix, legacy-root migration, and the directory/branch decoupling.
 
 ### Workstreams
 
