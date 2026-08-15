@@ -49,7 +49,7 @@ Consequences:
 
 ### Consumer-divergence test: when a block is justified
 
-A block boundary is only worth having if two consumers actually disagree about it. If every consumer takes two blocks together, they are one block. The real consumer list is: primary × mode, ad-hoc deliverable runs, report personas, and read-only variants. The test is what keeps the block count at 9 rather than ~69: an earlier semantic decomposition (every topic shift becoming a block) was rejected because it converts authored prose into config, which is harder to read and makes the assembled prompt harder to reason about.
+A block boundary is only worth having if two consumers actually disagree about it. If every consumer takes two blocks together, they are one block. The real consumer list is: primary × mode, ad-hoc deliverable runs, report personas, and read-only variants.
 
 The three Style blocks pass it, because each adjacent pair genuinely diverges:
 

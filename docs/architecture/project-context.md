@@ -67,7 +67,7 @@ Page names are flat (`__`-joined) and filename-safe; `logseq.ts` depends on page
 		- Shaped scope; no workstream staged yet.
 ```
 
-The dossier reference leads and the workstream slug qualifies it. Slug-first was rejected because a dossier exists before any workstream is staged and one dossier can back several workstreams, which reads correctly as sibling blocks sharing a dossier ref. Keeping the dossier ref as the linking spine is what makes Logseq's linked references catch the whole live timeline.
+The dossier reference leads and the workstream slug qualifies it; keeping the dossier ref as the linking spine is what makes Logseq's linked references catch the whole live timeline.
 
 ### Why this cannot drift
 
@@ -90,7 +90,3 @@ A write rule is duplicated into the mode when a page would be actively wrong wit
 ### Workstream interaction
 
 Logseq is the durable memory; workstreams are the user-facing execution surfaces. When copilot stages a workstream (via `launch_workstream`, owned by the swarm context) it provisions a `copilot/<slug>` worktree + Herdr pane and creates the workstream in the daemon; the user runs `pi --workstream` in that pane (bare form infers the slug from the worktree). Workstream agents never write Logseq and do not push updates to copilot.
-
-## Rejected alternatives, briefly
-
-A cockpit `## Now` rollup or `## Index` would reintroduce a second writer of state or a third copy of what the dossier glob already serves. A dossier `workstreams::` property duplicates what `list_workstreams --dossierPath` answers. A separate `pi/repo-memory/` domain would make the prompt assembler depend on a feature domain for the first time. Flat `__` page names (rather than native Logseq namespaces) keep page names identical to filenames, which is what makes the dossier glob work; the same dependency is why `title::` is never written. The skill is named `copilot` rather than `repo-memory` because it is reachable only from copilot sessions.
