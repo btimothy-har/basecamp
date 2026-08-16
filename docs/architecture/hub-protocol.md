@@ -17,48 +17,36 @@ Only the current version is speakable; this document specifies it in full. Histo
 
 ## Transport
 
-- HTTP over Unix domain socket (UDS):
+- HTTP over Unix domain socket (UDS) at `~/.pi/basecamp/swarm/daemon.sock`, restricted to the local user:
   - `GET /health` → `{"status":"ok","protocol":28}`
-  - `GET /runs/summary?root_id=<id>` returns compact rows for the in-Pi active-agent widget.
-  - `GET /workstreams` returns a filtered list of workstreams (query params: `status`, `repo`, `dossier_path`, `query`).
-  - `GET /workstreams/{id_or_slug}` returns a single workstream (including its `version`) with its joined agent rows and `versions` content-history array.
-  - `POST /dashboard/bootstrap` mints a 30-second, single-use browser bootstrap URL only while the dashboard listener is available.
-  - `GET /dashboard/snapshot` and `GET /dashboard/messages?root_handle=<handle>&agent_handle=<handle>` are private safe projections consumed only by the dashboard's fixed-method UDS client.
-- WebSocket over UDS:
-  - `/ws`
-  - First inbound frame must be `register`.
-  - On success daemon replies with `registered`.
+  - `GET /runs/summary?root_id=<id>`: compact rows for the in-Pi active-agent widget.
+  - `GET /workstreams`: filtered list (query params: `status`, `repo`, `dossier_path`, `query`).
+  - `GET /workstreams/{id_or_slug}`: single workstream (including `version`) with joined agent rows and `versions` history array.
+  - `POST /dashboard/bootstrap`: mints a 30-second, single-use browser bootstrap URL; only while the dashboard listener is available.
+  - `GET /dashboard/snapshot` and `GET /dashboard/messages?root_handle=<handle>&agent_handle=<handle>`: private safe projections, consumed only by the dashboard's fixed-method UDS client.
+- WebSocket over UDS at `/ws`: the first inbound frame must be `register`; on success the daemon replies `registered`.
 
-The socket lives under `~/.pi/basecamp/swarm/daemon.sock` and is restricted to the local user.
-
-The same hub process also owns a separate read-only FastAPI app pre-bound to fixed `127.0.0.1:47658`. Its TCP routes are only `/bootstrap/<nonce>`, `/`, `/assets/<name>`, `/api/snapshot`, and `/api/messages`; it has no `/ws`, workstream, run-summary, or mutation routes and never mounts/generically proxies the UDS app. Every route is GET-only. Browser sessions require the in-memory bootstrap exchange plus exact Host, Origin/Fetch-Metadata provenance, no-CORS/no-store security headers, and a host-only `HttpOnly; SameSite=Strict` cookie. Dashboard bind/start failure is nonfatal to the UDS server and disables nonce minting.
+The same hub process owns a separate read-only FastAPI app pre-bound to `127.0.0.1:47658`. Its only routes are `/bootstrap/<nonce>`, `/`, `/assets/<name>`, `/api/snapshot`, and `/api/messages`, all GET-only; no `/ws`, workstream, run-summary, or mutation routes, and it never mounts or proxies the UDS app. Browser sessions require the in-memory bootstrap exchange plus exact Host, Origin/Fetch-Metadata provenance, no-CORS/no-store security headers, and a host-only `HttpOnly; SameSite=Strict` cookie. Dashboard bind/start failure is nonfatal to the UDS server and disables nonce minting.
 
 ## Identity model
 
-The public daemon-agent identity is `agent_handle`, a readable path-safe alias such as `mossy-otter-a1b2c3`. Top-level sessions and dispatched agents use the same handle shape; there is no `session-` prefix and no routable `parent` alias. Relationship words such as `parent`, `child`, and `peer` are display metadata only. Generated handles are type-free; use the separate `agent_type` field for agent definition metadata.
+- **`agent_handle`** is the public identity: a readable path-safe alias such as `mossy-otter-a1b2c3`. Top-level sessions and dispatched agents share the handle shape; there is no `session-` prefix and no routable `parent` alias (`parent`/`child`/`peer` are display metadata only). Generated handles are type-free; use `agent_type` for agent-definition metadata.
+- **`agent_id`** is the private durable identity: primary key for sessions, report authorization, process bookkeeping, and child `BASECAMP_AGENT_ID` values. LLM-facing tools must never present it as the handle.
+- **`run_id`** is the private execution correlation id, used only by daemon internals and reporting frames. LLM-facing tools do not present it.
 
-`agent_id` is a private durable UUID-like daemon identity. It remains the primary key for sessions, report authorization, process bookkeeping, and child `BASECAMP_AGENT_ID` values. It may appear in trusted extension-daemon frames, but LLM-facing tools must not present it as the handle.
+Capability is separate from identity. Top-level/copilot sessions and started workstream sessions are contactable but not taskable: they may receive `message_agent` and may be asked by canonical handle when the daemon has a forkable session file, but they are not dispatchable, retaskable, awaitable, or listed by `list_agents`. Dispatched worker agents are taskable under the dispatcher/retask constraints. Ask answerers are transient and hidden from task directories.
 
-`run_id` is a private execution correlation id used only by daemon internals and reporting frames:
-- `dispatch` / `dispatch_ack` correlate a spawn request.
-- `telemetry` and `result_report` authenticate/report the active execution.
-- process reaping and run history use the private id.
-
-LLM-facing tools should not present `run_id` or `agent_id` as user handles. Capability is separate from identity. Top-level/copilot sessions and started workstream sessions are contactable but not taskable: they may receive `message_agent` and may be asked by canonical handle when the daemon has a forkable session file, but they are not dispatchable, retaskable, awaitable, or listed by `list_agents`. Dispatched worker agents are taskable under the existing dispatcher/retask constraints. Ask answerers are transient and hidden from task directories.
-
-The daemon enforces one primary active run per dispatchable agent. `agents.current_run_id` points at the latest primary run, including terminal runs, so `wait_for_agent(agent_handle)` can retrieve final results until a later primary run replaces it. Retasking an existing handle is conservative: the current run must already be terminal, `agent_type` for that handle is immutable, and session/ask handles are rejected as non-dispatchable.
+The daemon enforces one primary active run per dispatchable agent. `agents.current_run_id` points at the latest primary run (terminal runs included), so `wait_for_agent(agent_handle)` can retrieve final results until a later primary run replaces it. Retasking is conservative: the current run must be terminal, `agent_type` is immutable per handle, and session/ask handles are rejected as non-dispatchable.
 
 ## Run lifecycle and cleanup
 
-Dispatched agents run as full `pi` processes spawned by the daemon in their own process group (the runner is the group leader), so the daemon can terminate a run's entire process tree with a single group signal (SIGTERM, then SIGKILL after a short escalation window).
+Dispatched agents run as full `pi` processes in their own process group (the runner is the group leader), so a run's whole process tree is terminated with one group signal (SIGTERM, then SIGKILL after a short escalation window). Processes are freed three ways so they cannot leak:
 
-Dispatched-run processes are freed three ways so they cannot leak as long-running memory:
+- **Dispatcher disconnect**: the daemon schedules a grace-period reaper for the dispatcher's `node_id`; if the node does not re-register within the window, its live dispatched runs are terminated, marked `failed` with `error: "dispatcher_disconnected"`, and waiters are woken. A reconnecting session cancels the pending reaper and reclaims its in-flight agents. Grace period: `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default `3600`; invalid or negative falls back). There is no wall-clock run-duration cap; only the disconnect grace.
+- **Explicit cancellation**: the `cancel` / `cancel_ack` frames, which cancel the target and its whole dispatch subtree.
+- **Startup reconciliation**: on daemon start every non-terminal run is marked `failed` with `error: "daemon_restart_reconciled"`, and orphaned process groups left by a prior daemon are best-effort killed, gated by an identity check (the group leader's command must match the runner) so a reused process-group id is never signalled.
 
-- Dispatcher disconnect: when a dispatcher's connection drops, the daemon schedules a grace-period reaper for that `node_id`. If the same node does not re-register within the window, its still-live dispatched runs are terminated, marked `failed` with `error: "dispatcher_disconnected"`, and their waiters are woken. A reconnecting session (reload/resume) cancels the pending reaper and reclaims its in-flight agents. The grace period is `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default `3600`; invalid or negative values fall back to the default). There is no wall-clock cap on run duration; only the disconnect grace.
-- Explicit cancellation: the `cancel` / `cancel_ack` frames (below), which cancel the target and its whole dispatch subtree.
-- Startup reconciliation: on daemon start every non-terminal run is marked `failed` with `error: "daemon_restart_reconciled"`, and orphaned process groups left by a prior daemon are best-effort killed, gated by an identity check (the group leader's command must match the runner) so a reused process-group id is never signalled.
-
-The daemon is a long-lived shared singleton and does not idle-shut-down by design. TypeScript and Python clients coordinate starts through the same exclusive `daemon.spawn.lock` contract; independently, each daemon process must hold a nonblocking process-lifetime `flock` on `daemon.server.lock` before it can unlink or bind the UDS, so a raced/manual second daemon cannot steal the socket.
+The daemon is a long-lived shared singleton and does not idle-shut-down. Clients coordinate starts through the exclusive `daemon.spawn.lock` contract; each daemon holds a nonblocking process-lifetime `flock` on `daemon.server.lock` before it can unlink or bind the UDS, so a raced/manual second daemon cannot steal the socket.
 
 ## Frame types
 
@@ -68,62 +56,46 @@ Canonical example fixtures live in `pi/core/hub/protocol/frames/*.json`.
 
 Registers the current top-level session or transient agent process.
 
-Important fields:
-- `node_id`: internal caller identity. For async agents this is the private `agent_id`.
-- `agent_handle`: public alias for the registered node. Current clients send this for both root sessions and async agents.
+- `node_id`: internal caller identity; for async agents the private `agent_id`.
+- `agent_handle`: public alias for the registered node.
 - `parent_id`: parent node, or `null` for a root session.
 - `role`: `agent` (user-facing session) or `worker` (fully backgrounded), derived from `BASECAMP_USER_FACING`.
-- `session_name`, `depth`, `cwd`: safe directory/observability metadata.
-- `session_file`: optional registered transcript file path used only as an ask fork source after authorization succeeds. It is not exposed in LLM-facing tools.
-- `repo`: optional canonical `<org>/<name>` repo identity facet for the registered node.
-- `worktree_label`: optional active worktree label facet (e.g. `copilot/<slug>`), or `null` when no worktree is active.
+- `session_name`, `depth`, `cwd`: safe display metadata.
+- `session_file`: optional registered transcript path, used only as an ask fork source after authorization; never exposed in LLM-facing tools.
+- `repo`: optional canonical `<org>/<name>` facet.
+- `worktree_label`: optional active worktree label (e.g. `copilot/<slug>`), or `null`.
 - `branch`: optional active worktree branch.
 - `model`: optional current model id.
-- `agent_mode`: optional current Basecamp mode (`analysis`, `planning`, `work`, or `copilot`).
+- `agent_mode`: optional current mode (`analysis`, `planning`, `work`, `copilot`).
 
 ### `session_metadata` client → daemon
 
-Replaces mutable metadata for the authenticated WebSocket's own registered node. The frame has no node-id field; the daemon derives the target from the connection established by `register`.
-
-Fields:
-- `session_name`: current display name.
-- `model`: current model id, or `null`.
-- `agent_mode`: current Basecamp mode.
-- `repo`, `worktree_label`, `branch`: current workspace facets, each nullable. Null values clear stale persisted metadata.
+Replaces mutable metadata for the authenticated WebSocket's own registered node. No node-id field: the target is the connection's own registration. Fields: `session_name`, `model` (nullable), `agent_mode`, and the workspace facets `repo` / `worktree_label` / `branch` (each nullable; null clears stale persisted metadata).
 
 ### `dispatch` client → daemon
 
 Requests a transient process for an agent.
 
-Important fields:
 - `run_id`: private request/execution correlation id.
-- `agent_id`: private durable agent identity. If omitted, daemon may mint one as a fallback.
-- `agent_handle`: public readable handle for dispatch/list/wait UX. When it matches an existing session or ask-only row, dispatch is rejected as non-dispatchable.
+- `agent_id`: private durable identity; daemon may mint one if omitted.
+- `agent_handle`: public handle for dispatch/list/wait UX. Matching an existing session or ask-only row is rejected as non-dispatchable.
 - `agent_type`: immutable per handle after the first dispatch.
-- `model`: public display model selected for the agent run. If the extension uses Pi's default model, it sends/stores `default`.
+- `model`: display model for the run; `default` when the extension uses Pi's default model.
 - `spec`: opaque TypeScript-authored spawn spec.
-- `spec.owned_worktree`: optional; the run's own transient worktree. The daemon force-removes it when the run exits (normal reap and crash-restart reconcile); uncommitted state is discarded by design; commits are the only durable output of a run.
-- `spec.owned_branch` / `spec.branch_base` / `spec.branch_created`: optional; the run's per-agent branch (`agent/<handle>`), the commit OID it started from, and whether this dispatch minted the branch. Only deliverable runs (the `worker` persona) carry a branch; report runs (every other persona and ad-hoc dispatch) and asks are branchless; they send `owned_branch` null and `branch_created` false. After worktree removal the daemon deletes `owned_branch` only when `branch_created` is true and `rev-list <branch_base>..<branch>` is empty; a continued or commit-bearing branch always survives teardown.
-- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's registered session file or daemon-managed agent session sidecar and forks it (`pi --fork`) into a new answerer session (used by the agent ask capability). Omitted/null for normal dispatch.
-- Fork-ask answerer isolation: the answerer runs the uniform toolset in a branchless detached workspace that is force-removed at run end (isolation via the disposable workspace, not a read-only posture); it never mints a branch, so nothing it writes survives. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated. If no safe fork source exists, the target is reported as unavailable without distinguishing missing, unauthorized, or non-forkable targets.
+- `spec.owned_worktree`: optional; the run's own transient worktree. The daemon force-removes it on run exit (normal reap and crash-restart reconcile); uncommitted state is discarded by design; commits are the only durable output of a run.
+- `spec.owned_branch` / `spec.branch_base` / `spec.branch_created`: optional; the run's per-agent branch (`agent/<handle>`), the commit OID it started from, and whether this dispatch minted the branch. Only deliverable runs (the `worker` persona) carry a branch; report runs and asks are branchless (`owned_branch` null, `branch_created` false). After worktree removal the daemon deletes `owned_branch` only when `branch_created` is true and `rev-list <branch_base>..<branch>` is empty; a continued or commit-bearing branch always survives teardown.
+- `spec.fork_from`: optional; a target agent handle/id. When present, the daemon resolves it to the target's registered session file or daemon-managed agent session sidecar and forks it (`pi --fork`) into a new answerer session (the agent ask capability). Omitted/null for normal dispatch.
+- Fork-ask answerer isolation: branchless detached workspace, force-removed at run end; the answerer never mints a branch, so nothing it writes survives. Resolution by known public handle authorizes the fork-ask across relationships (as with `peer_message`); the private-`agent_id` fallback stays relationship-gated. A target with no safe fork source is reported unavailable without distinguishing missing, unauthorized, or non-forkable.
 
 New run rows persist `dispatcher_id` as the registered `node_id` that sent `dispatch`.
 
 ### `dispatch_ack` daemon → client
 
-Acknowledges a dispatch request by private `run_id`.
+Acknowledges a dispatch by private `run_id`. Statuses: `spawned`, or `rejected` with `reason` (`depth_cap`, `spawn_failed`, `active_run_exists`, `duplicate_agent_handle`, `agent_type_mismatch`, `not_dispatchable`).
 
-Statuses:
-- `spawned`
-- `rejected` with `reason`, including `depth_cap`, `spawn_failed`, `active_run_exists`, `duplicate_agent_handle`, `agent_type_mismatch`, or `not_dispatchable`.
+### `telemetry` / `result_report` agent → daemon
 
-### `telemetry` agent → daemon
-
-Reports progress events for a private run. Authorized by `run_id`, private `agent_id`, and the per-run report token.
-
-### `result_report` agent → daemon
-
-Reports terminal execution result for a private run. Authorized the same way as telemetry.
+Progress and terminal-result reports for a private run. Authorized by `run_id`, private `agent_id`, and the per-run report token.
 
 ### `wait` client → daemon
 
@@ -141,294 +113,150 @@ Waits for one or more public agent handles:
 }
 ```
 
-`agent_handles` is the request surface; `agent_ids` is reserved for internal callers.
+`agent_handles` is the request surface; `agent_ids` is reserved for internal callers. The daemon runs each wait as its own task and echoes `request_id` on the result, so several waits may be in flight on one connection.
 
-The daemon runs the wait as its own task and echoes `request_id` on the result, so a client may have several waits in flight on one connection and correlate each answer exactly.
-
-Authorization is strict and dispatcher-owned: the requester may wait only when its registered `node_id` equals the `dispatcher_id` on the target agent's current primary run. Session handles are not primary-run targets and return `unknown`.
-
-Unauthorized, missing, no-current-run, or non-awaitable agents are returned as `unknown`. They do not block and do not reveal whether the handle exists. LLM-facing tools render this as not awaitable or unavailable.
+Authorization is strict and dispatcher-owned: the requester may wait only when its `node_id` equals the `dispatcher_id` on the target's current primary run. Session handles are not primary-run targets and return `unknown`. Unauthorized, missing, no-current-run, and non-awaitable agents are all returned as `unknown`: they do not block and do not reveal whether the handle exists.
 
 ### `wait_result` daemon → client
 
-Returns one result per requested agent handle:
+One item per requested handle, echoing `request_id`. Items contain `agent_handle` and never private `run_id`:
 
 - `completed` / `failed`: terminal result/error for an authorized current primary run.
-- `running`: authorized current primary run is still non-terminal after timeout.
-- `unknown`: missing, unauthorized, no current primary run, or non-awaitable (including session handles) from the caller's perspective.
-
-The frame echoes the originating `request_id`. Result items contain `agent_handle` for handle-based requests and do not expose private `run_id`. An `agent_id`, when present in trusted extension-daemon plumbing, must not be shown as the public handle.
+- `running`: authorized run still non-terminal after timeout.
+- `unknown`: missing, unauthorized, no current primary run, or non-awaitable (including session handles).
 
 ### `ping` / `pong` either direction
 
-Application-level keepalive, in addition to the transport-level websocket pings the daemon is configured with (`ws_ping_interval`/`ws_ping_timeout`, 20s/20s):
+Application-level keepalive (in addition to the daemon's transport-level websocket pings, 20s/20s). The only correct answer to `{"type":"ping","v":28,"nonce":"n"}` is a `pong` carrying the same nonce. An unsolicited `pong` is inert and must not close the connection.
 
-```json
-{"type":"ping","v":28,"nonce":"ping-01"}
-```
-
-The only correct answer is a `pong` carrying the same `nonce`:
-
-```json
-{"type":"pong","v":28,"nonce":"ping-01"}
-```
-
-An unsolicited `pong` is inert and must not close the connection. The daemon also sends `ping` as its **incumbent-liveness probe**: when a second connection registers an already-connected `node_id`, the daemon pings the incumbent and waits for a `pong` echoing that nonce. A pong keeps the incumbent's session and the newcomer is rejected with `duplicate_node_connection`; only an unanswered probe releases the node id. A completed write is not sufficient evidence (a frozen peer's transport still accepts bytes), which is why the answer is required. Blind takeover is never performed.
+The daemon also sends `ping` as its **incumbent-liveness probe**: on a duplicate registration for a connected `node_id`, it pings the incumbent and waits for a same-nonce `pong`. A pong keeps the incumbent's session and the newcomer is rejected with `duplicate_node_connection`; only an unanswered probe releases the node id. A completed write is not sufficient evidence (a frozen peer's transport still accepts bytes), which is why an answer is required. Blind takeover is never performed.
 
 ### `list_agents` client → daemon
 
-Requests a safe directory of agents visible under the caller's root session:
-
-```json
-{
-  "type": "list_agents",
-  "v": 28,
-  "request_id": "list-001",
-  "awaitable": true
-}
-```
-
-`request_id` correlates the response. `awaitable: true` filters to agents whose current primary run the caller may wait on. Omitted or `false` returns all same-root non-session, non-ask agents. This is not a complete message-target directory; sessions remain excluded even when messageable by canonical handle.
+Requests a safe directory of agents visible under the caller's root session. `request_id` correlates the response; `awaitable: true` filters to agents whose current primary run the caller may wait on (omitted/`false` returns all same-root non-session, non-ask agents). This is not a message-target directory: sessions remain excluded even when messageable by handle.
 
 ### `list_agents_result` daemon → client
 
-Returns same-root agent directory rows:
-
-- `agent_handle`
-- `agent_type`
-- `parent_id`
-- `role`
-- `session_name`
-- `depth`
-- `status`: `idle`, `pending`, `running`, `completed`, or `failed`
-- `awaitable`
-- `task`: optional safe preview of the current primary run task, sanitized and truncated for display.
-
-Rows also carry the private `agent_id` for trusted extension retasking plumbing; LLM-facing `list_agents` output strips it. LLM-facing display treats handle plus `agent_type` as stable identity and shows task/title metadata separately. The directory excludes private run ids, prompts, full results, errors, spawn specs, env, and cwd.
+Same-root agent directory rows: `agent_handle`, `agent_type`, `parent_id`, `role`, `session_name`, `depth`, `status` (`idle` | `pending` | `running` | `completed` | `failed`), `awaitable`, and `task` (optional sanitized, truncated preview of the current primary run task). Rows also carry the private `agent_id` for trusted extension retasking plumbing; LLM-facing `list_agents` output strips it. The directory excludes private run ids, prompts, full results, errors, spawn specs, env, and cwd.
 
 ### `peer_message` client → daemon
 
-Requests store-backed asynchronous peer message delivery to a public messageable agent handle.
+Requests store-backed asynchronous delivery to a public messageable handle.
 
-Important fields:
-- `request_id`: public request correlation id for the immediate acknowledgement.
-- `target_handle`: recipient public handle. It may identify a visible session/root agent or a dispatched agent; it is never a relationship alias such as `parent`.
+- `request_id`: correlation id for the immediate acknowledgement.
+- `target_handle`: recipient public handle (a visible session/root agent or a dispatched agent; never a relationship alias such as `parent`).
 - `message`: message text to deliver.
 - `interrupt`: optional boolean, default `false`; when true, delivery may interrupt the recipient if the runtime supports it.
 
-The request does not expose or require private `agent_id` or `run_id` values. Missing and unauthorized targets both resolve to `unknown` without leaking existence.
-
-Contact authorization is satisfied by either relationship reachability (self, ancestor/descendant, or same sibling group) or by addressing the target's known public handle. A known public handle is a routable contact address, not authorization for introspection: it never widens the agent directory (`list_agents`), transcript/run-message access, `wait_for_agent` result ownership, or private `agent_id` routing (which stays relationship-gated). This keeps persisted agent records useful for contact after resume or across user-facing surfaces without leaking hidden agents.
+The request never exposes or requires private ids. Missing and unauthorized targets both resolve to `unknown` without leaking existence. Authorization is by relationship reachability (self, ancestor/descendant, or same sibling group) or by addressing the target's known public handle. A known handle is a contact address, not authorization for introspection: it never widens the agent directory, transcript/run-message access, `wait_for_agent` result ownership, or private-id routing (relationship-gated). This keeps persisted records useful for contact after resume without leaking hidden agents.
 
 ### `peer_message_ack` daemon → client
 
-Acknowledges acceptance of a `peer_message` request. This is acceptance only; it must not wait for recipient delivery or an answer.
-
-Fields:
-- `request_id`: echoes the peer-message request correlation id.
-- `message_id`: stored message id, or `null` when no message was accepted.
-- `status`: `accepted` or `unknown`.
-- `error`: optional/nullable acceptance error detail.
+Acceptance only; never recipient delivery or an answer. Fields: `request_id` (echo), `message_id` (stored id, or `null` when none accepted), `status` (`accepted` | `unknown`), `error` (optional).
 
 ### `peer_message_delivery` daemon → agent
 
-Delivers an accepted peer message to the recipient agent.
+Delivers an accepted message to the recipient. Fields: `message_id`, `from_handle` (or `null`), `from_relation` (`self` | `parent` | `ancestor` | `child` | `descendant` | `peer` | `unknown`), `from_product_role` (optional display label, e.g. `copilot`), `message`, `interrupt`.
 
-Fields:
-- `message_id`: stored message id.
-- `from_handle`: sender public handle, or `null` when unavailable.
-- `from_relation`: sender relationship from the recipient's perspective: `self`, `parent`, `ancestor`, `child`, `descendant`, `peer`, or `unknown`.
-- `from_product_role`: optional safe product role display label, such as `copilot` or an agent type.
-- `message`: message text.
-- `interrupt`: whether this delivery should interrupt the recipient.
-
-Recipient clients render injected content by preferring product role, then structural relation, then a neutral sender label with no `(unknown)` suffix. Example: `Message from <handle> (copilot):` or `Message from <handle> (parent):`. The handle is the only routable identity; product-role and relation labels are display-only.
+Recipients render the sender label preferring product role, then structural relation, then a neutral label (e.g. `Message from <handle> (copilot):`). The handle is the only routable identity; role/relation labels are display-only.
 
 ### `peer_message_delivery_ack` agent → daemon
 
-Acknowledges recipient-side delivery handling.
-
-Fields:
-- `message_id`: stored message id.
-- `status`: `queued` when the recipient queued the message, or `failed` when it could not.
-- `error`: optional/nullable failure detail.
+Recipient-side acknowledgement. Fields: `message_id`, `status` (`queued` when the recipient queued it, `failed` when it could not), `error` (optional).
 
 ### `message_status` client → daemon
 
-Requests delivery lifecycle status for a stored peer message.
-
-Fields:
-- `request_id`: caller-generated id used to correlate the status response.
-- `message_id`: stored message id.
-- `wait_until_delivery`: optional boolean; when true, the daemon may wait for a terminal delivery state or timeout.
-- `timeout_s`: optional wait timeout in seconds.
+Delivery lifecycle status for a stored peer message. Fields: `request_id` (correlation), `message_id`, `wait_until_delivery` (optional; when true, the daemon may wait for a terminal state or timeout), `timeout_s` (optional).
 
 ### `message_status_result` daemon → client
 
-Returns delivery lifecycle status only; it carries no recipient answer or response fields.
+Lifecycle status only; no recipient answer or response fields. Fields: `request_id` (echo), `message_id`, `status` (`accepted` | `sent` | `queued` | `failed` | `unavailable` | `unknown`), `error` (optional), and nullable `created_at` / `sent_at` / `queued_at` / `failed_at` timestamps.
 
-Fields:
-- `request_id`: echoes the `message_status` request id.
-- `message_id`: stored message id.
-- `status`: `accepted`, `sent`, `queued`, `failed`, `unavailable`, or `unknown`.
-- `error`: optional/nullable lifecycle error detail.
-- `created_at`, `sent_at`, `queued_at`, `failed_at`: nullable timestamp strings when known.
-
-For `wait_until_delivery`, terminal delivery states are `queued`, `failed`, `unavailable`, and `unknown`. `accepted` and `sent` are non-terminal. LLM-facing tools may render `queued` as `queued in recipient session` while preserving the protocol status value.
+Terminal delivery states are `queued`, `failed`, `unavailable`, and `unknown`; `accepted` and `sent` are non-terminal. LLM-facing tools may render `queued` as `queued in recipient session` while preserving the protocol value.
 
 ### `cancel` client → daemon
 
-Requests cancellation of an agent's current run.
+Requests cancellation of an agent's current run. Fields: `request_id`, `target_handle`.
 
-Fields:
-- `request_id`: caller-generated id used to correlate the ack.
-- `target_handle`: public handle of the agent to cancel.
-
-Authorization is subtree-only: the requester may cancel a target only when it dispatched that target directly or transitively (it is an ancestor of the target, or the dispatcher of the target's current run). Unlike `peer_message` / fork-`ask`, a known public handle does NOT authorize cancellation. A successful cancel recurses through the target's dispatch subtree: it marks the current run of the target and each descendant `failed` with `error: "cancelled"`, terminates each tracked process group, and wakes waiters. This stops a cancelled agent's descendants immediately instead of leaving them until their own dispatcher-disconnect grace expires.
+Authorization is subtree-only: the requester must have dispatched the target directly or transitively. Unlike `peer_message` and fork-ask, a known public handle does **not** authorize cancellation. A successful cancel recurses through the target's dispatch subtree: the current run of the target and each descendant is marked `failed` with `error: "cancelled"`, each tracked process group is terminated, and waiters are woken, so descendants stop immediately instead of waiting out their own disconnect grace.
 
 ### `cancel_ack` daemon → client
 
-Acknowledges a `cancel` request.
-
-Fields:
-- `request_id`: echoes the cancel request id.
-- `status`: `cancelled` when at least one run in the target's subtree was cancelled by this request; `not_found` when the handle does not resolve; `not_authorized` when the target is outside the requester's dispatch subtree; or `already_terminal` when nothing in the subtree was still running.
-- `error`: optional/nullable detail.
+Fields: `request_id` (echo), `status`, `error` (optional). `status` is `cancelled` (at least one run in the subtree was cancelled), `not_found`, `not_authorized` (outside the requester's dispatch subtree), or `already_terminal`.
 
 ### `GET /runs/summary`
 
-Returns the compact rows consumed by the in-Pi active-agent widget under the requested root session.
+Compact rows for the in-Pi active-agent widget under the requested root session. Query: `root_id` (required, private root session id scoping the read), `limit` (optional, default `5`, clamped to 0–50).
 
-Query parameters:
-- `root_id` (required): private root session id whose descendant subtree scopes the read.
-- `limit` (optional, default `5`): maximum number of agent rows. The daemon clamps this to `0`–`50`.
-
-The response contains only an `agents` array. Rows are ordered by current-run/agent recency and contain:
-- `agent_handle`, `agent_type`, `session_name`, and `status`.
-- `created_at` and `started_at`, used to render elapsed time.
-- `task`: `null` or a compact `{goal, current_task: {label} | null}` projection.
-
-Rows exclude private agent/run ids, counts, root liveness, models, roles, results, errors, exit codes, end times, skills, activity, task plans, descriptions, specs, prompts, env, cwd, report tokens, and message bodies. The browser dashboard uses its separate bounded `/dashboard/snapshot` and `/dashboard/messages` projections.
+The response contains only an `agents` array, ordered by current-run/agent recency. Rows carry `agent_handle`, `agent_type`, `session_name`, `status`, `created_at`/`started_at` (elapsed rendering), and `task` (`null` or a compact `{goal, current_task: {label} | null}` projection). Rows exclude private ids, counts, root liveness, models, roles, results, errors, exit codes, end times, skills, activity, task plans, descriptions, specs, prompts, env, cwd, report tokens, and message bodies.
 
 ### `GET /dashboard/snapshot`
 
-Returns the browser-safe global session read model. The daemon always selects every live structural root (`parent_id IS NULL`, `depth = 0`, `role = agent`), regardless of age, plus a bounded prefix of disconnected roots whose `last_seen_at` is within 24 hours. Copilot mode takes classification precedence, then durable workstream attachment, then Root. Agent-free roots remain visible.
+The browser-safe global session read model. Every live structural root (`parent_id IS NULL`, `depth = 0`, `role = agent`) is always selected, regardless of age, plus a bounded prefix of disconnected roots seen within 24 hours. Copilot classification takes precedence, then durable workstream attachment, then Root. Agent-free roots remain visible.
 
-Query parameters:
-- `recent_root_limit` (optional, default `5`): disconnected-root prefix size, validated as `1`–`50` at both HTTP edges.
-- `selected_root_handle` (optional): path-safe public handle to pin when the eligible disconnected root falls outside the prefix. It cannot recover a disconnected root older than 24 hours.
+Query: `recent_root_limit` (optional, default `5`, validated `1`–`50` at both HTTP edges); `selected_root_handle` (optional; pins one eligible disconnected root outside the prefix; cannot recover a root older than 24 hours).
 
-The browser increases `recent_root_limit` by five through an explicit loader. The response echoes `recent_root_limit` and `recent_root_limit_max` (`50`), and `roots_truncated` reports whether eligible disconnected roots remain omitted. Live roots do not consume prefix slots, so the response may contain more than the requested limit. Non-selected disconnected roots may rotate as newer sessions enter the prefix.
+The browser grows the limit by five through an explicit loader. The response echoes `recent_root_limit` and `recent_root_limit_max` (`50`); `roots_truncated` reports whether eligible disconnected roots remain omitted. Live roots do not consume prefix slots, so the response may exceed the requested limit. Non-selected disconnected roots may rotate as newer sessions enter the prefix.
 
-Each root contains only public/session display facets: `root_handle`, kind, session name, model/mode, repo/worktree/branch, live/timestamps, current task, up to 10 goal stages × 20 tasks, agent count/truncation, and up to 100 flat descendant rows. Descendants use `agent_handle`, `parent_handle`, computed depth, type/name/model/status/timestamps, bounded task/activity/skill/result/error projections, and explicit truncation. Ask answerers and their subtrees are hidden. Activity excludes thinking. The response never includes private root/agent/run IDs, cwd/session files, specs/prompts/env/report tokens, raw event/tool payloads, user/system/developer messages, hidden thinking, or full result/error bodies.
+Roots carry only public/session facets: `root_handle`, kind, session name, model/mode, repo/worktree/branch, live/timestamps, current task, up to 10 goal stages × 20 tasks, agent count/truncation, and up to 100 flat descendant rows. Descendants use `agent_handle`, `parent_handle`, computed depth, type/name/model/status/timestamps, and bounded task/activity/skill/result/error projections with explicit truncation. Ask answerers and their subtrees are hidden; activity excludes thinking. Never included: private root/agent/run IDs, cwd/session files, specs/prompts/env/report tokens, raw event/tool payloads, user/system/developer messages, hidden thinking, full result/error bodies.
 
-The daemon owns one snapshot projection task at a time. A concurrent follower receives `429` with `Retry-After: 1` without scheduling another store worker. Request cancellation does not release ownership before the worker finishes. The TCP app preserves the busy status, and the browser keeps cached data while retrying on its normal visible-page schedule; transport failures remain `503`.
+One snapshot projection task runs at a time: a concurrent follower receives `429` with `Retry-After: 1`, cancellation does not release ownership before the worker finishes, and the browser keeps cached data while retrying; transport failures remain `503`.
 
 ### `GET /dashboard/messages`
 
-Accepts a structural `root_handle` plus descendant `agent_handle`, both path-safe public handles. The lookup is cycle-safe and subtree-scoped, rejects ask subtrees, and reads only the selected agent's current run. It returns at most three newest `assistant_output` messages in chronological order. Each text is ANSI/control stripped, capped at 4,000 characters, and reports whether it was truncated. Terminal result bodies and peer/user/system/developer messages are not included.
+Accepts a structural `root_handle` plus descendant `agent_handle` (both path-safe public handles). The lookup is cycle-safe, subtree-scoped, rejects ask subtrees, and reads only the selected agent's current run. It returns at most three newest `assistant_output` messages in chronological order; each text is ANSI/control stripped, capped at 4,000 characters, and reports whether it was truncated. Terminal result bodies and peer/user/system/developer messages are excluded.
 
-These two UDS endpoints are not generic browser APIs. The separate TCP app maps only `/api/snapshot` and `/api/messages` to them after browser authentication and repeats public-handle validation at the edge.
+These two UDS endpoints are not generic browser APIs: the TCP app maps only `/api/snapshot` and `/api/messages` to them after browser authentication and repeats public-handle validation at the edge.
 
 ### `create_workstream` client → daemon
 
-Requests creation of a new workstream in the daemon's SQLite store. The workstream is durable, repo-neutral internal coordination state; worktrees are not persisted (git remains the source of truth, the `copilot/<slug>` worktree name encodes the slug).
+Creates a new workstream in the daemon's SQLite store (durable, repo-neutral coordination state; worktrees not persisted, git remains the source of truth, `copilot/<slug>` encodes the slug).
 
-Important fields:
-- `request_id`: public request correlation id for the immediate acknowledgement.
-- `workstream_id`: internal `ws_<uuid>` identity minted by the extension.
-- `slug`: globally-unique three-word readable id (the extension generates a collision-free slug; the daemon enforces uniqueness).
-- `label`: human-readable workstream label.
-- `brief`: workstream brief injected into `pi --workstream` sessions.
-- `source_dossier_path`: path to the Logseq dossier work page the workstream points to (one dossier may have many workstreams).
-- `constraints`: optional workstream constraints.
-- `source_repo_page_path`: optional path to the repository cockpit/page.
+- `request_id`: correlation id for the immediate acknowledgement.
+- `workstream_id`: internal `ws_<uuid>` minted by the extension.
+- `slug`: globally-unique three-word readable id (extension generates collision-free; daemon enforces uniqueness).
+- `label`: human-readable label.
+- `brief`: brief injected into `pi --workstream` sessions.
+- `source_dossier_path`: Logseq dossier page the workstream points to (one dossier may have many workstreams).
+- `constraints`: optional constraints.
+- `source_repo_page_path`: optional repository cockpit/page path.
 
 ### `create_workstream_ack` daemon → client
 
-Acknowledges a `create_workstream` request.
-
-Fields:
-- `request_id`: echoes the create-workstream request id.
-- `status`: `created` or `slug_conflict`.
-- `workstream_id`: the daemon-confirmed workstream id, or `null` on conflict.
-- `slug`: the daemon-confirmed slug, or `null` on conflict.
-- `error`: optional/nullable error detail.
+Fields: `request_id` (echo), `status` (`created` | `slug_conflict`), `workstream_id` and `slug` (daemon-confirmed, or `null` on conflict), `error` (optional).
 
 ### `attach_workstream_agent` client → daemon
 
-Attaches the requester's own session as a workstream agent. Every `pi --workstream` session appends a row: additive, concurrent, never overwriting.
-
-Important fields:
-- `request_id`: public request correlation id.
-- `workstream`: the workstream slug or id to attach to.
-- `repo`: the current repo identity (`<org>/<name>`). "Which repos touched" derives from agent rows.
-- `worktree_label`: the active worktree label (e.g. `copilot/<slug>`).
-- `status`: optional membership status, default `attached` (`attached` | `failed`).
-- `error`: optional/nullable error detail for a failed attach.
+Attaches the requester's own session as a workstream agent (additive, concurrent, never overwriting). Fields: `request_id`, `workstream` (slug or id), `repo` (`<org>/<name>`; "which repos touched" derives from agent rows), `worktree_label`, `status` (optional, default `attached`; `attached` | `failed`), `error` (optional).
 
 ### `attach_workstream_agent_ack` daemon → client
 
-Acknowledges an `attach_workstream_agent` request.
-
-Fields:
-- `request_id`: echoes the attach request id.
-- `status`: `attached` or `not_found`.
-- `error`: optional/nullable error detail.
+Fields: `request_id` (echo), `status` (`attached` | `not_found`), `error` (optional).
 
 ### `update_workstream` client → daemon
 
-Requests a workstream status update (open ↔ closed).
-
-Fields:
-- `request_id`: public request correlation id.
-- `workstream`: the workstream slug or id.
-- `status`: `open` or `closed`.
+Status update (open ↔ closed). Fields: `request_id`, `workstream` (slug or id), `status` (`open` | `closed`).
 
 ### `update_workstream_ack` daemon → client
 
-Acknowledges an `update_workstream` request.
-
-Fields:
-- `request_id`: echoes the update request id.
-- `status`: `updated`, `not_found`, or `invalid_status`.
-- `error`: optional/nullable error detail.
+Fields: `request_id` (echo), `status` (`updated` | `not_found` | `invalid_status`), `error` (optional).
 
 ### `revise_workstream` client → daemon
 
-Requests an in-place content revision of a workstream. The revision bumps the workstream's `version`, snapshots the new content into `workstream_versions`, and retains the prior version. Identity (`id`/`slug`), dossier pointer, worktree, and attached agents are unchanged. Status is not touched (use `update_workstream`). The client sends the full resolved content (unspecified fields carried forward from the current version).
-
-Fields:
-- `request_id`: public request correlation id.
-- `workstream`: the workstream slug or id.
-- `label`: the new label.
-- `brief`: the new brief.
-- `constraints`: optional/nullable new constraints.
+In-place content revision: bumps `version`, snapshots the new content into `workstream_versions`, retains the prior version. Identity (`id`/`slug`), dossier pointer, worktree, and attached agents are unchanged; status is not touched (use `update_workstream`). The client sends the full resolved content (unspecified fields carried forward from the current version). Fields: `request_id`, `workstream` (slug or id), `label`, `brief`, `constraints` (optional).
 
 ### `revise_workstream_ack` daemon → client
 
-Acknowledges a `revise_workstream` request.
-
-Fields:
-- `request_id`: echoes the revise request id.
-- `status`: `revised`, `not_found`, or `error`.
-- `version`: the new (post-revision) version number, or `null` when not revised.
-- `error`: optional/nullable error detail.
+Fields: `request_id` (echo), `status` (`revised` | `not_found` | `error`), `version` (post-revision number, or `null`), `error` (optional).
 
 ### `error` daemon → client
 
-Reports protocol/parse errors and closes the WebSocket for fatal frame errors. Current codes include:
-
-- `protocol_version`
-- `invalid_frame`
-- `invalid_register`
+Reports protocol/parse errors; closes the WebSocket for fatal frame errors. Codes: `protocol_version`, `invalid_frame`, `invalid_register`.
 
 ## Manual smoke shape
-
-A minimal client flow is:
 
 1. Connect to `/ws` over the UDS.
 2. Send `register` with `v: 28`.
 3. Send `dispatch` with private `run_id` / `agent_id` and public `agent_handle`.
-4. Use the `agent_handle` with `wait` (carrying a `request_id` the result echoes) or discover agents through `list_agents`.
-5. Answer every daemon `ping` with a same-nonce `pong`. The daemon probes an incumbent connection this way before admitting a duplicate registration for the same `node_id`, and an unanswered probe is what releases the id to the newcomer, so a client that stops answering loses its registration to the next session that resumes.
+4. Use the `agent_handle` with `wait` (carrying a `request_id` the result echoes), or discover agents through `list_agents`.
+5. Answer every daemon `ping` with a same-nonce `pong`. An unanswered incumbent probe releases the node id to the next registration.
