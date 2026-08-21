@@ -88,7 +88,7 @@ Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`,
 
 ### Code Review
 
-`/code-review [additional instructions]` is a thin primary-only prompt command that unconditionally directs the agent to load and execute the model-invocable `code-review` skill. The skill is the authoritative review method: it dispatches fixed and adaptive report-only reviewers, the primary synthesizes and semantically deduplicates their reports, and `report_findings` computes a deterministic verdict over that final set. See `pi/code-review/README.md` for the review method, flow, result handling, and verdict rules.
+`/code-review [additional instructions]` is a thin primary-only prompt command that unconditionally directs the agent to load and apply the model-invocable `code-review` skill. The skill is the authoritative review method: it dispatches fixed and adaptive report-only reviewers, the primary synthesizes and semantically deduplicates their reports, and `report_findings` computes a deterministic verdict over that final set. See `pi/code-review/README.md` for the review method, flow, result handling, and verdict rules.
 
 ### Bash Reviewer
 

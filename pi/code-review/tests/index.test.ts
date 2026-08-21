@@ -72,6 +72,7 @@ describe("code-review prompt", () => {
 		assert.match(frontmatter.description ?? "", /independent multi-agent review/);
 		assert.equal(frontmatter["argument-hint"], "[additional instructions]");
 		assert.match(body, /skill\(\{ name: "code-review" \}\)/);
+		assert.match(body, /apply\s+that guidance/);
 		assert.match(body, /Additional instructions:/);
 		assert.match(body, /\$\{ARGUMENTS:-None\.\}/);
 		assert.doesNotMatch(body, /dispatch_agent|wait_for_agent|report_findings|security-specialist/);

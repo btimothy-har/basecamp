@@ -1,6 +1,6 @@
 # code-review
 
-`/code-review [additional instructions]` is a thin primary-only prompt command that unconditionally directs the agent to load and execute the model-invocable `code-review` skill. The skill is the authoritative method for an independent review of the current branch: it dispatches fixed and risk-driven report-only reviewers, and the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill and result tool are never exposed in subagents.
+`/code-review [additional instructions]` is a thin primary-only prompt command that unconditionally directs the agent to load and apply the model-invocable `code-review` skill. The skill is the authoritative method for an independent review of the current branch: it dispatches fixed and risk-driven report-only reviewers, and the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill and result tool are never exposed in subagents.
 
 ## Review method
 
@@ -50,7 +50,7 @@ Two consequences of that rule are easy to undo by accident. The blur path reads 
 ## Layout
 
 - `index.ts` — registers `report_findings` and exposes the prompt command and skill in primary sessions only.
-- `prompts/code-review.md` — thin command wrapper that loads and executes the skill with optional additional instructions.
+- `prompts/code-review.md` — thin command wrapper that loads and applies the skill with optional additional instructions.
 - `skills/code-review/SKILL.md` — authoritative orchestration contract.
 - `skills/code-review/references/review-method.md` — shared reviewer method and finding contract.
 - `tools.ts` — result tool and review-chair handoff.
