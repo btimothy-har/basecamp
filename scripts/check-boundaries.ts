@@ -30,6 +30,7 @@ const CONTEXTS = [
 	"browser",
 	"code-review",
 	"diff",
+	"session-lens",
 	"workstreams",
 ] as const;
 

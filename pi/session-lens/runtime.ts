@@ -50,6 +50,7 @@ export class LensRuntime {
 						loading: true,
 					},
 					theme,
+					tui.terminal,
 				);
 			},
 			{ placement: "aboveEditor" },
@@ -61,8 +62,18 @@ export class LensRuntime {
 		if (!this.isCurrent(token)) return false;
 		ctx.ui.setWidget(
 			SESSION_LENS_WIDGET_ID,
-			(_tui, theme) =>
-				lensCardComponent({ operation, body: result.text, budget: result.budget, model: result.model }, theme),
+			(tui, theme) =>
+				lensCardComponent(
+					{
+						operation,
+						body: result.text,
+						budget: result.budget,
+						model: result.model,
+						truncated: result.truncated,
+					},
+					theme,
+					tui.terminal,
+				),
 			{ placement: "aboveEditor" },
 		);
 		return true;
@@ -72,8 +83,6 @@ export class LensRuntime {
 		this.generation++;
 		this.active?.controller.abort();
 		this.active = null;
-		if (ctx.mode === "tui") {
-			ctx.ui.setWidget(SESSION_LENS_WIDGET_ID, undefined, { placement: "aboveEditor" });
-		}
+		ctx.ui.setWidget(SESSION_LENS_WIDGET_ID, undefined, { placement: "aboveEditor" });
 	}
 }

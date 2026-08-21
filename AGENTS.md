@@ -80,7 +80,7 @@ The archive carries no `config.json`, so the `fast` alias cannot resolve in a tr
 
 All TypeScript ships as **one** Pi extension (`pi/extension.ts`; manifest = the repo-root `package.json`). It composes the domain modules in a **fixed order, core first**, so init is deterministic and identical on `/reload`. Each domain exposes a `register*` default export; cross-domain imports go only through `#`-subpath aliases and are boundary-checked (core imports no other domain).
 
-Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `pull-request` owns the primary-only PR lifecycle skill, while `code-review` and `workstreams` consume `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
+Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `pull-request` owns the primary-only PR lifecycle skill, `session-lens` owns ephemeral explainer-model views that never enter the primary transcript (see `pi/session-lens/README.md`), while `code-review` and `workstreams` consume `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
 
 ### Diff Surface
 

@@ -1,4 +1,4 @@
-import type { Context, Model } from "@earendil-works/pi-ai";
+import type { Api, Context, Model } from "@earendil-works/pi-ai";
 import type { LensBudget, LensOperation, LensRequest, LensViewport } from "./types.ts";
 
 const SYSTEM_PROMPT = `You create a single human-readable view of a coding session.
@@ -64,7 +64,8 @@ export function buildLensRequest(
 	return { context, budget, estimatedInputTokens };
 }
 
-export function requestTokenLimit(request: LensRequest, model: Model<any>): number | null {
+export function requestTokenLimit(request: LensRequest, model: Model<Api>): number | null {
 	const outputTokens = Math.min(request.budget.maxOutputTokens, model.maxTokens);
-	return request.estimatedInputTokens + outputTokens <= model.contextWindow ? outputTokens : null;
+	const protocolReserve = Math.max(256, Math.ceil(model.contextWindow * 0.02));
+	return request.estimatedInputTokens + outputTokens + protocolReserve <= model.contextWindow ? outputTokens : null;
 }

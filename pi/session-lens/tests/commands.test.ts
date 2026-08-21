@@ -42,7 +42,10 @@ interface ContextHarness {
 	waits: number;
 }
 
-function context(mode: ExtensionContext["mode"] = "tui"): ContextHarness {
+function context(
+	mode: ExtensionContext["mode"] = "tui",
+	waitForIdle: () => Promise<void> = async () => {},
+): ContextHarness {
 	const notifications: ContextHarness["notifications"] = [];
 	const widgets: ContextHarness["widgets"] = [];
 	const state = { waits: 0 };
@@ -51,6 +54,7 @@ function context(mode: ExtensionContext["mode"] = "tui"): ContextHarness {
 		hasUI: mode === "tui",
 		waitForIdle: async () => {
 			state.waits++;
+			await waitForIdle();
 		},
 		sessionManager: {
 			getEntries: () => [],
@@ -79,6 +83,7 @@ function result(text: string): LensResult {
 		text,
 		model: "openai/explain-1",
 		budget: { maxCardLines: 20, maxContentLines: 15, maxWords: 200, maxOutputTokens: 400 },
+		truncated: false,
 	};
 }
 
@@ -168,6 +173,24 @@ describe("session lens commands", () => {
 		assert.equal(h.widgets.at(-1)?.component, undefined);
 	});
 
+	it("clears ephemeral cards across session lifecycle boundaries", async () => {
+		const pi = new FakePi();
+		const h = context();
+		registerSessionLensCommands(
+			pi as unknown as ExtensionAPI,
+			new LensRuntime(),
+			deps(async () => result("temporary result")),
+		);
+
+		await pi.commands.get("explain")?.handler("", h.ctx);
+		await emit(pi, "session_start", h.ctx);
+		assert.equal(h.widgets.at(-1)?.component, undefined);
+
+		await pi.commands.get("explain")?.handler("", h.ctx);
+		await emit(pi, "session_shutdown", h.ctx);
+		assert.equal(h.widgets.at(-1)?.component, undefined);
+	});
+
 	it("prevents an aborted stale completion from replacing a newer result", async () => {
 		const pi = new FakePi();
 		const h = context();
@@ -192,6 +215,52 @@ describe("session lens commands", () => {
 		const visibleWidgets = h.widgets.filter((widget) => widget.component);
 		assert.match(rendered(visibleWidgets.at(-1)), /newest result/);
 		assert.doesNotMatch(rendered(visibleWidgets.at(-1)), /stale result/);
+	});
+
+	it("clears the card and reports non-cancellation failures", async () => {
+		const pi = new FakePi();
+		const h = context();
+		registerSessionLensCommands(
+			pi as unknown as ExtensionAPI,
+			new LensRuntime(),
+			deps(async () => {
+				throw new LensError("provider", "network unavailable");
+			}),
+		);
+
+		await pi.commands.get("explain")?.handler("", h.ctx);
+		assert.equal(h.widgets.at(-1)?.component, undefined);
+		assert.deepEqual(h.notifications, [{ message: "/explain: network unavailable", type: "error" }]);
+	});
+
+	it("cancels during the idle wait before projection or completion", async () => {
+		let releaseIdle: (() => void) | undefined;
+		const idle = new Promise<void>((resolve) => {
+			releaseIdle = resolve;
+		});
+		const pi = new FakePi();
+		const h = context("tui", () => idle);
+		let projections = 0;
+		let completions = 0;
+		registerSessionLensCommands(pi as unknown as ExtensionAPI, new LensRuntime(), {
+			project: () => {
+				projections++;
+				return "unused";
+			},
+			complete: async () => {
+				completions++;
+				return result("unused");
+			},
+		});
+
+		const command = pi.commands.get("tldr")?.handler("", h.ctx);
+		await new Promise((resolve) => setImmediate(resolve));
+		await emit(pi, "input", h.ctx);
+		releaseIdle?.();
+		await command;
+		assert.equal(projections, 0);
+		assert.equal(completions, 0);
+		assert.equal(h.widgets.at(-1)?.component, undefined);
 	});
 
 	it("rejects non-TUI and empty sessions without calling the model", async () => {

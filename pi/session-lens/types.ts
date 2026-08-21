@@ -28,6 +28,7 @@ export interface LensResult {
 	text: string;
 	model: string;
 	budget: LensBudget;
+	truncated: boolean;
 }
 
 export type LensErrorCode = "aborted" | "configuration" | "context-window" | "empty" | "provider";

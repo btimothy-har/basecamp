@@ -52,7 +52,7 @@ interface Harness {
 }
 
 function harness(
-	options: { alias?: string; model?: Model<Api>; authError?: string; result?: AssistantMessage } = {},
+	options: { alias?: string; model?: Model<Api>; authError?: string; result?: AssistantMessage; throws?: Error } = {},
 ): Harness {
 	const selectedModel = options.model ?? explainer();
 	const authModels: Model<Api>[] = [];
@@ -66,6 +66,7 @@ function harness(
 		},
 		complete: async (requested: Model<Api>, context: Context, completeOptions?: ModelsApiStreamOptions<Api>) => {
 			calls.push({ model: requested, context, options: completeOptions });
+			if (options.throws) throw options.throws;
 			return options.result ?? response();
 		},
 	};
@@ -98,6 +99,7 @@ describe("completeLens", () => {
 
 		assert.equal(result.text, "A clear explanation.");
 		assert.equal(result.model, "openai/explain-1");
+		assert.equal(result.truncated, false);
 		assert.deepEqual(h.authModels, [h.model]);
 		assert.equal(h.calls.length, 1);
 		assert.equal(h.calls[0]?.model, h.model);
@@ -107,11 +109,28 @@ describe("completeLens", () => {
 		assert.equal(typeof h.calls[0]?.options?.maxTokens, "number");
 	});
 
-	it("never falls back when the explainer alias is missing", async () => {
-		const h = harness({ alias: "" });
-		h.deps.resolveAlias = () => undefined;
-		await rejectsWithCode(completeLens(h.ctx, request(), new AbortController().signal, h.deps), "configuration");
-		assert.equal(h.calls.length, 0);
+	it("marks provider length stops as truncated output", async () => {
+		const h = harness({ result: response({ stopReason: "length" }) });
+		const result = await completeLens(h.ctx, request(), new AbortController().signal, h.deps);
+		assert.equal(result.truncated, true);
+	});
+
+	it("never falls back when the explainer alias or its model is missing", async () => {
+		const missingAlias = harness({ alias: "" });
+		missingAlias.deps.resolveAlias = () => undefined;
+		await rejectsWithCode(
+			completeLens(missingAlias.ctx, request(), new AbortController().signal, missingAlias.deps),
+			"configuration",
+		);
+		assert.equal(missingAlias.calls.length, 0);
+
+		const missingModel = harness();
+		missingModel.deps.resolveModel = () => undefined;
+		await rejectsWithCode(
+			completeLens(missingModel.ctx, request(), new AbortController().signal, missingModel.deps),
+			"configuration",
+		);
+		assert.equal(missingModel.calls.length, 0);
 	});
 
 	it("fails context preflight before resolving authentication", async () => {
@@ -129,6 +148,15 @@ describe("completeLens", () => {
 		await rejectsWithCode(
 			completeLens(provider.ctx, request(), new AbortController().signal, provider.deps),
 			"provider",
+		);
+
+		const thrown = harness({ throws: new Error("network unavailable") });
+		await rejectsWithCode(completeLens(thrown.ctx, request(), new AbortController().signal, thrown.deps), "provider");
+
+		const providerAbort = harness({ result: response({ stopReason: "aborted" }) });
+		await rejectsWithCode(
+			completeLens(providerAbort.ctx, request(), new AbortController().signal, providerAbort.deps),
+			"aborted",
 		);
 
 		const empty = harness({ result: response({ content: [] }) });

@@ -26,6 +26,7 @@ function responseText(content: Array<{ type: string; text?: string }>): string {
 		.trim();
 }
 
+// Keep resolution separate from auth so context preflight stays local and keyless providers remain valid.
 function explainerModel(ctx: ExtensionContext, deps: LensCompletionDeps): Model<Api> {
 	const reference = deps.resolveAlias(EXPLAINER_ALIAS);
 	const model = reference ? deps.resolveModel(ctx, reference) : undefined;
@@ -82,5 +83,10 @@ export async function completeLens(
 
 	const text = responseText(response.content);
 	if (!text) throw new LensError("empty", "The explainer model returned no text.");
-	return { text, model: `${model.provider}/${model.id}`, budget: request.budget };
+	return {
+		text,
+		model: `${model.provider}/${model.id}`,
+		budget: request.budget,
+		truncated: response.stopReason === "length",
+	};
 }

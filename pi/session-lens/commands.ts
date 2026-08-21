@@ -4,7 +4,7 @@ import { completeLens } from "./completion.ts";
 import { projectVisibleSession } from "./projection.ts";
 import { buildLensRequest, calculateLensBudget } from "./prompt.ts";
 import { LensRuntime } from "./runtime.ts";
-import { LensError, type LensOperation } from "./types.ts";
+import { LENS_OPERATIONS, LensError, type LensOperation } from "./types.ts";
 
 export interface SessionLensDeps {
 	project: typeof projectVisibleSession;
@@ -69,7 +69,7 @@ export function registerSessionLensCommands(
 ): void {
 	if (isSubagent()) return;
 
-	for (const operation of ["explain", "tldr", "rephrase"] as const) {
+	for (const operation of LENS_OPERATIONS) {
 		pi.registerCommand(operation, {
 			description: DESCRIPTIONS[operation],
 			handler: (guidance, ctx) => runLens(operation, guidance, ctx, runtime, deps),
@@ -79,8 +79,9 @@ export function registerSessionLensCommands(
 	pi.registerCommand("dismiss", {
 		description: "Dismiss the active session-lens card or generation",
 		handler: async (_args, ctx) => {
-			if (runtime.hasActive()) runtime.dismiss(ctx);
-			else if (ctx.mode === "tui") ctx.ui.notify("No session-lens card is active.", "info");
+			const wasActive = runtime.hasActive();
+			runtime.dismiss(ctx);
+			if (!wasActive && ctx.mode === "tui") ctx.ui.notify("No session-lens card is active.", "info");
 		},
 	});
 
@@ -88,9 +89,9 @@ export function registerSessionLensCommands(
 		dismissOnInput(runtime, ctx);
 	});
 	pi.on("session_start", (_event, ctx) => {
-		dismissOnInput(runtime, ctx);
+		runtime.dismiss(ctx);
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
-		dismissOnInput(runtime, ctx);
+		runtime.dismiss(ctx);
 	});
 }

@@ -50,12 +50,19 @@ describe("session lens prompts", () => {
 		assert.equal(payload.serialized_session, "[User]: build it");
 		assert.match(String(payload.operation), /faithfully restate the whole session/i);
 		assert.match(String(payload.length), new RegExp(String(budget.maxWords)));
+
+		const withoutGuidance = buildLensRequest("tldr", "   ", "[User]: build it", budget);
+		const blankPayload = JSON.parse(String(withoutGuidance.context.messages[0]?.content)) as Record<string, unknown>;
+		assert.equal(blankPayload.guidance, null);
 	});
 
 	it("rejects requests that cannot leave room for their bounded output", () => {
 		const budget = calculateLensBudget("tldr", { columns: 80, rows: 24 });
 		const request = buildLensRequest("tldr", "", "x".repeat(4_000), budget);
 		assert.equal(requestTokenLimit(request, model({ contextWindow: 500 })), null);
-		assert.equal(requestTokenLimit(request, model()), Math.min(budget.maxOutputTokens, 2_000));
+		const outputTokens = Math.min(budget.maxOutputTokens, 2_000);
+		const fitsWithoutReserve = request.estimatedInputTokens + outputTokens + 200;
+		assert.equal(requestTokenLimit(request, model({ contextWindow: fitsWithoutReserve })), null);
+		assert.equal(requestTokenLimit(request, model()), outputTokens);
 	});
 });

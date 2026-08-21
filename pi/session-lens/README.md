@@ -19,11 +19,11 @@ The commands exist only in a primary session with an interactive TUI. They are n
 
 A lens sees the conversation as the user can meaningfully resume it, not a raw session dump:
 
-- only the current active branch is eligible; abandoned sibling branches are not included;
+- only the current active branch is read directly; an abandoned path appears only when Pi already carries it into the active context as a branch summary;
 - compacted history is represented by its retained compaction summary, followed by the visible entries that remain after the compaction boundary;
-- visible user and assistant text is included;
-- tool activity is represented within per-entry and overall bounds, preserving useful operational evidence without allowing tool payloads to dominate the request;
-- hidden thinking, extension/custom messages, and image content are excluded.
+- visible user and assistant text plus context-visible bash activity is included;
+- tool calls are summarized and each tool result is bounded, preserving useful operational evidence without allowing one result payload to dominate the request;
+- hidden thinking, hidden custom messages, and image content are excluded.
 
 This boundary is both a privacy choice and a fidelity trade-off. A lens can explain what was said and the bounded evidence of what was done, but it cannot recover pre-compaction detail, inspect visual-only evidence, or infer hidden reasoning.
 
@@ -31,7 +31,7 @@ This boundary is both a privacy choice and a fidelity trade-off. A lens can expl
 
 Session lenses require a model alias named `explainer`, configured through `/model-aliases`. The alias is resolved independently for every invocation so configuration and provider authentication changes take effect without borrowing the primary session model. There is deliberately no fallback to that primary model: the separate alias keeps cost, capability, and data-routing choices explicit.
 
-The resolved model receives a purpose-built lens prompt, the filtered context, the selected operation, and any optional guidance. It receives no Basecamp working-agent prompt and no tools. A lens is therefore a single interpretive model call, not a second agent that can inspect files, continue the task, or act on the session.
+The resolved model receives a purpose-built lens prompt, the filtered context, the selected operation, and any optional guidance. It receives no Basecamp working-agent prompt and no tools. The call uses Pi's model-registry completion surface so native and configured providers keep their normal authentication and request handling without the deprecated compatibility API. A lens is therefore a single interpretive model call, not a second agent that can inspect files, continue the task, or act on the session.
 
 ## Presentation and lifecycle
 

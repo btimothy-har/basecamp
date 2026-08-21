@@ -1,5 +1,12 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Message, TextContent, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
+import type {
+	AssistantMessage,
+	Message,
+	TextContent,
+	ToolCall,
+	ToolResultMessage,
+	UserMessage,
+} from "@earendil-works/pi-ai";
 import {
 	buildSessionContext,
 	convertToLlm,
@@ -17,6 +24,20 @@ function textOnlyContent(content: UserMessage["content"]): UserMessage["content"
 	return content.filter((part): part is TextContent => part.type === "text");
 }
 
+const TOOL_CALL_ARGUMENT_MAX_CHARS = 1_500;
+
+function boundedToolCall(part: ToolCall): ToolCall {
+	const serialized = JSON.stringify(part.arguments);
+	if (serialized.length <= TOOL_CALL_ARGUMENT_MAX_CHARS) return part;
+	const omitted = serialized.length - TOOL_CALL_ARGUMENT_MAX_CHARS;
+	return {
+		...part,
+		arguments: {
+			truncated_arguments: `${serialized.slice(0, TOOL_CALL_ARGUMENT_MAX_CHARS)}\n[... ${omitted} more characters truncated]`,
+		},
+	};
+}
+
 function visibleMessage(message: Message): Message {
 	if (message.role === "user") {
 		return { ...message, content: textOnlyContent(message.content) } satisfies UserMessage;
@@ -24,7 +45,10 @@ function visibleMessage(message: Message): Message {
 	if (message.role === "assistant") {
 		return {
 			...message,
-			content: message.content.filter((part) => part.type !== "thinking"),
+			content: message.content.flatMap((part) => {
+				if (part.type === "thinking") return [];
+				return [part.type === "toolCall" ? boundedToolCall(part) : part];
+			}),
 		} satisfies AssistantMessage;
 	}
 	return {
