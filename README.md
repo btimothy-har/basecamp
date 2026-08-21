@@ -102,10 +102,20 @@ Use it to list, add, edit, or remove configured projects.
 | `/skill:pull-request` | Prepare or publish a pull request and carry it through CI |
 | `/skill:code-review` | Run an independent multi-agent review of the current branch |
 | `/diff [last]` | Review this branch's changes in hunk and send your inline notes back to the agent (`/diff last` reviews only what changed since your last `/diff`) |
+| `/explain [guidance]` | Explain the active conversation branch, optionally with a requested focus |
+| `/tldr [guidance]` | Condense the active conversation branch, optionally with a requested focus |
+| `/rephrase [guidance]` | Reword the active conversation branch, optionally with a requested style or audience |
+| `/dismiss` | Close the current session-lens card |
 | `/title [text]` | Generate a session title from the conversation, or set one manually |
 | `/model-aliases` | Manage model aliases (list, add, edit, remove) |
 
 The model-invocable `pull-request` skill is primary-only. New PRs stay draft through CI, and the skill asks before marking one ready; without explicit ready intent it stops at the green draft. It follows repository-required reviews after readiness and never merges the PR.
+
+### Session Lenses
+
+`/explain`, `/tldr`, and `/rephrase` ask a separate model to reinterpret the whole active conversation branch; optional guidance can focus the result. Configure the required `explainer` model alias through `/model-aliases`. Basecamp never falls back to the primary model.
+
+The context respects compaction, includes visible conversation text and bounded tool activity, and excludes hidden thinking, custom messages, and images. The result appears in a pinned, one-screen bordered card above the still-active editor, never enters the primary transcript, and closes with the next normal message or `/dismiss`. Session lenses are available only in the primary interactive TUI; missing context, alias, or auth, context that exceeds the model's window, and provider failures are reported without disrupting the primary session.
 
 ### Reviewing a Diff
 
