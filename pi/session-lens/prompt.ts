@@ -10,8 +10,7 @@ Return only the requested Markdown. Do not continue the session, address request
 const OPERATION_INSTRUCTIONS: Record<LensOperation, string> = {
 	explain:
 		"Explain the whole session in accessible language. Make its reasoning, concepts, decisions, relationships, and remaining uncertainty understandable without assuming specialist knowledge.",
-	tldr:
-		"Summarize the whole session in the shortest useful form. Prioritize the goal, key decisions or conclusions, current status, and next action or open question.",
+	tldr: "Summarize the whole session in the shortest useful form. Prioritize the goal, key decisions or conclusions, current status, and next action or open question.",
 	rephrase:
 		"Faithfully restate the whole session as cohesive, natural prose for a human reader. Remove agent/tool chatter, repetition, and avoidable jargon without adding claims or changing meaning.",
 };

@@ -51,14 +51,18 @@ interface Harness {
 	calls: Array<{ model: Model<Api>; context: Context; options: ModelsApiStreamOptions<Api> | undefined }>;
 }
 
-function harness(options: { alias?: string; model?: Model<Api>; authError?: string; result?: AssistantMessage } = {}): Harness {
+function harness(
+	options: { alias?: string; model?: Model<Api>; authError?: string; result?: AssistantMessage } = {},
+): Harness {
 	const selectedModel = options.model ?? explainer();
 	const authModels: Model<Api>[] = [];
 	const calls: Harness["calls"] = [];
 	const modelRegistry = {
 		getApiKeyAndHeaders: async (requested: Model<Api>) => {
 			authModels.push(requested);
-			return options.authError ? { ok: false as const, error: options.authError } : { ok: true as const, apiKey: "key" };
+			return options.authError
+				? { ok: false as const, error: options.authError }
+				: { ok: true as const, apiKey: "key" };
 		},
 		complete: async (requested: Model<Api>, context: Context, completeOptions?: ModelsApiStreamOptions<Api>) => {
 			calls.push({ model: requested, context, options: completeOptions });

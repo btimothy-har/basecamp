@@ -1,4 +1,4 @@
-import type { Api, Model } from "@earendil-works/pi-ai";
+import type { Api, AssistantMessage, Model } from "@earendil-works/pi-ai";
 import { uuidv7 } from "@earendil-works/pi-ai";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { resolveModelAlias } from "#core/model/index.ts";
@@ -60,7 +60,7 @@ export async function completeLens(
 	}
 	if (signal.aborted) throw new LensError("aborted", "Session lens cancelled.");
 
-	let response;
+	let response: AssistantMessage;
 	try {
 		response = await ctx.modelRegistry.complete(model, request.context, {
 			cacheRetention: "none",

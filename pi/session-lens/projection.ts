@@ -3,8 +3,8 @@ import type { AssistantMessage, Message, TextContent, ToolResultMessage, UserMes
 import {
 	buildSessionContext,
 	convertToLlm,
-	serializeConversation,
 	type SessionEntry,
+	serializeConversation,
 } from "@earendil-works/pi-coding-agent";
 
 function isVisibleAgentMessage(message: AgentMessage): boolean {
