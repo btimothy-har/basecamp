@@ -18,7 +18,7 @@ It rides entirely on `#core/hub`: the WebSocket transport, ensure-daemon, node i
 
 The primitive has no slash command and no feature policy of its own. Two standalone feature domains build on it:
 
-- **[`pi/code-review/`](../../code-review)** — the user-invoked `code-review` skill + `report_findings` tool.
+- **[`pi/code-review/`](../../code-review)** — the primary-only `/code-review` prompt command, its authoritative model-invocable skill, and the `report_findings` tool.
 - **[`pi/workstreams/`](../../workstreams)** — durable, repo-neutral workstream coordination.
 
 Future agent-powered capabilities are expected to be new domains that consume `#core/swarm/agents/*` the same way.

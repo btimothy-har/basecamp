@@ -4,11 +4,15 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { isSubagent } from "#core/host/env.ts";
 
 const pullRequestDir = path.dirname(fileURLToPath(import.meta.url));
+export const pullRequestPromptPath = path.join(pullRequestDir, "prompts", "pull-request.md");
 export const pullRequestSkillPath = path.join(pullRequestDir, "skills", "pull-request", "SKILL.md");
 
-/** Expose the pull-request lifecycle skill only to user-facing primary sessions. */
+/** Expose the pull-request action prompt and guidance skill only to user-facing primary sessions. */
 export default function registerPullRequest(pi: ExtensionAPI): void {
 	if (!isSubagent()) {
-		pi.on("resources_discover", () => ({ skillPaths: [pullRequestSkillPath] }));
+		pi.on("resources_discover", () => ({
+			promptPaths: [pullRequestPromptPath],
+			skillPaths: [pullRequestSkillPath],
+		}));
 	}
 }

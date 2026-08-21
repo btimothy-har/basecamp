@@ -1,15 +1,18 @@
 ---
 name: pull-request
-description: Prepare, publish, and carry a pull request through CI and requested review. Relevant requests include drafting a PR title or body and creating, opening, preparing, or updating a pull request. Incidental discussion about an existing PR is not enough to invoke this workflow.
+description: Guidance for handling pull requests across title and body drafting, draft publication, CI, readiness, and requested reviews. Apply only to an explicit PR preparation, publication, or update request; incidental discussion of an existing PR is not enough.
 ---
 
-# Pull request
+# Pull requests
 
-Prepare the current branch for review. Match the user's requested scope:
+When handling a pull request, match the requested scope:
 
-- A request only to draft or revise a title/body stops before GitHub mutation.
-- A request to create, open, prepare, or update a PR runs the publication lifecycle.
-- Direct `/skill:pull-request` invocation runs the publication lifecycle unless its arguments limit the request to drafting.
+- If the request is only to draft or revise a title/body, stop before GitHub mutation.
+- With no limiting instruction—or when asked to create, open, prepare, or update a PR—follow the publication sections below.
+- Open new PRs as drafts and keep existing draft PRs in draft unless the user explicitly asks to mark them ready.
+- Preserve an existing ready PR unless the user asks to change its state.
+
+Follow the applicable sections in order.
 
 Repository instructions and PR templates take precedence over generic defaults. Never merge, close, or approve the PR.
 
@@ -20,7 +23,7 @@ Read applicable `AGENTS.md`, contributing guidance, and PR templates. Treat repo
 Resolve:
 
 - current branch and repository
-- base branch: existing PR base, then user argument, then `origin/HEAD`, then `main`
+- base branch: existing PR base, then a base clearly supplied in the additional instructions, then `origin/HEAD`, then `main`
 - existing PR for the branch, including title, body, draft state, checks, review decision, comments, and linked issues
 - working tree, upstream, and ahead/behind state
 

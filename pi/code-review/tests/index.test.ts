@@ -3,10 +3,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
-import registerCodeReview, { codeReviewSkillPath } from "#code-review/index.ts";
+import { loadSkillsFromDir, parseFrontmatter, stripFrontmatter } from "@earendil-works/pi-coding-agent";
+import registerCodeReview, { codeReviewPromptPath, codeReviewSkillPath } from "#code-review/index.ts";
 
 interface ResourceContribution {
+	promptPaths: string[];
 	skillPaths: string[];
 }
 type ResourceHandler = () => ResourceContribution;
@@ -34,7 +35,7 @@ function preserveDepth(t: TestContext): void {
 }
 
 describe("code-review registration", () => {
-	it("registers report_findings and exposes the skill to primary sessions", (t) => {
+	it("registers the result tool and exposes the prompt and skill to primary sessions", (t) => {
 		preserveDepth(t);
 		process.env.BASECAMP_AGENT_DEPTH = "0";
 		const { pi, toolNames, resourceHandlers } = createMockPi();
@@ -43,24 +44,43 @@ describe("code-review registration", () => {
 
 		assert.deepEqual(toolNames, ["report_findings"]);
 		assert.equal(resourceHandlers.length, 1);
-		assert.deepEqual(resourceHandlers[0]?.(), { skillPaths: [codeReviewSkillPath] });
+		assert.deepEqual(resourceHandlers[0]?.(), {
+			promptPaths: [codeReviewPromptPath],
+			skillPaths: [codeReviewSkillPath],
+		});
 	});
 
-	it("registers neither the tool nor the skill in subagent sessions", (t) => {
+	it("registers no code-review surfaces in subagent sessions", (t) => {
 		preserveDepth(t);
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		const { pi, toolNames, resourceHandlers } = createMockPi();
 
 		registerCodeReview(pi);
 
-		// only the review chair reports findings; the dispatched lenses just return reports
 		assert.deepEqual(toolNames, []);
 		assert.equal(resourceHandlers.length, 0);
 	});
 });
 
+describe("code-review prompt", () => {
+	it("loads the method skill and passes additional instructions without duplicating it", () => {
+		const prompt = fs.readFileSync(codeReviewPromptPath, "utf8");
+		const { frontmatter } = parseFrontmatter<Record<string, string>>(prompt);
+		const body = stripFrontmatter(prompt);
+
+		assert.equal(path.basename(codeReviewPromptPath), "code-review.md");
+		assert.match(frontmatter.description ?? "", /independent multi-agent review/);
+		assert.equal(frontmatter["argument-hint"], "[additional instructions]");
+		assert.match(body, /skill\(\{ name: "code-review" \}\)/);
+		assert.match(body, /apply\s+that guidance/);
+		assert.match(body, /Additional instructions:/);
+		assert.match(body, /\$\{ARGUMENTS:-None\.\}/);
+		assert.doesNotMatch(body, /dispatch_agent|wait_for_agent|report_findings|security-specialist/);
+	});
+});
+
 describe("code-review skill", () => {
-	it("loads cleanly, stays model-hidden, and drives the reviewer dispatch flow", () => {
+	it("loads cleanly, stays model-invocable, and owns the reviewer dispatch flow", () => {
 		const skillDir = path.dirname(codeReviewSkillPath);
 		const result = loadSkillsFromDir({ dir: skillDir, source: "code-review-test" });
 		const content = fs.readFileSync(codeReviewSkillPath, "utf8");
@@ -69,8 +89,10 @@ describe("code-review skill", () => {
 		assert.deepEqual(result.diagnostics, []);
 		assert.equal(result.skills.length, 1);
 		assert.equal(result.skills[0]?.name, "code-review");
-		assert.match(result.skills[0]?.description ?? "", /review/i);
-		assert.match(content, /disable-model-invocation:\s*true/);
+		assert.match(result.skills[0]?.description ?? "", /guidance.*review/i);
+		assert.match(result.skills[0]?.description ?? "", /explicit request.*casual requests/i);
+		assert.doesNotMatch(content, /disable-model-invocation:\s*true/);
+		assert.doesNotMatch(content, /\/(?:skill:)?code-review/);
 
 		for (const token of [
 			'skill({ name: "agents" })',

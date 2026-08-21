@@ -5,23 +5,22 @@ import { isSubagent } from "#core/host/env.ts";
 import { registerReviewTool } from "./tools.ts";
 
 const codeReviewDir = path.dirname(fileURLToPath(import.meta.url));
+export const codeReviewPromptPath = path.join(codeReviewDir, "prompts", "code-review.md");
 export const codeReviewSkillPath = path.join(codeReviewDir, "skills", "code-review", "SKILL.md");
 
 /**
- * The code-review feature domain — a user-invoked, independent multi-agent review of the current
- * branch. The top-level session runs the `code-review` skill (hidden from the model; invoked with
- * `/skill:code-review`), which dispatches the reviewer specialists via the swarm dispatch tools and
- * calls the `report_findings` tool to compute the verdict, open the annotation pane, and persist the
- * review packet. The domain owns no orchestration: the skill drives it, and `report_findings` is the
- * only tool.
+ * The code-review feature domain — an explicit `/code-review` prompt starts an independent review,
+ * while the model-invocable skill owns the method and `report_findings` owns result delivery.
  *
- * Both the tool and the skill are primary-only. Only the review chair calls `report_findings`; the
- * dispatched reviewer lenses return reports and never invoke it, so registering it in subagents only
- * put an uncallable capability in their prompt.
+ * All three surfaces are primary-only. Only the review chair calls `report_findings`; dispatched
+ * reviewer lenses return reports and never need the prompt, skill, or result tool.
  */
 export default function registerCodeReview(pi: ExtensionAPI): void {
 	if (!isSubagent()) {
 		registerReviewTool(pi);
-		pi.on("resources_discover", () => ({ skillPaths: [codeReviewSkillPath] }));
+		pi.on("resources_discover", () => ({
+			promptPaths: [codeReviewPromptPath],
+			skillPaths: [codeReviewSkillPath],
+		}));
 	}
 }

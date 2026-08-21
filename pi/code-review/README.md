@@ -1,6 +1,6 @@
 # code-review
 
-A primary-only, user-invoked independent review of the current branch. `/skill:code-review [base]` dispatches fixed and risk-driven report-only reviewers; the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill is hidden from model invocation and never exposed in subagents.
+`/code-review [additional instructions]` is a thin primary-only prompt command that unconditionally directs the agent to load and apply the model-invocable `code-review` skill. The skill is the authoritative method for an independent review of the current branch: it dispatches fixed and risk-driven report-only reviewers, and the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill and result tool are never exposed in subagents.
 
 ## Review method
 
@@ -49,8 +49,9 @@ Two consequences of that rule are easy to undo by accident. The blur path reads 
 
 ## Layout
 
-- `index.ts` — registers `report_findings` and exposes the skill primary-only.
-- `skills/code-review/SKILL.md` — orchestration contract.
+- `index.ts` — registers `report_findings` and exposes the prompt command and skill in primary sessions only.
+- `prompts/code-review.md` — thin command wrapper that loads and applies the skill with optional additional instructions.
+- `skills/code-review/SKILL.md` — authoritative orchestration contract.
 - `skills/code-review/references/review-method.md` — shared reviewer method and finding contract.
 - `tools.ts` — result tool and review-chair handoff.
 - `findings.ts` — dimensions, severities, scope, and tool schemas.
@@ -65,4 +66,4 @@ The feature reviews the current branch only. PR-number and arbitrary-branch targ
 
 ## Review posture
 
-`/skill:code-review` runs an **independently sourced** review of the current branch. It is user-invoked (`disable-model-invocation` — hidden from the model, primary-only) and dispatches seven fixed report-only lenses plus risk-driven adaptive general reviewers. The primary acts as review chair: it verifies and normalizes reports, semantically deduplicates shared root causes, reconciles severity, and summarizes the final set, but it must obtain an independent reviewer report before adding a concern it noticed itself. `report_findings` computes the verdict deterministically from that synthesized set; a per-finding `response` never changes it. Source selection and semantic deduplication are deliberately model judgment, raw reviewer reports/provenance are not retained, and the verdict is deterministic only after synthesis. Manual only.
+The model-invocable `code-review` skill runs an **independently sourced** review of the current branch. It dispatches seven fixed report-only lenses plus risk-driven adaptive general reviewers. The primary acts as review chair: it verifies and normalizes reports, semantically deduplicates shared root causes, reconciles severity, and summarizes the final set, but it must obtain an independent reviewer report before adding a concern it noticed itself. `report_findings` computes the verdict deterministically from that synthesized set; a per-finding `response` never changes it. Source selection and semantic deduplication are deliberately model judgment, raw reviewer reports/provenance are not retained, and the verdict is deterministic only after synthesis. The `/code-review` prompt owns only routing; all review policy stays in the skill.
