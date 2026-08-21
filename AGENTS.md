@@ -80,7 +80,7 @@ The archive carries no `config.json`, so the `fast` alias cannot resolve in a tr
 
 All TypeScript ships as **one** Pi extension (`pi/extension.ts`; manifest = the repo-root `package.json`). It composes the domain modules in a **fixed order, core first**, so init is deterministic and identical on `/reload`. Each domain exposes a `register*` default export; cross-domain imports go only through `#`-subpath aliases and are boundary-checked (core imports no other domain).
 
-Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `pull-request` owns the primary-only PR lifecycle skill, while `code-review` and `workstreams` consume `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
+Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `pull-request` owns the primary-only `/pull-request` prompt command and authoritative PR lifecycle skill; `code-review` owns the primary-only `/code-review` prompt command and authoritative review skill while consuming `#core/swarm`; and `workstreams` also consumes `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
 
 ### Diff Surface
 
@@ -88,7 +88,7 @@ Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`,
 
 ### Code Review
 
-`/skill:code-review` is a primary-only, user-invoked independent review of the current branch: it dispatches fixed and adaptive report-only reviewers, the primary synthesizes and semantically deduplicates their reports, and `report_findings` computes a deterministic verdict over that final set. Manual only. See `pi/code-review/README.md` for the review method, flow, result handling, and verdict rules.
+`/code-review [additional instructions]` is a thin primary-only prompt command that unconditionally directs the agent to load and execute the model-invocable `code-review` skill. The skill is the authoritative review method: it dispatches fixed and adaptive report-only reviewers, the primary synthesizes and semantically deduplicates their reports, and `report_findings` computes a deterministic verdict over that final set. See `pi/code-review/README.md` for the review method, flow, result handling, and verdict rules.
 
 ### Bash Reviewer
 
@@ -147,6 +147,8 @@ These repository caps are hard and take precedence over the shipped Pi agent's s
 - **Tests live beside their code**: `pi/<domain>/**/tests/` (TS) and `tests/<domain>/` (Python).
 
 ## Pull Requests
+
+`/pull-request [additional instructions]` is a thin primary-only prompt command that unconditionally directs the agent to load and execute the authoritative model-invocable `pull-request` skill. The skill owns this lifecycle:
 
 Open every PR **as a draft** and drive it to the user-selected stopping state in order:
 

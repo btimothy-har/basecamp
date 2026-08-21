@@ -1,6 +1,6 @@
 # pull-request
 
-A primary-only feature domain that exposes the model-invocable `pull-request` skill. It owns PR preparation and publication through completed CI and the user-selected draft or ready stopping state; it never merges, closes, or approves a PR.
+A primary-only feature domain that exposes `/pull-request [additional instructions]` as a thin prompt command and `pull-request` as its matching model-invocable skill. The command unconditionally directs the agent to load and execute the skill; the skill is authoritative for PR preparation and publication through completed CI and the user-selected draft or ready stopping state. It never merges, closes, or approves a PR.
 
 ## Flow
 
@@ -13,8 +13,9 @@ A primary-only feature domain that exposes the model-invocable `pull-request` sk
 
 ## Layout
 
-- `index.ts` — exposes the skill through `resources_discover` in primary sessions only.
-- `skills/pull-request/SKILL.md` — drafting, publication, CI, readiness, and review lifecycle.
+- `index.ts` — exposes the prompt command and skill through `resources_discover` in primary sessions only.
+- `prompts/pull-request.md` — thin command wrapper that loads and executes the skill with optional additional instructions.
+- `skills/pull-request/SKILL.md` — authoritative drafting, publication, CI, readiness, and review lifecycle.
 - `tests/index.test.ts` — primary/subagent discovery and lifecycle contract coverage.
 
 The domain registers no custom tool and adds no new hard gate. GitHub publication runs through the existing bash reviewer, whose routing is LLM-judgment plus human confirmation rather than a guaranteed block; the skill also hard-stops at the green draft when no interactive UI can confirm readiness.
