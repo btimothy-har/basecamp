@@ -1,14 +1,16 @@
 ---
 name: pull-request
-description: Method for preparing, publishing, and carrying a pull request through CI and requested review. Apply when the /pull-request prompt starts the workflow.
+description: Guidance for preparing and publishing a pull request through CI and requested review, using a draft-first lifecycle with explicit readiness.
 ---
 
 # Pull request
 
-Use this method to prepare the current branch for review. Match the scope in the `/pull-request` additional instructions:
+When preparing a pull request, follow the requested scope:
 
-- A request only to draft or revise a title/body stops before GitHub mutation.
-- With no limiting additional instruction, or a request to create, open, prepare, or update a PR, run the publication lifecycle.
+- If the request is only to draft or revise a title/body, stop before GitHub mutation.
+- With no limiting instruction—or when asked to create, open, prepare, or update a PR—run the publication lifecycle.
+
+Follow these steps in order.
 
 Repository instructions and PR templates take precedence over generic defaults. Never merge, close, or approve the PR.
 

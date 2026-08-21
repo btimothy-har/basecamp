@@ -81,13 +81,13 @@ describe("pull-request skill", () => {
 		assert.deepEqual(result.diagnostics, []);
 		assert.equal(result.skills.length, 1);
 		assert.equal(skill?.name, "pull-request");
-		assert.match(skill?.description ?? "", /method.*pull request/i);
+		assert.match(skill?.description ?? "", /guidance.*pull request/i);
 		assert.doesNotMatch(content, /disable-model-invocation:\s*true/);
-		assert.doesNotMatch(content, /\/skill:pull-request/);
+		assert.doesNotMatch(content, /\/(?:skill:)?pull-request/);
 
 		for (const contract of [
-			"stops before GitHub mutation",
-			"With no limiting additional instruction",
+			"stop before GitHub mutation",
+			"With no limiting instruction",
 			"active execution worktree",
 			"Do not rebase",
 			"always create it as a draft",

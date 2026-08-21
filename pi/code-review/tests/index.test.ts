@@ -88,9 +88,9 @@ describe("code-review skill", () => {
 		assert.deepEqual(result.diagnostics, []);
 		assert.equal(result.skills.length, 1);
 		assert.equal(result.skills[0]?.name, "code-review");
-		assert.match(result.skills[0]?.description ?? "", /method.*review/i);
+		assert.match(result.skills[0]?.description ?? "", /guidance.*review/i);
 		assert.doesNotMatch(content, /disable-model-invocation:\s*true/);
-		assert.doesNotMatch(content, /\/skill:code-review/);
+		assert.doesNotMatch(content, /\/(?:skill:)?code-review/);
 
 		for (const token of [
 			'skill({ name: "agents" })',
