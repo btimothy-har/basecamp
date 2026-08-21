@@ -89,6 +89,7 @@ describe("code-review skill", () => {
 		assert.equal(result.skills.length, 1);
 		assert.equal(result.skills[0]?.name, "code-review");
 		assert.match(result.skills[0]?.description ?? "", /guidance.*review/i);
+		assert.match(result.skills[0]?.description ?? "", /explicit request.*casual requests/i);
 		assert.doesNotMatch(content, /disable-model-invocation:\s*true/);
 		assert.doesNotMatch(content, /\/(?:skill:)?code-review/);
 

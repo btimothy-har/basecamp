@@ -1,6 +1,6 @@
 ---
 name: code-review
-description: Guidance for conducting an independent multi-agent review of the current branch, including scope resolution, reviewer selection, synthesis, and structured findings.
+description: Guidance for conducting an independent multi-agent review of the current branch, including scope resolution, reviewer selection, synthesis, and structured findings. Apply only to an explicit request for the full independent multi-agent review; casual requests for feedback or a quick review are not enough.
 ---
 
 # Code review

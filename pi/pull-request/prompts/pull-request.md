@@ -4,7 +4,7 @@ argument-hint: "[additional instructions]"
 ---
 
 Load the `pull-request` skill with `skill({ name: "pull-request" })`, then
-execute the pull-request workflow for the current branch using that skill.
+handle the pull request for the current branch using that guidance.
 
 Additional instructions:
 

@@ -106,7 +106,7 @@ Prompt fragments distinguish loading a skill from applying it:
 
 The `skill` tool description owns the reuse/reload policy. Shipped fragments should tell agents to apply relevant skills and reserve load language for missing instructions. A new turn or task is not itself a reason to reload; context loss and intentional refresh are.
 
-Thin workflow prompt commands are a deliberate exception. `/code-review [additional instructions]` and `/pull-request [additional instructions]` are primary-only entry points that unconditionally direct the agent to load and execute their matching model-invocable skills, passing any arguments as additional instructions. The prompts own routing only; the skills remain the authoritative methods.
+Thin action prompt commands are a deliberate exception. `/code-review [additional instructions]` and `/pull-request [additional instructions]` are primary-only entry points that unconditionally direct the agent to load and apply their matching model-invocable skills, passing any arguments as additional instructions. The prompts own routing only; the skills remain the authoritative guidance.
 
 ## Defaults ↔ user override
 

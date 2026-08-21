@@ -105,7 +105,7 @@ Use it to list, add, edit, or remove configured projects.
 | `/title [text]` | Generate a session title from the conversation, or set one manually |
 | `/model-aliases` | Manage model aliases (list, add, edit, remove) |
 
-`/pull-request` and `/code-review` are thin primary-only prompt commands. Each unconditionally directs the agent to load and execute its matching model-invocable skill, with any arguments passed as additional instructions; the skills remain the authoritative workflow methods. New PRs stay draft through CI, and the `pull-request` skill asks before marking one ready; without explicit ready intent it stops at the green draft. It follows repository-required reviews after readiness and never merges the PR.
+`/pull-request` and `/code-review` are thin primary-only prompt commands. Each unconditionally directs the agent to load and apply its matching model-invocable skill, with any arguments passed as additional instructions; the skills remain the authoritative guidance. New and existing draft PRs stay draft through CI unless the user explicitly asks to mark them ready, while existing ready PRs retain their state. The `pull-request` skill follows repository-required reviews after readiness and never merges the PR.
 
 ### Reviewing a Diff
 

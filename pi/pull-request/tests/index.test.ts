@@ -57,7 +57,7 @@ describe("pull-request registration", () => {
 });
 
 describe("pull-request prompt", () => {
-	it("loads the method skill and passes additional instructions without duplicating it", () => {
+	it("loads the guidance skill and passes additional instructions without duplicating it", () => {
 		const prompt = fs.readFileSync(pullRequestPromptPath, "utf8");
 		const { frontmatter } = parseFrontmatter<Record<string, string>>(prompt);
 		const body = stripFrontmatter(prompt);
@@ -68,7 +68,7 @@ describe("pull-request prompt", () => {
 		assert.match(body, /skill\(\{ name: "pull-request" \}\)/);
 		assert.match(body, /Additional instructions:/);
 		assert.match(body, /\$\{ARGUMENTS:-None\.\}/);
-		assert.doesNotMatch(body, /gh pr|##\s|CI|ready/);
+		assert.doesNotMatch(body, /workflow|gh pr|##\s|CI|ready/);
 	});
 });
 
@@ -81,13 +81,17 @@ describe("pull-request skill", () => {
 		assert.deepEqual(result.diagnostics, []);
 		assert.equal(result.skills.length, 1);
 		assert.equal(skill?.name, "pull-request");
-		assert.match(skill?.description ?? "", /guidance.*pull request/i);
+		assert.match(skill?.description ?? "", /guidance.*handling pull requests/i);
+		assert.match(skill?.description ?? "", /explicit PR .* request/i);
+		assert.match(skill?.description ?? "", /incidental discussion/i);
 		assert.doesNotMatch(content, /disable-model-invocation:\s*true/);
 		assert.doesNotMatch(content, /\/(?:skill:)?pull-request/);
 
 		for (const contract of [
 			"stop before GitHub mutation",
 			"With no limiting instruction",
+			"keep existing draft PRs in draft unless the user explicitly asks",
+			"Preserve an existing ready PR",
 			"active execution worktree",
 			"Do not rebase",
 			"always create it as a draft",
