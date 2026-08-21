@@ -33,6 +33,7 @@
 		"#browser/*": "./pi/browser/*",
 		"#code-review/*": "./pi/code-review/*",
 		"#diff/*": "./pi/diff/*",
+		"#session-lens/*": "./pi/session-lens/*",
 		"#workstreams/*": "./pi/workstreams/*"
 	},
 	"scripts": {
