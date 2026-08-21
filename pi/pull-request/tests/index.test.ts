@@ -3,10 +3,11 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { loadSkillsFromDir } from "@earendil-works/pi-coding-agent";
-import registerPullRequest, { pullRequestSkillPath } from "#pull-request/index.ts";
+import { loadSkillsFromDir, parseFrontmatter, stripFrontmatter } from "@earendil-works/pi-coding-agent";
+import registerPullRequest, { pullRequestPromptPath, pullRequestSkillPath } from "#pull-request/index.ts";
 
 interface ResourceContribution {
+	promptPaths: string[];
 	skillPaths: string[];
 }
 type ResourceHandler = () => ResourceContribution;
@@ -30,7 +31,7 @@ function preserveDepth(t: TestContext): void {
 }
 
 describe("pull-request registration", () => {
-	it("exposes the skill to primary sessions", (t) => {
+	it("exposes the prompt and skill to primary sessions", (t) => {
 		preserveDepth(t);
 		process.env.BASECAMP_AGENT_DEPTH = "0";
 		const { pi, resourceHandlers } = createMockPi();
@@ -38,10 +39,13 @@ describe("pull-request registration", () => {
 		registerPullRequest(pi);
 
 		assert.equal(resourceHandlers.length, 1);
-		assert.deepEqual(resourceHandlers[0]?.(), { skillPaths: [pullRequestSkillPath] });
+		assert.deepEqual(resourceHandlers[0]?.(), {
+			promptPaths: [pullRequestPromptPath],
+			skillPaths: [pullRequestSkillPath],
+		});
 	});
 
-	it("hides the skill in subagent sessions", (t) => {
+	it("hides the prompt and skill in subagent sessions", (t) => {
 		preserveDepth(t);
 		process.env.BASECAMP_AGENT_DEPTH = "1";
 		const { pi, resourceHandlers } = createMockPi();
@@ -49,6 +53,22 @@ describe("pull-request registration", () => {
 		registerPullRequest(pi);
 
 		assert.equal(resourceHandlers.length, 0);
+	});
+});
+
+describe("pull-request prompt", () => {
+	it("loads the method skill and passes additional instructions without duplicating it", () => {
+		const prompt = fs.readFileSync(pullRequestPromptPath, "utf8");
+		const { frontmatter } = parseFrontmatter<Record<string, string>>(prompt);
+		const body = stripFrontmatter(prompt);
+
+		assert.equal(path.basename(pullRequestPromptPath), "pull-request.md");
+		assert.match(frontmatter.description ?? "", /publish a pull request/);
+		assert.equal(frontmatter["argument-hint"], "[additional instructions]");
+		assert.match(body, /skill\(\{ name: "pull-request" \}\)/);
+		assert.match(body, /Additional instructions:/);
+		assert.match(body, /\$\{ARGUMENTS:-None\.\}/);
+		assert.doesNotMatch(body, /gh pr|##\s|CI|ready/);
 	});
 });
 
@@ -61,11 +81,13 @@ describe("pull-request skill", () => {
 		assert.deepEqual(result.diagnostics, []);
 		assert.equal(result.skills.length, 1);
 		assert.equal(skill?.name, "pull-request");
-		assert.match(skill?.description ?? "", /create|open|prepare/i);
+		assert.match(skill?.description ?? "", /method.*pull request/i);
 		assert.doesNotMatch(content, /disable-model-invocation:\s*true/);
+		assert.doesNotMatch(content, /\/skill:pull-request/);
 
 		for (const contract of [
 			"stops before GitHub mutation",
+			"With no limiting additional instruction",
 			"active execution worktree",
 			"Do not rebase",
 			"always create it as a draft",
