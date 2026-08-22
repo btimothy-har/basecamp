@@ -13,8 +13,10 @@
  * Use this tool to load the full instructions.
  */
 
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { isStrictlyWithin } from "#core/host/paths.ts";
 import {
@@ -44,12 +46,10 @@ const SkillParams = Type.Object(
 );
 
 function renderPartial(theme: Theme) {
-	const { Text } = require("@earendil-works/pi-tui");
 	return new Text(theme.fg("dim", "..."), 0, 0);
 }
 
 function renderCall(args: { name?: string; reference?: string }, theme: Theme) {
-	const { Text } = require("@earendil-works/pi-tui");
 	const name = args.name || "...";
 	const preview = args.reference ? `${name} · ${args.reference}` : name;
 	const shown = preview.length > 50 ? `${preview.slice(0, 50)}...` : preview;
@@ -63,7 +63,6 @@ function renderResult(
 ) {
 	if (meta.isPartial) return renderPartial(theme);
 
-	const { Text } = require("@earendil-works/pi-tui");
 	const text = result.content?.find((item) => item.type === "text")?.text ?? "";
 
 	const loaded = text.match(/^<skill name="([^"]+)">/);
@@ -85,7 +84,11 @@ function renderResult(
 		return new Text(theme.fg("error", "skill load failed"), 0, 0);
 	}
 
-	if (text.startsWith("Failed to read reference file at ") || /^(?:Reference|Skill) "/.test(text)) {
+	if (
+		text.startsWith("Failed to read reference file at ") ||
+		text.startsWith('Reference "') ||
+		(text.startsWith('Skill "') && text.includes("is not recorded as loaded in this session"))
+	) {
 		return new Text(theme.fg("error", "skill reference failed"), 0, 0);
 	}
 
@@ -97,12 +100,22 @@ function renderResult(
  *
  * The reference argument is model-authored and this channel bypasses the
  * path-guarded `read` tool, so it must stay strictly narrower: no absolute
- * paths, no traversal outside the skill directory.
+ * paths, no traversal outside the skill directory. Containment is checked on
+ * realpaths — `readFileSync` follows symlinks, so a planted link inside the
+ * skill directory must not widen the readable set. A missing target falls
+ * through so the read path reports the failure.
  */
 function resolveSkillReference(skillDir: string, reference: string): string | null {
 	if (path.isAbsolute(reference)) return null;
 	const resolved = path.resolve(skillDir, reference);
-	return isStrictlyWithin(resolved, skillDir) ? resolved : null;
+	if (!isStrictlyWithin(resolved, skillDir)) return null;
+	// A missing target falls through so the read path reports the failure.
+	if (!fs.existsSync(resolved)) return resolved;
+	try {
+		return isStrictlyWithin(fs.realpathSync(resolved), fs.realpathSync(skillDir)) ? resolved : null;
+	} catch {
+		return null;
+	}
 }
 
 function errorResult(text: string) {
@@ -138,24 +151,13 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 					.filter((c) => c.source === "skill")
 					.map((c) => c.name.replace(/^skill:/, ""));
 				const hint = available.length > 0 ? ` Available skills: ${available.join(", ")}.` : "";
-				return {
-					details: null,
-					isError: true,
-					content: [{ type: "text", text: `No skill found with name "${name}".${hint}` }],
-				};
+				return errorResult(`No skill found with name "${name}".${hint}`);
 			}
 
 			if (isModelInvocationDisabled(command.sourceInfo.path)) {
-				return {
-					details: null,
-					isError: true,
-					content: [
-						{
-							type: "text",
-							text: `Skill "${name}" is user-invoked only (via /skill:${name}) and cannot be loaded by the agent.`,
-						},
-					],
-				};
+				return errorResult(
+					`Skill "${name}" is user-invoked only (via /skill:${name}) and cannot be loaded by the agent.`,
+				);
 			}
 
 			const filePath = command.sourceInfo.path;
@@ -163,8 +165,8 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 			if (params.reference !== undefined) {
 				if (!hasInvokedSkill(name)) {
 					return errorResult(
-						`Skill "${name}" is not loaded in this session. ` +
-							`Load it first with skill({ name: "${name}" }) before requesting its reference files.`,
+						`Skill "${name}" is not recorded as loaded in this session. ` +
+							`Load it with skill({ name: "${name}" }) before requesting its reference files.`,
 					);
 				}
 				const skillDir = path.dirname(filePath);
@@ -187,11 +189,7 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 
 			const block = loadSkillBlock(name, filePath);
 			if (block === null) {
-				return {
-					details: null,
-					isError: true,
-					content: [{ type: "text", text: `Failed to read skill file at ${filePath}.` }],
-				};
+				return errorResult(`Failed to read skill file at ${filePath}.`);
 			}
 
 			trackSkillInvocation(name);

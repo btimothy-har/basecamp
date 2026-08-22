@@ -109,6 +109,7 @@ Toggle skill commands via `/settings` or `enableSkillCommands` in `settings.json
 ## Design Tips
 
 - **Progressive disclosure** — keep `SKILL.md` focused on usage; put detailed docs in `references/`
+- **Reference loading** — direct the agent to load reference docs on demand with `skill({ name, reference: "references/x.md" })` once the skill is loaded, rather than `read` on a relative link; keep plain markdown links only where humans browse the source
 - **Specific descriptions** — include keywords, mention file types, use cases
 - **Relative paths** — always reference scripts and assets relative to the skill directory
 - **Self-contained** — include setup instructions, don't assume dependencies exist

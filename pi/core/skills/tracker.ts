@@ -41,11 +41,23 @@ export function getInvokedSkills(): readonly string[] {
 
 /** Register lifecycle handlers to reset skill state on session events. */
 export function registerSkillLifecycle(pi: ExtensionAPI): void {
-	pi.on("session_start", () => {
+	// /reload re-runs extension loading but leaves conversation context untouched, so
+	// already-loaded skills stay in context and the tracker must survive it.
+	pi.on("session_start", (event) => {
+		if (event.reason === "reload") return;
 		resetInvokedSkills();
 	});
 
 	pi.on("session_compact", () => {
 		resetInvokedSkills();
+	});
+
+	// /skill:name is the user-facing invocation path: pi expands it into context
+	// without the skill tool, so record it here or the reference gate would deny a
+	// skill the user just loaded. Fires before expansion, on the raw text.
+	pi.on("input", (event) => {
+		const invoked = event.text.match(/^\/skill:([a-z0-9-]+)/i);
+		if (invoked?.[1]) trackSkillInvocation(invoked[1]);
+		return { action: "continue" } as const;
 	});
 }
