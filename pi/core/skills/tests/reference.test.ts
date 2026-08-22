@@ -45,6 +45,20 @@ function resultText(res: ToolResult): string {
 }
 
 describe("skill tool reference param", () => {
+	it("records a tool load so a subsequent reference call passes the gate without manual seeding", async (t) => {
+		const { skillFile } = fixtures(t);
+		const tool = toolFor(skillFile);
+		resetInvokedSkills();
+
+		const load = await tool.execute("call-0", { name: SKILL });
+		assert.notEqual(load.isError, true);
+		assert.match(resultText(load), new RegExp(`^<skill name="${SKILL}">`));
+
+		const res = await tool.execute("call-1", { name: SKILL, reference: "references/method.md" });
+		assert.notEqual(res.isError, true);
+		assert.match(resultText(res), /# Method/);
+	});
+
 	it("returns the reference document for a loaded skill", async (t) => {
 		const { skillFile } = fixtures(t);
 		const tool = toolFor(skillFile);
@@ -217,11 +231,10 @@ describe("reference gate lifecycle wiring", () => {
 	interface LifecycleHandlers {
 		session_start: ((event: { reason: string }) => unknown)[];
 		session_compact: (() => unknown)[];
-		input: ((event: { text: string }) => unknown)[];
 	}
 
 	function captureLifecycle(): LifecycleHandlers {
-		const handlers: LifecycleHandlers = { session_start: [], session_compact: [], input: [] };
+		const handlers: LifecycleHandlers = { session_start: [], session_compact: [] };
 		const pi = {
 			on(event: string, handler: (...args: never[]) => unknown) {
 				const list = handlers[event as keyof LifecycleHandlers];
@@ -259,18 +272,5 @@ describe("reference gate lifecycle wiring", () => {
 		const afterStartup = await tool.execute("call-2", { name: SKILL, reference: "references/method.md" });
 		assert.equal(afterStartup.isError, true);
 		assert.match(resultText(afterStartup), /is not recorded as loaded in this session/);
-	});
-
-	it("records /skill:name user input so the gate recognizes slash-loaded skills", async (t) => {
-		const { skillFile } = fixtures(t);
-		const tool = toolFor(skillFile);
-		const handlers = captureLifecycle();
-		resetInvokedSkills();
-
-		for (const handler of handlers.input) handler({ text: `/skill:${SKILL} some args` });
-		const res = await tool.execute("call-1", { name: SKILL, reference: "references/method.md" });
-
-		assert.notEqual(res.isError, true);
-		assert.match(resultText(res), /# Method/);
 	});
 });

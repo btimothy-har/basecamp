@@ -93,8 +93,9 @@ Include keywords that help the agent match tasks to the skill. Avoid imperative 
 
 ## Invocation
 
-- `/skill:name` — explicitly load and execute
-- `/skill:name args` — load with arguments (appended as `User: <args>`)
+- `skill({ name })` tool call — **the only supported path in basecamp sessions**: agents load skills through the skill tool, which records the invocation for session gating and display
+- `/skill:name` (direct slash invocation) — **not supported in basecamp sessions**: pi expands the content without the skill tool, so the load is untracked — session gates (e.g. the `reference` parameter) will not recognize it; the agent should call `skill({ name })` instead
+- `/skill:name args` — same as above, with args appended
 - Automatic — agent loads when task matches description
 
 Toggle skill commands via `/settings` or `enableSkillCommands` in `settings.json`.

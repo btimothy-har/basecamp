@@ -5,6 +5,11 @@
  * the current session. Backed by a process-scoped singleton so `/reload`
  * preserves one shared tracker. Also owns the session lifecycle hooks that
  * reset the tracker on session start / compaction.
+ *
+ * The skill tool is the sole producer: the slash path (/skill:name typed
+ * into pi) expands content into context without the tool and is not
+ * supported in basecamp sessions — such loads leave no tracker record, and
+ * consumers treat "recorded" as "loaded via the tool this session".
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
@@ -50,14 +55,5 @@ export function registerSkillLifecycle(pi: ExtensionAPI): void {
 
 	pi.on("session_compact", () => {
 		resetInvokedSkills();
-	});
-
-	// /skill:name is the user-facing invocation path: pi expands it into context
-	// without the skill tool, so record it here or the reference gate would deny a
-	// skill the user just loaded. Fires before expansion, on the raw text.
-	pi.on("input", (event) => {
-		const invoked = event.text.match(/^\/skill:([a-z0-9-]+)/i);
-		if (invoked?.[1]) trackSkillInvocation(invoked[1]);
-		return { action: "continue" } as const;
 	});
 }
