@@ -1,17 +1,9 @@
 /**
- * Implementation-handoff dispatch — sending the fresh handoff prompt, and the
- * latch that reports a restart is still in flight.
+ * Implementation-handoff dispatch — sending the fresh handoff prompt.
  *
- * The latch exists because `pendingImplementationHandoff` is cleared at the top
- * of the `agent_end` handler while the restart it describes is still pending a
- * macrotask and possibly a whole compaction pass. A peer `agent_end` handler
- * reading that field would conclude no handoff was happening and could fire a
- * competing restart, so the latch stays armed until the prompt is actually sent.
- *
- * Because the latch suppresses that peer for as long as it is armed, a handoff
- * that never completes would disable it for the rest of the session. Compaction
- * awaits an unbounded summarization call, so the compaction path carries a
- * watchdog: a wedged compaction loses its summary, not the handoff.
+ * Compaction awaits an unbounded summarization call, and the handoff prompt
+ * must not wait on it forever, so the compaction path carries a watchdog:
+ * a wedged compaction loses its summary, not the handoff.
  */
 
 import {
@@ -20,34 +12,13 @@ import {
 	type PendingImplementationHandoff,
 } from "./index.ts";
 
-export interface HandoffLatch {
-	readonly active: boolean;
-	arm(): void;
-	disarm(): void;
-}
-
-export function createHandoffLatch(): HandoffLatch {
-	let active = false;
-	return {
-		get active() {
-			return active;
-		},
-		arm() {
-			active = true;
-		},
-		disarm() {
-			active = false;
-		},
-	};
-}
-
 export interface CompactRequest {
 	customInstructions: string;
 	onComplete: () => void;
 	onError: () => void;
 }
 
-/** A compaction that never reports must strand neither the handoff nor the latch. */
+/** A compaction that never reports must not strand the handoff. */
 export const COMPACTION_WATCHDOG_MS = 120_000;
 
 function scheduleDefault(fn: () => void, ms: number): () => void {

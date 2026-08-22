@@ -115,8 +115,8 @@ describe("recentUserMessages", () => {
 		assert.deepEqual(recentUserMessages(entries as SessionEntry[], 1), ["third part"]);
 	});
 
-	// The continuation guard sends these on essentially every stop, so one pasted log
-	// would otherwise be replayed in full for as long as it stays in the window.
+	// The bash reviewer gates nearly every bash call, so one pasted log would
+	// otherwise be replayed in full for as long as it stays in the window.
 	it("bounds each message so a large paste cannot dominate the prompt", () => {
 		const entries = [{ type: "message", message: { role: "user", content: "x".repeat(50_000) } }];
 

@@ -33,7 +33,7 @@ import {
 	buildFeedbackResult,
 	isAllApproved,
 } from "#tasks/workflows/draft.ts";
-import { createHandoffLatch, dispatchImplementationHandoff } from "#tasks/workflows/handoff/dispatch.ts";
+import { dispatchImplementationHandoff } from "#tasks/workflows/handoff/dispatch.ts";
 import {
 	buildHandoffMessage,
 	buildPendingImplementationHandoff,
@@ -46,14 +46,12 @@ import { renderPartial, renderSuccess } from "./render.ts";
 
 export interface PlanAccess {
 	getDraft(): PlanDraft | null;
-	/** True while an approved implementation handoff still owes the session a restart. */
-	isHandoffActive(): boolean;
 }
 
 /**
  * The two collaborators the approval path cannot otherwise be driven through: the
  * review overlay only resolves through real UI, and the handoff shells out to git.
- * Injecting them is what makes the latch wiring testable.
+ * Injecting them is what makes the approval path testable.
  */
 export interface PlanDeps {
 	review?: (draft: PlanDraft, ctx: ExtensionContext) => Promise<"submit" | "decline">;
@@ -75,7 +73,6 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: Plan
 	const subagentSession = (deps.isSubagent ?? isSubagent)();
 	let draft: PlanDraft | null = null;
 	let pendingImplementationHandoff: PendingImplementationHandoff | null = null;
-	const handoffLatch = createHandoffLatch();
 
 	pi.on("agent_end", async (_event, ctx) => {
 		if (!pendingImplementationHandoff) return;
@@ -89,7 +86,6 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: Plan
 				contextUsagePercent: ctx.getContextUsage()?.percent,
 				compact: (request) => ctx.compact(request),
 				send: () => {
-					handoffLatch.disarm();
 					pi.sendUserMessage(buildHandoffMessage());
 				},
 			});
@@ -218,7 +214,6 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: Plan
 				agentMode: "work",
 			});
 			pendingImplementationHandoff = buildPendingImplementationHandoff(draft, outcome.worktree);
-			handoffLatch.arm();
 
 			const result = buildApprovedResult(draft, "implementation", outcome.worktree, outcome.setupSummary);
 			draft = null;
@@ -274,8 +269,5 @@ export function registerPlan(pi: ExtensionAPI, runtime: TasksRuntime, deps: Plan
 		},
 	});
 
-	return {
-		getDraft: () => draft,
-		isHandoffActive: () => handoffLatch.active,
-	};
+	return { getDraft: () => draft };
 }
