@@ -80,12 +80,12 @@ nav:
           - The Agent-Dispatch Model: architecture/agent-dispatch.md
           - Worktree Lifecycle & Teardown: architecture/worktree-lifecycle.md
           - Workstreams: architecture/workstreams.md
+          - Task Lifecycle & Planning: architecture/tasks.md
       - Hub & Protocol:
           - Hub Daemon & Dashboard Topology: architecture/hub-daemon.md
           - Hub Protocol: architecture/hub-protocol.md
       - Guardrails & Review:
           - Bash Reviewer Posture: architecture/bash-reviewer.md
-          - Continuation Guard: architecture/continuation-guard.md
           - Code Review Flow: architecture/code-review.md
           - Diff Surface Internals: architecture/diff-surface.md
       - Standalone Domains:
