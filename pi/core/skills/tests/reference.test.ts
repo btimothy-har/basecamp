@@ -31,7 +31,10 @@ function writeFixtures(dir: string): { skillFile: string; referenceFile: string 
 	const skillDir = path.join(dir, SKILL);
 	fs.mkdirSync(path.join(skillDir, "references"), { recursive: true });
 	const skillFile = path.join(skillDir, "SKILL.md");
-	fs.writeFileSync(skillFile, `---\nname: ${SKILL}\ndescription: ${SKILL} skill for testing.\n---\n\n# ${SKILL}\n\nBody.\n`);
+	fs.writeFileSync(
+		skillFile,
+		`---\nname: ${SKILL}\ndescription: ${SKILL} skill for testing.\n---\n\n# ${SKILL}\n\nBody.\n`,
+	);
 	const referenceFile = path.join(skillDir, "references", "method.md");
 	fs.writeFileSync(referenceFile, "# Method\n\nShared method body.\n");
 	return { skillFile, referenceFile };

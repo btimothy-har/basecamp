@@ -106,7 +106,7 @@ function resolveSkillReference(skillDir: string, reference: string): string | nu
 }
 
 function errorResult(text: string) {
-	return { details: null, isError: true, content: [{ type: "text", text }] };
+	return { details: null, isError: true, content: [{ type: "text" as const, text }] };
 }
 
 export function registerSkillTool(pi: ExtensionAPI): void {
@@ -165,14 +165,14 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 					return errorResult(
 						`Skill "${name}" is not loaded in this session. ` +
 							`Load it first with skill({ name: "${name}" }) before requesting its reference files.`,
-				);
+					);
 				}
 				const skillDir = path.dirname(filePath);
 				const referencePath = resolveSkillReference(skillDir, params.reference);
 				if (!referencePath) {
 					return errorResult(
 						`Reference "${params.reference}" is not a valid skill-relative path under the "${name}" skill directory.`,
-				);
+					);
 				}
 				const content = readSkillContent(referencePath);
 				if (content === null) {
