@@ -128,8 +128,24 @@ export const ListAgentsParams = Type.Object({
 
 export function normalizeHandles(input: string | string[] | undefined): string[] {
 	if (input === undefined) return [];
-	const values = Array.isArray(input) ? input : [input];
+	const values = Array.isArray(input) ? input : parseHandleString(input);
 	return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+// Models sometimes emit the handles array as a JSON-encoded string even though the
+// schema accepts a real array; without this the whole blob is treated as one handle
+// and every wait reports "not awaitable or unavailable". Handles never start with
+// "[", so the sniff is unambiguous; anything unparseable stays a (failing) handle.
+function parseHandleString(value: string): string[] {
+	const trimmed = value.trim();
+	if (!trimmed.startsWith("[")) return [trimmed];
+	try {
+		const parsed: unknown = JSON.parse(trimmed);
+		if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) return parsed;
+	} catch {
+		// fall through to the raw string
+	}
+	return [trimmed];
 }
 
 export function preview(text: string | null | undefined, limit = 80): string {

@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { Frame, ListAgentItem } from "#core/hub/protocol/index.ts";
+import type { Frame } from "#core/hub/protocol/index.ts";
 import { PROTOCOL_VERSION } from "#core/hub/protocol/index.ts";
-import { createDaemonClient } from "#core/swarm/agents/client.ts";
 import { registerDaemonTools } from "#core/swarm/agents/tools.ts";
 import {
 	createMockPi,
@@ -13,10 +12,10 @@ import {
 	trackSkillInvocation,
 } from "./harness.ts";
 
-describe("wait_for_agent and list_agents", () => {
+describe("wait_for_agent", () => {
 	installDaemonToolTestHooks();
 
-	it("wait_for_agent sends wait and returns per-handle results", async () => {
+	it("sends wait and returns per-handle results", async () => {
 		const { connection, outbound, resultPromise } = await dispatchWait(["amber-fox-a1b2c3", "mossy-lynx-d4e5f6"]);
 		assert.equal(outbound.type, "wait");
 		assert.deepEqual(outbound.agent_ids, []);
@@ -56,7 +55,7 @@ describe("wait_for_agent and list_agents", () => {
 		assert.match(result.content[0].text, /compensation skipped/);
 	});
 
-	it("wait_for_agent maps running and unknown statuses", async () => {
+	it("maps running and unknown statuses", async () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
@@ -98,25 +97,49 @@ describe("wait_for_agent and list_agents", () => {
 		assert.match(result.content[0].text, /\? scout-missing not awaitable or unavailable/);
 	});
 
-	async function dispatchWait(handles: string[]) {
+	it("parses a JSON-encoded handles string and maps per-handle results", async () => {
+		// Regression: models sometimes emit the array as a JSON string; the whole blob
+		// must not be treated as one handle ("not awaitable or unavailable" for all).
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(pi, async () => connection, daemonToolDeps);
 		const waitTool = toolByName(tools, "wait_for_agent");
-		const resultPromise = waitTool.execute(
+
+		const executePromise = waitTool.execute(
 			"1",
-			{ agent_handles: handles, timeout_s: 30 },
+			{ handles: '["amber-fox-a1b2c3", "mossy-lynx-d4e5f6"]', timeout_s: 30 },
 			new AbortController().signal,
 			() => {},
 			{},
 		);
+
 		await new Promise((resolve) => setImmediate(resolve));
 		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
-		return { connection, outbound, resultPromise };
-	}
+		assert.equal(outbound.type, "wait");
+		assert.deepEqual(outbound.agent_handles, ["amber-fox-a1b2c3", "mossy-lynx-d4e5f6"]);
 
-	it("wait_for_agent surfaces daemon error on unknown items carrying one", async () => {
+		connection.emit({
+			type: "wait_result",
+			v: PROTOCOL_VERSION,
+			request_id: outbound.request_id,
+			results: [
+				{ agent_handle: "amber-fox-a1b2c3", status: "completed", result: "done", error: null },
+				{ agent_handle: "mossy-lynx-d4e5f6", status: "completed", result: "also done", error: null },
+			],
+		});
+
+		const result = await executePromise;
+		assert.equal(result.isError, undefined);
+		assert.equal(result.details.items.length, 2);
+		assert.equal(result.details.items[0].agentHandle, "amber-fox-a1b2c3");
+		assert.equal(result.details.items[0].status, "completed");
+		assert.equal(result.details.items[1].agentHandle, "mossy-lynx-d4e5f6");
+		assert.match(result.content[0].text, /done/);
+		assert.doesNotMatch(result.content[0].text, /not awaitable or unavailable/);
+	});
+
+	it("surfaces daemon error on unknown items carrying one", async () => {
 		const { connection, outbound, resultPromise } = await dispatchWait(["jade-tiger-9z8y7x"]);
 		connection.emit({
 			type: "wait_result",
@@ -130,7 +153,7 @@ describe("wait_for_agent and list_agents", () => {
 		assert.equal(result.content[0].text, "? jade-tiger-9z8y7x wait failed: boom");
 	});
 
-	it("wait_for_agent collapses and truncates a long multi-line wait error", async () => {
+	it("collapses and truncates a long multi-line wait error", async () => {
 		const { connection, outbound, resultPromise } = await dispatchWait(["jade-tiger-9z8y7x"]);
 		// A server exception can be long and multi-line (chained repr, embedded SQL).
 		const longError = ` OperationalError:\n  database is locked\n  ${"x".repeat(120)}`;
@@ -148,7 +171,7 @@ describe("wait_for_agent and list_agents", () => {
 		assert.match(line, /^\? jade-tiger-9z8y7x wait failed: .{0,80}…$/);
 	});
 
-	it("wait_for_agent fails before daemon connection/send when agents skill has not been invoked", async () => {
+	it("fails before daemon connection/send when agents skill has not been invoked", async () => {
 		let connected = false;
 		const { pi, tools } = createMockPi();
 		registerDaemonTools(
@@ -175,125 +198,7 @@ describe("wait_for_agent and list_agents", () => {
 		assert.equal(result.details, null);
 	});
 
-	it("list_agents sends request, waits on request id, and formats response rows", async () => {
-		trackSkillInvocation("agents");
-		const connection = new MockConnection();
-		const { pi, tools } = createMockPi();
-		registerDaemonTools(pi, async () => connection, daemonToolDeps);
-		const listTool = toolByName(tools, "list_agents");
-
-		const executePromise = listTool.execute("1", { awaitable: true }, new AbortController().signal, () => {}, {});
-		await new Promise((resolve) => setImmediate(resolve));
-		const outbound = connection.sent[0] as Extract<Frame, { type: "list_agents" }>;
-		assert.equal(outbound.type, "list_agents");
-		assert.equal(outbound.awaitable, true);
-		assert.equal(typeof outbound.request_id, "string");
-
-		const response = {
-			type: "list_agents_result" as const,
-			v: PROTOCOL_VERSION,
-			request_id: outbound.request_id,
-			agents: [
-				{
-					agent_id: "00000000-0000-4000-8000-000000000001",
-					agent_handle: "amber-fox-a1b2c3",
-					agent_type: "scout",
-					parent_id: "session-1",
-					role: "worker",
-					session_name: "agent-one",
-					depth: 1,
-					status: "running",
-					awaitable: true,
-					task: "Retask functional check",
-				},
-				{
-					agent_id: "00000000-0000-4000-8000-000000000002",
-					agent_handle: "mossy-lynx-d4e5f6",
-					agent_type: "testing-specialist",
-					parent_id: "00000000-0000-4000-8000-000000000001",
-					role: "worker",
-					session_name: "agent-two",
-					depth: 2,
-					status: "completed",
-					awaitable: false,
-				},
-				{
-					agent_id: "00000000-0000-4000-8000-000000000003",
-					agent_handle: "00000000-0000-4000-8000-000000000003",
-					parent_id: "session-1",
-					role: "worker",
-					session_name: "private-fallback",
-					depth: 1,
-					status: "running",
-					awaitable: true,
-				},
-				{
-					agent_id: "00000000-0000-4000-8000-000000000004",
-					agent_handle: "silver-wren-d4e5f6",
-					agent_type: "scout",
-					parent_id: "session-1",
-					role: "worker",
-					session_name: "silver-wren-d4e5f6",
-					depth: 1,
-					status: "idle",
-					awaitable: false,
-				},
-			] as ListAgentItem[],
-		} as Extract<Frame, { type: "list_agents_result" }>;
-		connection.emit(response);
-
-		const result = await executePromise;
-		assert.equal(result.isError, undefined);
-		assert.equal(result.details.agents.length, 3);
-		assert.equal(result.details.agents[0].agentHandle, "amber-fox-a1b2c3");
-		assert.equal(result.details.agents[0].agentType, "scout");
-		assert.equal(result.details.agents[0].task, "Retask functional check");
-		assert.equal("agent_id" in result.details.agents[0], false);
-		assert.equal(result.details.agents[1].status, "completed");
-		assert.equal(result.details.agents[2].agentHandle, "silver-wren-d4e5f6");
-		assert.equal(result.details.agents[2].agentType, "scout");
-		assert.equal(result.details.agents[2].sessionName, null);
-		assert.match(result.content[0].text, /amber-fox-a1b2c3 \(scout\)/);
-		assert.match(result.content[0].text, /task: Retask functional check/);
-		assert.match(result.content[0].text, /mossy-lynx-d4e5f6 \(testing-specialist\)/);
-		assert.doesNotMatch(result.content[0].text, /agent_id|run_id|spec_json|env_keys|SECRET/);
-		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000001/);
-		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000003/);
-		assert.doesNotMatch(result.content[0].text, /00000000-0000-4000-8000-000000000004/);
-		assert.doesNotMatch(result.content[0].text, /private-fallback/);
-		assert.match(result.content[0].text, /silver-wren-d4e5f6 \(scout\)/);
-		assert.doesNotMatch(result.content[0].text, /title: silver-wren-d4e5f6/);
-		assert.match(result.content[0].text, /title: agent-one/);
-		assert.match(result.content[0].text, /title: agent-two/);
-		assert.match(result.content[0].text, /running/);
-		assert.match(result.content[0].text, /completed/);
-
-		const rendered = (listTool as any)
-			.renderResult(result, {}, { fg: (_token: string, text: string) => `styled:${text}` })
-			.render(120)
-			.join("\n");
-		assert.match(rendered, /amber-fox-a1b2c3 \(scout\)/);
-		assert.doesNotMatch(rendered, /amber-fox-a1b2c3 styled:amber-fox-a1b2c3/);
-	});
-
-	it("list_agents rejects when the daemon connection closes before a response", async () => {
-		const connection = new MockConnection();
-		const daemonClient = createDaemonClient(connection);
-		const resultPromise = daemonClient.listAgents({ awaitable: true });
-		const rejection = assert.rejects(
-			resultPromise,
-			/daemon connection closed before list_agents_result frame \(1006: gone\)/,
-		);
-
-		assert.equal(connection.sent[0]?.type, "list_agents");
-		connection.emitClose(1006, "gone");
-
-		await rejection;
-		assert.equal(connection.handlers.get("list_agents_result")?.size ?? 0, 0);
-		assert.equal(connection.closeHandlers.size, 0);
-	});
-
-	it("wait_for_agent aborts promptly on AbortSignal", async () => {
+	it("aborts promptly on AbortSignal", async () => {
 		trackSkillInvocation("agents");
 		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
@@ -315,24 +220,21 @@ describe("wait_for_agent and list_agents", () => {
 		assert.match(result.content[0].text, /wait aborted/i);
 	});
 
-	it("list_agents requires agents skill invocation", async () => {
-		let connected = false;
+	async function dispatchWait(handles: string[]) {
+		trackSkillInvocation("agents");
+		const connection = new MockConnection();
 		const { pi, tools } = createMockPi();
-		registerDaemonTools(
-			pi,
-			async () => {
-				connected = true;
-				return new MockConnection();
-			},
-			daemonToolDeps,
+		registerDaemonTools(pi, async () => connection, daemonToolDeps);
+		const waitTool = toolByName(tools, "wait_for_agent");
+		const resultPromise = waitTool.execute(
+			"1",
+			{ agent_handles: handles, timeout_s: 30 },
+			new AbortController().signal,
+			() => {},
+			{},
 		);
-		const listTool = toolByName(tools, "list_agents");
-
-		const result = await listTool.execute("1", {}, new AbortController().signal, () => {}, {});
-
-		assert.equal(result.isError, true);
-		assert.match(result.content[0].text, /Load the agents skill first/);
-		assert.equal(connected, false);
-		assert.equal(result.details, null);
-	});
+		await new Promise((resolve) => setImmediate(resolve));
+		const outbound = connection.sent[0] as Extract<Frame, { type: "wait" }>;
+		return { connection, outbound, resultPromise };
+	}
 });
