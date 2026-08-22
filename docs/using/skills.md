@@ -17,11 +17,4 @@ basecamp comes bundled with several built-in skills. All skills are directly inv
 | `pi-development` | Develop Pi extensions, skills, prompt templates, themes, and packages |
 | `marimo` | Marimo reactive notebooks: pure `.py` notebooks, data apps, and `mo.ui` |
 | `copilot` | Repo-memory curation in copilot mode: journals, work dossiers, and the repo cockpit |
-
-## User-Invoked Skills
-
-The agent can't load these on its own; you trigger them with `/skill:<name>`.
-
-| Skill | What it does |
-|-------|--------------|
-| `code-review` | An independent multi-agent review of the current branch; dispatches fixed specialist lenses plus risk-driven adaptive reviewers, reports structured findings, and you synthesize a verdict over the final set |
+| `code-review` | An independent multi-agent review of the current branch; dispatches fixed specialist lenses plus risk-driven adaptive reviewers, reports structured findings, and you synthesize a verdict over the final set. Usually triggered with `/code-review` |
