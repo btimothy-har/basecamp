@@ -21,7 +21,7 @@ One feature, organized by function (not sub-features):
 
 ## Dependencies
 
-- **core** (`#core/*`): agent-mode (+ copilot), session state, workspace service + worktree setup, skill-tracker, host paths/config, errors
+- **core** (`#core/*`): agent-mode (+ copilot), git/worktree mechanics, session state, workspace service + worktree setup, skill-tracker, host paths/config, ui (Herdr blocking)
 
 ## Type contracts
 

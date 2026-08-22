@@ -89,7 +89,7 @@ Browse completed jobs with:
 harbor view "$HOME/evals/basecamp-terminal-bench/jobs"
 ```
 
-Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants, while `docker-amd64` and `all` assume an amd64 Docker host. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard. Harbor's usage totals cover the parent Pi process.
+Docker and Podman-on-macOS through the included wrapper are supported. Most Terminal-Bench 2.1 task images are amd64-only and x64 Node can crash under arm64 emulation, so the Podman presets select the four images that publish native arm64 variants, while `docker-amd64` and `all` assume an amd64 Docker host. Runs produce local scores and Pi logs, not ATIF trajectories, so they are not eligible for the Terminal-Bench 2.1 leaderboard.
 
 The launcher reconciles each finished run: when Harbor silently drops a task filter that matches nothing (dataset drift), the trial count no longer equals tasks x attempts and the launch fails with an explicit error instead of reporting a silently smaller result.
 

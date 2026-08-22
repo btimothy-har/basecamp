@@ -211,6 +211,34 @@ describe("plan approval schedules the implementation handoff restart", () => {
 		assert.deepEqual(pi.userMessages, [], "no handoff was scheduled");
 	});
 
+	it("schedules no restart when the review returns feedback rather than approval", async (t) => {
+		t.after(() => resetAgentMode());
+		const { pi, tool } = setup({ review: async () => "submit" });
+		await initializeWorkspace(t, pi);
+		const ctx = uiContext();
+
+		const text = await approve(tool, ctx);
+		assert.match(text, /feedback/);
+
+		await pi.fireAgentEnd(ctx);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(pi.userMessages, [], "no handoff was scheduled");
+	});
+
+	it("schedules no restart when the review is declined", async (t) => {
+		t.after(() => resetAgentMode());
+		const { pi, tool } = setup({ review: async () => "decline" });
+		await initializeWorkspace(t, pi);
+		const ctx = uiContext();
+
+		const text = await approve(tool, ctx);
+		assert.match(text, /declined/);
+
+		await pi.fireAgentEnd(ctx);
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		assert.deepEqual(pi.userMessages, [], "no handoff was scheduled");
+	});
+
 	it("schedules no restart for an approved analysis plan", async (t) => {
 		t.after(() => resetAgentMode());
 		const { pi, tool } = setup();
