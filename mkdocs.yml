@@ -1,0 +1,96 @@
+site_name: basecamp
+site_description: Project-aware Pi extension for AI coding agents — project context, isolated worktrees, and workflow automation.
+site_url: https://basecamp.playground.tools/
+repo_url: https://github.com/btimothy-har/basecamp
+repo_name: btimothy-har/basecamp
+edit_uri: edit/main/docs/
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  favicon: assets/favicon.svg
+  custom_dir: docs/overrides
+  features:
+    - navigation.sections
+    - navigation.collapse
+    - navigation.indexes
+    - navigation.top
+    - toc.follow
+    - content.code.copy
+    - content.action.edit
+    - content.action.view
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  icon:
+    logo: basecamp
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - md_in_html
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Your First Session: getting-started/first-session.md
+      - Managing Projects: getting-started/managing-projects.md
+  - Using basecamp:
+      - Slash Commands: using/slash-commands.md
+      - Skills: using/skills.md
+      - Session Modes & Working Styles: using/session-modes.md
+      - Git Worktrees: using/worktrees.md
+      - Reviewing a Diff: using/diff-review.md
+      - Agents & Subagents: using/agents.md
+  - Configuration:
+      - Projects: configuration/projects.md
+      - Worktree Environments: configuration/worktree-environments.md
+      - Model Aliases: configuration/model-aliases.md
+  - Architecture:
+      - Core & Framework:
+          - Core Substrate: architecture/core.md
+          - Framework UI: architecture/ui.md
+      - Session Context:
+          - System Prompt: architecture/system-prompt.md
+          - Project Context Internals: architecture/project-context.md
+      - Agent Runtime:
+          - The Agent-Dispatch Model: architecture/agent-dispatch.md
+          - Worktree Lifecycle & Teardown: architecture/worktree-lifecycle.md
+          - Workstreams: architecture/workstreams.md
+      - Hub & Protocol:
+          - Hub Daemon & Dashboard Topology: architecture/hub-daemon.md
+          - Hub Protocol: architecture/hub-protocol.md
+      - Guardrails & Review:
+          - Bash Reviewer Posture: architecture/bash-reviewer.md
+          - Continuation Guard: architecture/continuation-guard.md
+          - Code Review Flow: architecture/code-review.md
+          - Diff Surface Internals: architecture/diff-surface.md
+      - Standalone Domains:
+          - Browser Automation Policy: architecture/browser-policy.md
+          - Pull-Request Skill: architecture/pull-request.md
+          - Engineering Domain: architecture/engineering.md
+  - Evaluation:
+      - Terminal-Bench & CI: evaluation.md

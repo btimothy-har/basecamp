@@ -6,7 +6,7 @@
  * lives on globalThis behind a well-known Symbol key. Wiring — providers and
  * registries re-established by the composition root on every load —
  * deliberately does NOT use this helper; plain module state is correct there.
- * See core/README.md for the pattern.
+ * See docs/architecture/core.md for the pattern.
  */
 export function processScoped<T extends object>(key: `basecamp.${string}` | `pi.${string}`, init: () => T): () => T {
 	const symbol = Symbol.for(key);

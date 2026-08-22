@@ -1,0 +1,45 @@
+# Worktree Lifecycle & Teardown
+
+Git mechanics used by the workspace runtime, swarm, and repository-status UI.
+
+## What it does
+
+- **`worktrees/`**: git-worktree mechanics: `crud.ts` (get-or-create · attach · list · records), `target.ts` (path/label resolution), `migrate.ts` (relocate legacy worktrees to the canonical root, then `rmdir` the emptied legacy root), `lifecycle.ts` (lock/unlock/remove/branch-delete primitives + agent-worktree creation), `lease.ts` (session-worktree advisory leases, the staged-awaiting-launch lock class, + the clean/dirty teardown matrix), and `session-sweep.ts` (the session-tier cold+clean backstop). The agent-tier backstop sweep lives in the Python daemon (`src/basecamp/hub/swarm/sweep.py`), not here.
+- **`constants.ts`**: `worktreesRoot()` resolves the root at use-time (`BASECAMP_WORKTREES_ROOT` override, default `~/.worktrees`) plus label/branch conventions.
+- **`repo.ts`**: repo detection: `resolveGitInfo` (repo root, remote, linked-worktree status) and branch helpers.
+- **`pr-status.ts`**: read-only pull-request lookup for the repository-status footer.
+
+## Consumers
+
+`#core/git/worktrees/*` and `#core/git/repo.ts` are imported by `core/project/workspace/` and swarm provisioning. The repository-status UI imports `pr-status.ts` directly.
+
+## Worktree design
+
+Worktrees live **outside** the repo at `~/.worktrees/<org>/<name>/<label>/`, and **git is the source of truth** (`git worktree list --porcelain`); Basecamp keeps no parallel metadata registry.
+
+- **Sessions launch with plain `pi`**: Basecamp detects the repo root, treats a session launched inside a linked worktree as its active worktree, activates a worktree on implementation-plan approval, and restores the last active worktree on resume/reload/fork (or via `/worktree [label]`).
+- **Isolation is earned, not paid up front**: a bare `pi` session runs in the protected checkout itself (no worktree); the `tool_call` guard already blocks structured writes there.
+- **Directory names are identity-free**: plan-approved and `/worktree`-created worktrees are a generic `wt/<slug>` cache; copilot-dispatched workstreams are `copilot/<slug>` (the slug is the workstream's readable id). The **branch** carries the unique identity: plan/create branches are `<user-prefix>/<session-tag>-<slug>`, copilot branches `<user-prefix>/<slug>`.
+- **Provisioning disambiguates labels**: because a `wt/<slug>` label does not map to one branch, creation resolves an available label (`wt/<slug>`, then `wt/<slug>-2`, …) so a same-slug dirty survivor on another branch is never silently adopted.
+- **Legacy roots migrate automatically**: bare-name `~/.worktrees/<repo>/` roots are relocated to the `<org>/<name>` root best-effort on primary session start (`git worktree move`, skipping the main checkout, the active worktree, and anything locked or already migrated); a per-worktree failure never blocks startup, the emptied legacy root is best-effort `rmdir`'d, and the session notifies how many worktrees moved or were skipped.
+
+**Session-worktree lifecycle.** A session worktree is a disposable cache of its branch; the branch is the durable artifact. Two owners share one contract (one lease-reason shape, one teardown matrix): the daemon owns the `agent` tier (above), and **TypeScript owns the session tier** (`wt-*`, `copilot/*`, direct labels).
+
+- **Session lease**: every top-level session takes an advisory `git worktree lock` lease on its active worktree, ownership the stable pi session id (never a pid), the timestamp a coldness clock refreshed on activation and on resume/reload. Subagents never lease (their worktree keeps its daemon-owned agent-run lock), and a session lease **never overwrites a foreign (non-session) lock**: a top-level session launched inside an agent worktree simply runs unleased, so the worktree is never orphaned from the daemon's teardown.
+- **Staged lock**: copilot's `launch_workstream` stamps a staged lock on the `copilot/<slug>` worktree it provisions. Creation takes the lock atomically (`git worktree add --lock --reason`), so no concurrent sweep can observe the new tree unlocked; re-staging re-stamps only a lock that already reads as cold, never a live session or agent lock.
+- **Staged-lock lifetime**: the cold backstop reads a staged lock as live for its 1-hour TTL instead of reaping the worktree as leaseless residue before `pi --workstream` ever launches. The staged lock is the one non-session lock a session lease **does** take over (the launching session breaks it and re-leases as its own); left unlaunched past the TTL it reads as cold again and is reclaimed.
+- **Adopt or rebuild**: launch/resume adopts an existing worktree or rebuilds a reaped one from its surviving branch (re-running the setup hook). The explicit `--worktree-dir` attach and the worktree-state restore run **before** the cold backstop sweep, so the target they lease is never reaped out from under them in the same startup.
+- **Teardown matrix**: the primary reap is at `session_shutdown` (reason `quit` only, gated to non-subagents): a clean worktree is removed (branch kept), a dirty one is kept. The session-start cold backstop reclaims cold (stale-lease, stale-staged, or leaseless) **and** clean session worktrees, surfaces dirty-cold without removing, and never force-removes uncommitted work.
+- **Branches are never auto-deleted**: cleanup is behavioral (the agents skill tells the primary to delete branches it merged) plus the manual `/worktree prune` picker, which labels live-leased or foreign-locked candidates "(in use)", freshly staged ones "(staged, awaiting launch)", and force-removes an in-use, staged, or dirty worktree only after explicit confirmation.
+
+`WORKTREES_ROOT` resolves at use-time via `worktreesRoot()` (honoring `BASECAMP_WORKTREES_ROOT`).
+
+**Session/UX decoupling.** Isolation is provisioned when work earns it, not at launch.
+
+- Bare `pi` stays in the protected checkout (there is no `session/<id>` workspace); `validateProtectedCheckout` asserts only that the checkout is on its default branch. Worktrees are cut from HEAD, so uncommitted WIP stays in the checkout and is not carried across.
+- `/worktree` offers **Create new worktree** at the top of its dropdown: it prompts for a slug, provisions a `wt/<slug>` worktree on a unique branch, runs the setup hook, and activates it (taking the session lease, so exit-reap and `/worktree prune` own it).
+- Resuming a past thread means switching back to a surviving dirty worktree, since clean ones are reaped on exit.
+
+A generic label is **not** 1:1 with a branch, and that is accepted rather than defended against: the worktree is a disposable space, the branch is the work. A session that exited *clean* (worktree reaped, label freed) and is later resumed after another session took that `wt/<slug>` label for a different branch will attach that worktree on the other branch; recovery is switching to the intended branch, and the session's own branch is never lost.
+
+A *dirty* exit cannot hit this: the worktree survives holding its branch, and git forbids a second checkout of it. For the same reason provisioning fails loudly (rather than silently adopting) when the target branch is already checked out elsewhere.

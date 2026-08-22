@@ -25,7 +25,7 @@ const LIMITS: Readonly<Record<string, number>> = {
 	".js": 500,
 };
 
-const SKIP_DIRS = new Set([".git", ".claude", ".venv", ".pytest_cache", "__pycache__", "dist", "node_modules"]);
+const SKIP_DIRS = new Set([".git", ".claude", ".venv", ".pytest_cache", "__pycache__", "dist", "node_modules", "site"]);
 
 function walk(dir: string, out: string[] = []): string[] {
 	for (const entry of readdirSync(dir)) {

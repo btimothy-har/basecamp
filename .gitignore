@@ -215,6 +215,13 @@ __marimo__/
 # Overmind
 overmind.sock
 
+# MkDocs build output
+site/
+
+# Docs brand assets — generated from src/basecamp/hub/dashboard/assets/ at build time
+docs/assets/favicon.svg
+docs/overrides/
+
 uv.lock
 pnpm-lock.yaml
 pnpm-workspace.yaml

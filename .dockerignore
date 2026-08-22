@@ -1,0 +1,18 @@
+# The docs image build only needs mkdocs.yml and docs/. Exclude everything heavy
+# or irrelevant so the build context stays small on local builds.
+# (On the VPS the context is already just deploy/ + docs/ + mkdocs.yml.)
+.git
+.github
+.claude
+.venv
+.pytest_cache
+.ruff_cache
+__pycache__
+node_modules
+site
+evals
+tests
+migrations
+pi
+src
+*.lock

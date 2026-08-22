@@ -49,3 +49,21 @@ jobs:
     - name: Run Extension Tests
       run: |
         npm test
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v6
+
+    - name: Sync docs assets
+      run: bash scripts/sync-docs-assets.sh
+
+    - name: Build docs
+      run: |
+        uv run --with mkdocs-material mkdocs build --strict

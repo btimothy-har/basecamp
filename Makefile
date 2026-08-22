@@ -1,4 +1,4 @@
-.PHONY: sync compile test lint fix eval eval-dry eval-install
+.PHONY: sync compile test lint fix eval eval-dry eval-install docs docs-build
 
 EVAL_SELECTION ?= podman-arm64
 EVAL_ENGINE ?= podman
@@ -48,3 +48,11 @@ eval-dry:
 
 eval-install:
 	$(EVAL_COMMAND) --install-only
+
+docs:
+	bash scripts/sync-docs-assets.sh
+	uv run --with mkdocs-material mkdocs serve
+
+docs-build:
+	bash scripts/sync-docs-assets.sh
+	uv run --with mkdocs-material mkdocs build --strict
