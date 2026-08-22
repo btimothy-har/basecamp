@@ -26,6 +26,12 @@ jobs:
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          # Runners join as tag:github-actions (the tag the OAuth client is
+          # granted and the ACL source allowed to reach the VPS). tag:vultr-vps
+          # is the VPS's own tag; advertising it gets the join rejected with
+          # "requested tags ... are invalid or not permitted". The tags input
+          # is also required: v3 refuses OAuth joins without it.
+          tags: tag:github-actions
       - name: Sync docs assets
         run: bash scripts/sync-docs-assets.sh
 
