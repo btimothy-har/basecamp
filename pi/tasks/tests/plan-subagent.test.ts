@@ -3,7 +3,7 @@ import { afterEach, describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { getAgentMode, resetAgentMode, setAgentMode } from "#core/agent-mode/index.ts";
 import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
-import { type PlanAccess, type PlanDeps, registerPlan } from "#tasks/tools/plan-tool.ts";
+import { type PlanDeps, registerPlan } from "#tasks/tools/plan-tool.ts";
 
 interface PlanParams {
 	goal: string;
@@ -71,7 +71,6 @@ function tasksRuntime(): TasksRuntime {
 
 function setup(deps: Partial<PlanDeps> = {}): {
 	tool: RegisteredTool;
-	plan: PlanAccess;
 	runtime: TasksRuntime;
 	handoffCalls: number;
 	countHandoffs: () => number;
@@ -79,7 +78,7 @@ function setup(deps: Partial<PlanDeps> = {}): {
 	const pi = new FakePi();
 	const runtime = tasksRuntime();
 	let handoffCalls = 0;
-	const plan = registerPlan(pi as unknown as ExtensionAPI, runtime, {
+	registerPlan(pi as unknown as ExtensionAPI, runtime, {
 		isSubagent: () => true,
 		handoff: (async () => {
 			handoffCalls++;
@@ -87,7 +86,7 @@ function setup(deps: Partial<PlanDeps> = {}): {
 		}) as PlanDeps["handoff"],
 		...deps,
 	});
-	return { tool: pi.getPlan(), plan, runtime, handoffCalls, countHandoffs: () => handoffCalls };
+	return { tool: pi.getPlan(), runtime, handoffCalls, countHandoffs: () => handoffCalls };
 }
 
 const headlessContext = { hasUI: false } as unknown as ExtensionContext;
@@ -118,14 +117,6 @@ describe("subagent plan auto-approval", () => {
 			],
 		);
 		assert.equal(getAgentMode(), "work");
-	});
-
-	it("never arms the implementation handoff latch", async () => {
-		const { tool, plan } = setup();
-
-		await tool.execute("call-1", params, undefined, undefined, headlessContext);
-
-		assert.equal(plan.isHandoffActive(), false);
 	});
 
 	it("skips the review overlay even when a UI is present", async () => {

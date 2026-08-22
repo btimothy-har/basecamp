@@ -6,7 +6,7 @@ import { registerWorkspaceRuntime, resetWorkspaceRuntimeForTesting } from "#core
 import type { TasksRuntime } from "#tasks/lifecycle/index.ts";
 import type { PlanDraft } from "#tasks/schemas/plan.ts";
 import { SECTION_NAMES } from "#tasks/schemas/plan.ts";
-import { type PlanAccess, type PlanDeps, registerPlan } from "#tasks/tools/plan-tool.ts";
+import { type PlanDeps, registerPlan } from "#tasks/tools/plan-tool.ts";
 import type { HandoffOutcome } from "#tasks/workflows/handoff/index.ts";
 
 interface PlanParams {
@@ -88,21 +88,21 @@ async function initializeWorkspace(t: TestContext, pi: FakePi): Promise<void> {
 }
 
 const params: PlanParams = {
-	goal: "Add the continuation guard",
-	context: "Agents stop mid-work.",
-	design: "Judge the stop against a rubric.",
-	success: "Premature stops are nudged.",
+	goal: "Ship the tasks-plan feature",
+	context: "Work needs a plan.",
+	design: "Approve a structured plan, then hand off.",
+	success: "The plan is approved and handed off.",
 	boundaries: "No daemon changes.",
-	worktreeSlug: "continuation-guard",
-	tasks: [{ label: "Implement", description: "Add the hook", criteria: "Tests pass" }],
+	worktreeSlug: "tasks-plan",
+	tasks: [{ label: "Implement", description: "Do the work", criteria: "Tests pass" }],
 };
 
 const readyOutcome: HandoffOutcome = {
 	status: "ready",
 	worktree: {
-		worktreeDir: "/tmp/worktrees/wt/continuation-guard",
-		label: "wt/continuation-guard",
-		branch: "bt/continuation-guard",
+		worktreeDir: "/tmp/worktrees/wt/tasks-plan",
+		label: "wt/tasks-plan",
+		branch: "bt/tasks-plan",
 		created: true,
 	},
 	setupSummary: undefined,
@@ -124,9 +124,9 @@ function approveEverything(draft: PlanDraft): void {
 	draft.tasksReview = { approved: true, feedback: null };
 }
 
-function setup(overrides: Partial<PlanDeps> = {}): { pi: FakePi; tool: RegisteredTool; plan: PlanAccess } {
+function setup(overrides: Partial<PlanDeps> = {}): { pi: FakePi; tool: RegisteredTool } {
 	const pi = new FakePi();
-	const plan = registerPlan(pi as unknown as ExtensionAPI, tasksRuntime(), {
+	registerPlan(pi as unknown as ExtensionAPI, tasksRuntime(), {
 		// Pinned so the suite is deterministic even when run inside a dispatched agent.
 		isSubagent: () => false,
 		review: async (draft) => {
@@ -136,7 +136,7 @@ function setup(overrides: Partial<PlanDeps> = {}): { pi: FakePi; tool: Registere
 		handoff: async () => readyOutcome,
 		...overrides,
 	});
-	return { pi, tool: pi.getPlan(), plan };
+	return { pi, tool: pi.getPlan() };
 }
 
 function uiContext(usagePercent: number | null = 0): ExtensionContext {
@@ -154,31 +154,26 @@ async function approve(tool: RegisteredTool, ctx: ExtensionContext): Promise<str
 	return result.content[0]?.text ?? "";
 }
 
-describe("plan approval arms and releases the handoff latch", () => {
-	it("arms at approval and releases once the handoff prompt is sent", async (t) => {
+describe("plan approval schedules the implementation handoff restart", () => {
+	it("sends the handoff prompt after the agent run ends", async (t) => {
 		t.after(() => resetAgentMode());
-		const { pi, tool, plan } = setup();
+		const { pi, tool } = setup();
 		await initializeWorkspace(t, pi);
 		const ctx = uiContext();
 
-		assert.equal(plan.isHandoffActive(), false);
-
 		const text = await approve(tool, ctx);
 		assert.match(text, /implementation/);
-		assert.equal(plan.isHandoffActive(), true, "the restart is owed from the moment the plan is approved");
 
 		await pi.fireAgentEnd(ctx);
 		// The handoff defers to the next macrotask so Pi can clear its streaming state.
-		assert.equal(plan.isHandoffActive(), true, "still owed across the macrotask boundary");
 		await new Promise((resolve) => setTimeout(resolve, 0));
 
 		assert.equal(pi.userMessages.length, 1);
-		assert.equal(plan.isHandoffActive(), false, "released only once the prompt is actually sent");
 	});
 
-	it("stays armed for the whole compaction pass", async (t) => {
+	it("sends nothing until the compaction pass reports", async (t) => {
 		t.after(() => resetAgentMode());
-		const { pi, tool, plan } = setup();
+		const { pi, tool } = setup();
 		await initializeWorkspace(t, pi);
 		let onComplete: (() => void) | null = null;
 		const ctx = {
@@ -197,38 +192,33 @@ describe("plan approval arms and releases the handoff latch", () => {
 
 		assert.ok(onComplete, "compaction should have been requested");
 		assert.deepEqual(pi.userMessages, [], "nothing is sent until compaction reports");
-		assert.equal(plan.isHandoffActive(), true, "a peer must still see the restart in flight");
 
 		(onComplete as unknown as () => void)();
 		assert.equal(pi.userMessages.length, 1);
-		assert.equal(plan.isHandoffActive(), false);
 	});
 
-	it("never arms when the worktree handoff is cancelled", async (t) => {
+	it("schedules no restart when the worktree handoff is cancelled", async (t) => {
 		t.after(() => resetAgentMode());
-		const { pi, tool, plan } = setup({ handoff: async () => ({ status: "cancelled" }) });
+		const { pi, tool } = setup({ handoff: async () => ({ status: "cancelled" }) });
 		await initializeWorkspace(t, pi);
 		const ctx = uiContext();
 
 		const text = await approve(tool, ctx);
-
 		assert.match(text, /handoff_cancelled/);
-		assert.equal(plan.isHandoffActive(), false);
+
 		await pi.fireAgentEnd(ctx);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		assert.deepEqual(pi.userMessages, [], "no handoff was scheduled");
 	});
 
-	it("never arms for an approved analysis plan", async (t) => {
+	it("schedules no restart for an approved analysis plan", async (t) => {
 		t.after(() => resetAgentMode());
-		const { pi, tool, plan } = setup();
+		const { pi, tool } = setup();
 		await initializeWorkspace(t, pi);
 		const ctx = uiContext();
 
 		setAgentMode("analysis");
 		await tool.execute("call-1", params, undefined, undefined, ctx);
-
-		assert.equal(plan.isHandoffActive(), false);
 		await pi.fireAgentEnd(ctx);
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		assert.deepEqual(pi.userMessages, []);

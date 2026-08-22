@@ -78,10 +78,10 @@ function rawUserText(message: UserMessage): string {
 
 /**
  * The most recent user messages, most-recent-last. Unlike `buildUserContext` these
- * are not compacted — they back the fast-model prompts (the bash reviewer's gate
- * and the continuation guard's judge) that need the user's phrasing as typed — but
- * each is bounded, because a single pasted log or diff would otherwise be replayed
- * in full on every stop for as long as it stays in the window.
+ * are not compacted — they back the fast-model prompts (the bash reviewer's gate)
+ * that need the user's phrasing as typed — but each is bounded, because a single
+ * pasted log or diff would otherwise be replayed in full on every gate call for
+ * as long as it stays in the window.
  */
 export function recentUserMessages(entries: SessionEntry[], limit = 5): string[] {
 	const messages: string[] = [];
