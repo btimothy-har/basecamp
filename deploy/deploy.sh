@@ -7,7 +7,7 @@ export PATH="$HOME/.nix-profile/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_CONTEXT="$(cd "$SCRIPT_DIR/.." && pwd)"
-SERVICE_NAME="basecamp-docs"
+SERVICE_NAME="${DEPLOY_SERVICE:-basecamp-docs}"
 SERVICE_UNIT="${SERVICE_NAME}.service"
 SERVICE_UNIT_TARGET="$HOME/.config/systemd/user/${SERVICE_UNIT}"
 

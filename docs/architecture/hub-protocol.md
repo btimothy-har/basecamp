@@ -119,7 +119,7 @@ Authorization is strict and dispatcher-owned: the requester may wait only when i
 
 ### `wait_result` daemon → client
 
-One item per requested handle, echoing `request_id`. Items contain `agent_handle` and never private `run_id`:
+One item per requested handle, echoing `request_id`. Items contain `agent_handle` and never private `run_id`; `agent_id` may appear only on legacy `agent_ids`-based requests inside trusted extension-daemon plumbing and must never be surfaced as the public handle:
 
 - `completed` / `failed`: terminal result/error for an authorized current primary run.
 - `running`: authorized run still non-terminal after timeout.
@@ -251,7 +251,7 @@ Fields: `request_id` (echo), `status` (`revised` | `not_found` | `error`), `vers
 
 ### `error` daemon → client
 
-Reports protocol/parse errors; closes the WebSocket for fatal frame errors. Codes: `protocol_version`, `invalid_frame`, `invalid_register`.
+Reports protocol/parse errors; closes the WebSocket for fatal frame errors. Codes: `protocol_version`, `invalid_frame`, `invalid_register`, `duplicate_node_connection`, `duplicate_agent_handle`, `unsupported_frame`.
 
 ## Manual smoke shape
 

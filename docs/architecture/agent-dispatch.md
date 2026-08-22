@@ -23,7 +23,7 @@ The primitive has no slash command and no feature policy of its own. Two feature
 
 ## Agent lifecycle
 
-`cancel_agent` stops an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See [PROTOCOL.md](hub-protocol.md).
+`cancel_agent` stops an agent you dispatched and terminates its process (subtree-only: you cannot cancel agents outside your dispatch tree). Agents are reaped automatically when their dispatcher session ends and does not reconnect within `BASECAMP_AGENT_DISCONNECT_GRACE_S` (default 3600s). See [Hub Protocol](hub-protocol.md).
 
 ## Postures
 

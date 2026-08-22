@@ -119,12 +119,14 @@ rsync -az \
     "${SSH_USER}@${SSH_HOST}:${REMOTE_ROOT}/${MKDOCS_FILE}"
 
 log "Running remote deploy"
-ssh "${SSH_ARGS[@]}" "${SSH_USER}@${SSH_HOST}" bash -s -- "$REMOTE_ROOT" <<'REMOTE_SCRIPT'
+ssh "${SSH_ARGS[@]}" "${SSH_USER}@${SSH_HOST}" bash -s -- "$REMOTE_ROOT" "$DEPLOY_SERVICE" <<'REMOTE_SCRIPT'
 set -euo pipefail
 remote_root=${1:?remote root directory is required}
+service_name=${2:?service name is required}
+mkdir -p "$remote_root"
 cd "$remote_root"
 chmod +x ./deploy/deploy.sh
-./deploy/deploy.sh
+DEPLOY_SERVICE="$service_name" ./deploy/deploy.sh
 REMOTE_SCRIPT
 
 log "Deploy complete"

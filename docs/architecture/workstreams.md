@@ -30,4 +30,4 @@ A workstream can have several agent sessions over time or concurrently; every `p
 
 ## Protocol
 
-Workstream management uses four WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream`/`revise_workstream` + acks) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents + version history). See [PROTOCOL.md](hub-protocol.md).
+Workstream management uses four WS frame pairs (`create_workstream`/`attach_workstream_agent`/`update_workstream`/`revise_workstream` + acks) and two HTTP GET endpoints (`/workstreams` filtered list, `/workstreams/{id_or_slug}` workstream + joined agents + version history). See [Hub Protocol](hub-protocol.md).
