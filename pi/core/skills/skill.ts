@@ -5,20 +5,40 @@
  * block. A skill may be loaded multiple times per session; each call
  * re-reads the file and records the invocation for tracking.
  *
+ * With `reference`, returns one skill-relative document instead of the full
+ * instructions — gated on the skill already being loaded this session and
+ * confined to the skill's own directory.
+ *
  * Available skills and descriptions are listed in the capabilities index.
  * Use this tool to load the full instructions.
  */
 
+import * as fs from "node:fs";
+import * as path from "node:path";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { isModelInvocationDisabled, loadSkillBlock } from "./skill-content.ts";
-import { trackSkillInvocation } from "./tracker.ts";
+import { isStrictlyWithin } from "#core/host/paths.ts";
+import {
+	buildSkillReferenceBlock,
+	isModelInvocationDisabled,
+	loadSkillBlock,
+	readSkillContent,
+} from "./skill-content.ts";
+import { hasInvokedSkill, trackSkillInvocation } from "./tracker.ts";
 
 const SkillParams = Type.Object(
 	{
 		name: Type.String({
 			description: 'Exact name of the skill to load (e.g. "python-development").',
 		}),
+		reference: Type.Optional(
+			Type.String({
+				description:
+					'Skill-relative path to one reference document (e.g. "references/api.md"). ' +
+					"The skill must already be loaded in this session; returns the document instead of the full instructions.",
+			}),
+		),
 	},
 	{
 		description: "Load the instructions for a named skill.",
@@ -26,15 +46,14 @@ const SkillParams = Type.Object(
 );
 
 function renderPartial(theme: Theme) {
-	const { Text } = require("@earendil-works/pi-tui");
 	return new Text(theme.fg("dim", "..."), 0, 0);
 }
 
-function renderCall(args: { name?: string }, theme: Theme) {
-	const { Text } = require("@earendil-works/pi-tui");
+function renderCall(args: { name?: string; reference?: string }, theme: Theme) {
 	const name = args.name || "...";
-	const preview = name.length > 50 ? `${name.slice(0, 50)}...` : name;
-	return new Text(theme.fg("toolTitle", theme.bold("skill ")) + theme.fg("dim", preview), 0, 0);
+	const preview = args.reference ? `${name} · ${args.reference}` : name;
+	const shown = preview.length > 50 ? `${preview.slice(0, 50)}...` : preview;
+	return new Text(theme.fg("toolTitle", theme.bold("skill ")) + theme.fg("dim", shown), 0, 0);
 }
 
 function renderResult(
@@ -44,12 +63,16 @@ function renderResult(
 ) {
 	if (meta.isPartial) return renderPartial(theme);
 
-	const { Text } = require("@earendil-works/pi-tui");
 	const text = result.content?.find((item) => item.type === "text")?.text ?? "";
 
 	const loaded = text.match(/^<skill name="([^"]+)">/);
 	if (loaded) {
 		return new Text(theme.fg("success", "✓") + theme.fg("dim", ` ${loaded[1]} loaded`), 0, 0);
+	}
+
+	const loadedReference = text.match(/^<skill-reference skill="([^"]+)">/);
+	if (loadedReference) {
+		return new Text(theme.fg("success", "✓") + theme.fg("dim", ` ${loadedReference[1]} reference loaded`), 0, 0);
 	}
 
 	const notFound = text.match(/^No skill found with name "([^"]+)"\./);
@@ -61,7 +84,42 @@ function renderResult(
 		return new Text(theme.fg("error", "skill load failed"), 0, 0);
 	}
 
+	if (
+		text.startsWith("Failed to read reference file at ") ||
+		text.startsWith('Reference "') ||
+		(text.startsWith('Skill "') && text.includes("is not recorded as loaded in this session"))
+	) {
+		return new Text(theme.fg("error", "skill reference failed"), 0, 0);
+	}
+
 	return new Text(theme.fg("dim", "skill processed"), 0, 0);
+}
+
+/**
+ * Resolve a skill-relative reference path, confined to the skill's own directory.
+ *
+ * The reference argument is model-authored and this channel bypasses the
+ * path-guarded `read` tool, so it must stay strictly narrower: no absolute
+ * paths, no traversal outside the skill directory. Containment is checked on
+ * realpaths — `readFileSync` follows symlinks, so a planted link inside the
+ * skill directory must not widen the readable set. A missing target falls
+ * through so the read path reports the failure.
+ */
+function resolveSkillReference(skillDir: string, reference: string): string | null {
+	if (path.isAbsolute(reference)) return null;
+	const resolved = path.resolve(skillDir, reference);
+	if (!isStrictlyWithin(resolved, skillDir)) return null;
+	// A missing target falls through so the read path reports the failure.
+	if (!fs.existsSync(resolved)) return resolved;
+	try {
+		return isStrictlyWithin(fs.realpathSync(resolved), fs.realpathSync(skillDir)) ? resolved : null;
+	} catch {
+		return null;
+	}
+}
+
+function errorResult(text: string) {
+	return { details: null, isError: true, content: [{ type: "text" as const, text }] };
 }
 
 export function registerSkillTool(pi: ExtensionAPI): void {
@@ -72,7 +130,9 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 			"Load full instructions for a named skill into this agent's active context. " +
 			"Available skills are listed in the system prompt capabilities index. " +
 			"Loaded instructions stay available across turns and tasks, so relevance alone is not a reason to reload; " +
-			"reload only when the instructions have left context or you need an intentional refresh.",
+			"reload only when the instructions have left context or you need an intentional refresh. " +
+			"Pass reference to load one reference document (a skill-relative path such as references/api.md) " +
+			"from a skill already loaded in this session, instead of the full instructions.",
 
 		parameters: SkillParams,
 
@@ -91,34 +151,45 @@ export function registerSkillTool(pi: ExtensionAPI): void {
 					.filter((c) => c.source === "skill")
 					.map((c) => c.name.replace(/^skill:/, ""));
 				const hint = available.length > 0 ? ` Available skills: ${available.join(", ")}.` : "";
-				return {
-					details: null,
-					isError: true,
-					content: [{ type: "text", text: `No skill found with name "${name}".${hint}` }],
-				};
+				return errorResult(`No skill found with name "${name}".${hint}`);
 			}
 
 			if (isModelInvocationDisabled(command.sourceInfo.path)) {
-				return {
-					details: null,
-					isError: true,
-					content: [
-						{
-							type: "text",
-							text: `Skill "${name}" is user-invoked only (via /skill:${name}) and cannot be loaded by the agent.`,
-						},
-					],
-				};
+				return errorResult(
+					`Skill "${name}" is user-invoked only (via /skill:${name}) and cannot be loaded by the agent.`,
+				);
 			}
 
 			const filePath = command.sourceInfo.path;
-			const block = loadSkillBlock(name, filePath);
-			if (block === null) {
+
+			if (params.reference !== undefined) {
+				if (!hasInvokedSkill(name)) {
+					return errorResult(
+						`Skill "${name}" is not recorded as loaded in this session. ` +
+							`Load it with skill({ name: "${name}" }) before requesting its reference files.`,
+					);
+				}
+				const skillDir = path.dirname(filePath);
+				const referencePath = resolveSkillReference(skillDir, params.reference);
+				if (!referencePath) {
+					return errorResult(
+						`Reference "${params.reference}" is not a valid skill-relative path under the "${name}" skill directory.`,
+					);
+				}
+				const content = readSkillContent(referencePath);
+				if (content === null) {
+					return errorResult(`Failed to read reference file at ${referencePath}.`);
+				}
+				trackSkillInvocation(name);
 				return {
 					details: null,
-					isError: true,
-					content: [{ type: "text", text: `Failed to read skill file at ${filePath}.` }],
+					content: [{ type: "text", text: buildSkillReferenceBlock(name, content) }],
 				};
+			}
+
+			const block = loadSkillBlock(name, filePath);
+			if (block === null) {
+				return errorResult(`Failed to read skill file at ${filePath}.`);
 			}
 
 			trackSkillInvocation(name);

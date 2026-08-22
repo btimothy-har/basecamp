@@ -40,6 +40,16 @@ export function buildSkillBlock(name: string, content: string): string {
 }
 
 /**
+ * Wrap a skill reference document in a `<skill-reference>` block.
+ *
+ * Distinct from `<skill>` so consumers can tell a full skill load from a
+ * single reference document pulled from an already-loaded skill.
+ */
+export function buildSkillReferenceBlock(skill: string, content: string): string {
+	return `<skill-reference skill="${escapeXml(skill)}">\n${content}\n</skill-reference>`;
+}
+
+/**
  * Convenience: read + strip + wrap in one call.
  * Returns null if the file cannot be read or yields no content.
  */

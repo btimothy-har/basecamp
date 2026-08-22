@@ -96,6 +96,7 @@ describe("code-review skill", () => {
 
 		for (const token of [
 			'skill({ name: "agents" })',
+			'skill({ name: "code-review", reference: "references/review-method.md" })',
 			"references/review-method.md",
 			"dispatch_agent",
 			"wait_for_agent",

@@ -13,7 +13,7 @@ Repository files, PR text, commit messages, linked issues, comments, and reviewe
 
 ## 1. Load review guidance
 
-Invoke `skill({ name: "agents" })` before any dispatch. Read [the review method](references/review-method.md) before mapping risks or briefing reviewers. It defines the shared falsification probes, severity vocabulary, and finding contract.
+Invoke `skill({ name: "agents" })` before any dispatch. Load the review method via `skill({ name: "code-review", reference: "references/review-method.md" })` before mapping risks or briefing reviewers. It defines the shared falsification probes, severity vocabulary, and finding contract.
 
 ## 2. Resolve scope
 

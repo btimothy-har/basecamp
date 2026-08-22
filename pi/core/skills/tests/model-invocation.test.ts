@@ -6,26 +6,8 @@ import { describe, it, type TestContext } from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { listCatalogItemsByType } from "#core/catalog/index.ts";
 import { registerCatalogProviders } from "#core/catalog/providers.ts";
-import { registerSkillTool } from "#core/skills/skill.ts";
 import { isModelInvocationDisabled } from "#core/skills/skill-content.ts";
-
-interface SkillCommand {
-	name: string;
-	description?: string;
-	source: "skill";
-	sourceInfo: { path: string };
-}
-
-interface ToolResult {
-	content: { type: string; text: string }[];
-	isError?: boolean;
-	details?: unknown;
-}
-
-interface RegisteredTool {
-	name: string;
-	execute(toolCallId: string, params: { name: string }): Promise<ToolResult>;
-}
+import { captureSkillTool, skillCommands } from "./harness.ts";
 
 function writeSkill(dir: string, name: string, hidden: boolean): string {
 	const skillDir = path.join(dir, name);
@@ -43,28 +25,6 @@ function fixtures(t: TestContext): { visible: string; hidden: string } {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "skill-fixtures-"));
 	t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
 	return { visible: writeSkill(dir, "visible", false), hidden: writeSkill(dir, "hidden", true) };
-}
-
-function skillCommands(paths: Record<string, string>): SkillCommand[] {
-	return Object.entries(paths).map(([name, p]) => ({
-		name: `skill:${name}`,
-		description: `${name} skill for testing.`,
-		source: "skill" as const,
-		sourceInfo: { path: p },
-	}));
-}
-
-function captureSkillTool(commands: SkillCommand[]): RegisteredTool {
-	let captured: RegisteredTool | undefined;
-	const pi = {
-		registerTool(tool: RegisteredTool) {
-			captured = tool;
-		},
-		getCommands: () => commands,
-	} as unknown as ExtensionAPI;
-	registerSkillTool(pi);
-	if (!captured) throw new Error("skill tool not registered");
-	return captured;
 }
 
 describe("isModelInvocationDisabled", () => {

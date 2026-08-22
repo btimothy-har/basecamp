@@ -93,8 +93,9 @@ Include keywords that help the agent match tasks to the skill. Avoid imperative 
 
 ## Invocation
 
-- `/skill:name` — explicitly load and execute
-- `/skill:name args` — load with arguments (appended as `User: <args>`)
+- `skill({ name })` tool call — **the only supported path in basecamp sessions**: agents load skills through the skill tool, which records the invocation for session gating and display
+- `/skill:name` (direct slash invocation) — **not supported in basecamp sessions**: pi expands the content without the skill tool, so the load is untracked — session gates (e.g. the `reference` parameter) will not recognize it; the agent should call `skill({ name })` instead
+- `/skill:name args` — same as above, with args appended
 - Automatic — agent loads when task matches description
 
 Toggle skill commands via `/settings` or `enableSkillCommands` in `settings.json`.
@@ -109,6 +110,7 @@ Toggle skill commands via `/settings` or `enableSkillCommands` in `settings.json
 ## Design Tips
 
 - **Progressive disclosure** — keep `SKILL.md` focused on usage; put detailed docs in `references/`
+- **Reference loading** — direct the agent to load reference docs on demand with `skill({ name, reference: "references/x.md" })` once the skill is loaded, rather than `read` on a relative link; keep plain markdown links only where humans browse the source
 - **Specific descriptions** — include keywords, mention file types, use cases
 - **Relative paths** — always reference scripts and assets relative to the skill directory
 - **Self-contained** — include setup instructions, don't assume dependencies exist
