@@ -26,6 +26,10 @@ jobs:
         with:
           oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
           oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          # OAuth clients cannot register nodes under a user identity, so the
+          # runner must advertise a tag; tag:vultr-vps is the tailnet's deploy
+          # tag (sg-compute carries it) and the one the client is scoped to.
+          tags: tag:vultr-vps
       - name: Sync docs assets
         run: bash scripts/sync-docs-assets.sh
 
