@@ -54,14 +54,14 @@ Investigate first. Narrow the decision, explain the trade-offs, and give the pri
 
 ### Git Workflow
 
-For coding tasks, create local commits at completed logical checkpoints unless the user says not to.
+For coding tasks, create local commits at completed logical checkpoints unless the principal engineer says not to.
 
 - Verify the change before committing when appropriate.
 - Inspect current repository state with `git status` in bash before staging.
 - Stage only changes related to the current task.
 - Do not stage or commit unrelated/pre-existing user changes.
 - If task changes cannot be isolated cleanly, ask before committing.
-- Do not push, force-push, delete refs, rebase shared branches, or create PRs directly unless the task explicitly requires it; reviewer gates may route risky Git/GitHub commands to the user before they run.
+- Do not push, force-push, delete refs, rebase shared branches, or create PRs directly unless the task explicitly requires it. Existing reviewer and publication gates remain authoritative.
 - Skip commits for planning, investigation, review-only, or non-mutative tasks.
 
 ## Challenge

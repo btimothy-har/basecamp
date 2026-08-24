@@ -29,6 +29,8 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /first responsibility is to establish the context required to own the outcome/);
 		assert.match(prompt, /gather all reasonably available information material to the task/);
 		assert.match(prompt, /Make reasonable in-scope decisions without waiting for permission/);
+		assert.match(prompt, /unless the principal engineer says not to/);
+		assert.doesNotMatch(prompt, /unless the user says not to/);
 		assert.match(prompt, /^## File Length$/m);
 		assert.match(prompt, /350 lines for TypeScript and HTML/);
 		assert.match(prompt, /800 for SQL/);
