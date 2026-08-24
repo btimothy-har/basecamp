@@ -11,9 +11,9 @@ The prompt is assembled from blocks grouped into categories, in this order:
 | # | Category | Block | Source | Included when |
 |---|----------|-------|--------|---------------|
 | 1 | Constraints | read-only | `defaults/modes/read-only.md` | `--read-only` |
-| 2 | Posture | mode | `defaults/modes/{analysis,planning,work,copilot}.md` | primary session |
-| 3 | | persona | `#core/swarm` `builtin/*.md` (via `agentPrompt`) | dispatched agent |
-| 4 | Style | role style | `defaults/styles/{engineering,advisor,logseq}.md` | user-facing, non-copilot |
+| 2 | Posture | mode | `defaults/modes/{analysis,planning,work,copilot}.md` | primary session or persona-less dispatch |
+| 3 | | persona | `#core/swarm` `builtin/*.md` (via `agentPrompt`) | report-persona dispatch |
+| 4 | Style | role style | `defaults/styles/{engineering,advisor,logseq}.md` | non-copilot primary or persona-less dispatch |
 | 5 | | voice | `defaults/voice.md` | primary session (depth 0) |
 | 6 | | craft | `defaults/craft.md` | **always** |
 | 7 | Capabilities | index | `buildCapabilitiesIndex` | always |
@@ -38,7 +38,7 @@ Each layer answers exactly one question. When guidance appears in the wrong laye
 | skills | How do I do this well, in depth? |
 | project context | What's non-obvious about this repo? |
 
-Mode and style are the *what* and the *how* of a session. Test a fragment by asking which it is: "you implement and integrate" is a what (mode); "you are a partner, not a follower" is a how (style).
+Mode and style are the *what* and the *how* of a session. Test a fragment by asking which it is: "you implement and integrate" is a what (mode); "you are the primary engineer for the assigned task, and the user is the principal engineer" is a how (style).
 
 Consequences:
 
@@ -55,9 +55,11 @@ The three Style blocks pass it, because each adjacent pair genuinely diverges:
 
 | Block | Consumers | Diverges from the next because |
 |---|---|---|
-| role style | user-facing, non-copilot | copilot takes voice but loads no role style |
+| role style | non-copilot primaries and persona-less dispatches | copilot and report personas carry their own roles |
 | voice | any primary session, copilot included | a dispatched agent's reader is not a user reading a conversation |
 | craft | every consumer, personas included | a persona still writes code |
+
+The engineering style scopes primary-engineer responsibility to the assigned task. A persona-less deliverable run therefore owns its delegated task while treating the dispatching engineer as principal engineer for that assignment; the dispatching session still owns final integration.
 
 Voice is excluded for dispatched agents because its rules presuppose a human reader in a conversation; a report persona's reader is the primary agent parsing one artifact, and the persona's own template already mandates that artifact's shape. Voice would load *after* the persona block, so on recency it would win and reshape the persona's output against its template.
 
@@ -75,7 +77,7 @@ Prompt-block ordering is chosen for coherence rather than positional emphasis: t
 
 ### Copilot is a mode that carries its own manner
 
-Copilot is a distinct *activity*: orient the repo, make the choice set clear, shape and stage workstreams, curate repo memory, so it is a mode, not a style. It is also the one mode that loads **no** style file, because no selectable style fits: `engineering` asserts "you implement directly" and copilot does not implement; `advisor` drags prose-over-bullets and a research section; `logseq` assumes cwd is the graph root. The one style block it does load is voice, which reaches every primary session regardless of mode.
+Copilot is a distinct *activity*: orient the repo, make the choice set clear, shape and stage workstreams, curate repo memory, so it is a mode, not a style. It is also the one mode that loads **no** style file, because no selectable style fits: `engineering` makes the agent responsible for an assigned engineering task, while copilot stages tasks for other sessions; `advisor` drags prose-over-bullets and a research section; `logseq` assumes cwd is the graph root. The one style block it does load is voice, which reaches every primary session regardless of mode.
 
 What remains inline is a short "Work with the user" section that names which artifact to lead with: the repo picture, the choice set, or the recommended workstream. Not every mode needs a style; copilot's `pi/workstreams` tool contracts live in the tool descriptions, and the mode file keeps only the facts no single tool description can assert.
 

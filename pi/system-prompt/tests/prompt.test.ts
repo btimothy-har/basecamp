@@ -23,8 +23,10 @@ describe("assemblePrompt", () => {
 		});
 
 		assert.match(prompt, /# Work/);
-		assert.match(prompt, /# Your Role as an Engineer/);
-		assert.match(prompt, /You are a \*\*partner\*\*, not a follower\./);
+		assert.match(prompt, /# Roles and Responsibility/);
+		assert.match(prompt, /primary engineer responsible for the assigned task/);
+		assert.match(prompt, /user as the \*\*principal engineer\*\*/);
+		assert.match(prompt, /Make reasonable in-scope decisions without waiting for permission/);
 		assert.match(prompt, /^## File Length$/m);
 		assert.match(prompt, /350 lines for TypeScript and HTML/);
 		assert.match(prompt, /800 for SQL/);
@@ -34,7 +36,7 @@ describe("assemblePrompt", () => {
 		assert.match(prompt, /Use `git` and `gh` directly in bash like a normal developer\./);
 	});
 
-	it("keeps skill lifecycle guidance in primary and agent prompts", async (t) => {
+	it("keeps the engineering role in non-copilot primary modes and skill lifecycle guidance in all prompts", async (t) => {
 		useDefaultAgentMode(t);
 		await useTempHome(t);
 		const options = {
@@ -61,6 +63,7 @@ describe("assemblePrompt", () => {
 			setAgentMode(mode);
 			const prompt = assemblePrompt(options);
 			assertLifecycle(prompt);
+			assert.match(prompt, /primary engineer responsible for the assigned task/);
 			assert.match(prompt, expected);
 		}
 
@@ -95,7 +98,7 @@ describe("assemblePrompt", () => {
 		// craft and voice are always-loaded fragments, so they override through prompts/, not styles/
 		assert.match(prompt, /CUSTOM CRAFT PROMPT/);
 		assert.match(prompt, /CUSTOM VOICE PROMPT/);
-		assert.doesNotMatch(prompt, /# Your Role as an Engineer/);
+		assert.doesNotMatch(prompt, /# Roles and Responsibility/);
 		assert.doesNotMatch(prompt, /## Git & GitHub/);
 		assert.doesNotMatch(prompt, /# Code Craft/);
 		assert.doesNotMatch(prompt, /# Voice/);
@@ -168,8 +171,8 @@ describe("assemblePrompt", () => {
 
 		// a persona composes craft with its own posture, but has no user to collaborate with
 		assert.match(personaPrompt, /custom worker prompt/);
-		assert.doesNotMatch(personaPrompt, /# Your Role as an Engineer/);
-		assert.doesNotMatch(personaPrompt, /You are a \*\*partner\*\*, not a follower\./);
+		assert.doesNotMatch(personaPrompt, /# Roles and Responsibility/);
+		assert.doesNotMatch(personaPrompt, /primary engineer responsible for the assigned task/);
 		assert.doesNotMatch(personaPrompt, /# Work/);
 	});
 
@@ -206,7 +209,7 @@ describe("assemblePrompt", () => {
 		assert.match(personaPrompt, /# Code Craft/);
 	});
 
-	it("excludes voice from an ad-hoc dispatch, which carries no persona to key off", async (t) => {
+	it("keeps the engineering role but excludes voice from a persona-less dispatch", async (t) => {
 		useDefaultAgentMode(t);
 		await useTempHome(t);
 		// `dispatch_agent({ task })` with no `agent` gets no --agent-prompt, so agentPrompt is unset and
@@ -222,6 +225,10 @@ describe("assemblePrompt", () => {
 		});
 
 		assert.doesNotMatch(prompt, /# Voice/);
+		assert.match(prompt, /# Roles and Responsibility/);
+		assert.match(prompt, /primary engineer responsible for the assigned task/);
+		assert.match(prompt, /dispatching engineer fills the principal-engineer role/);
+		assert.match(prompt, /escalate to the dispatching engineer rather than the user/);
 		assert.match(prompt, /# Code Craft/);
 	});
 
@@ -238,7 +245,7 @@ describe("assemblePrompt", () => {
 		});
 
 		// the role's posture frames the output shape, which frames the craft rubric
-		const styleAt = prompt.indexOf("# Your Role as an Engineer");
+		const styleAt = prompt.indexOf("# Roles and Responsibility");
 		const voiceAt = prompt.indexOf("# Voice");
 		const craftAt = prompt.indexOf("# Code Craft");
 		assert.notEqual(styleAt, -1);
@@ -267,7 +274,7 @@ describe("assemblePrompt", () => {
 
 		// nothing from another category may separate the authored facts from the runtime block
 		const between = prompt.slice(factsAt, runtimeAt);
-		assert.doesNotMatch(between, /Available in this session:|# Project Context|# Your Role as an Engineer/);
+		assert.doesNotMatch(between, /Available in this session:|# Project Context|# Roles and Responsibility/);
 		assert.equal(prompt.match(/Scratch directory:/g)?.length, 1);
 	});
 });

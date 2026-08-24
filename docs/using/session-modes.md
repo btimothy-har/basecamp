@@ -20,7 +20,7 @@ The style sets the agent's role. Set it per project with `working_style` (see [P
 
 | Style | Role |
 |-------|------|
-| `engineering` | Collaborative partner: code quality, file-focus, task tracking, git workflow |
+| `engineering` | Primary engineer for the assigned task; the user is principal engineer for broader technical direction |
 | `advisor` | Efficient discovery, direct communication, decision support |
 | `logseq` | Knowledge-graph curation, structured entries, user-driven content approval |
 
