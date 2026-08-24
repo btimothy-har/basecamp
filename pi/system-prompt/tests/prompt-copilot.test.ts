@@ -31,7 +31,8 @@ describe("assemblePrompt copilot", () => {
 		assert.match(prompt, /# Code Craft/);
 		assert.doesNotMatch(prompt, /^# Work$/m);
 		assert.doesNotMatch(prompt, /# Repo Copilot Context/);
-		assert.doesNotMatch(prompt, /# Your Role as an Engineer/);
+		assert.doesNotMatch(prompt, /# Roles and Responsibility/);
+		assert.doesNotMatch(prompt, /primary engineer responsible for the assigned task/);
 		assert.doesNotMatch(prompt, /CUSTOM ENGINEERING STYLE/);
 	});
 
