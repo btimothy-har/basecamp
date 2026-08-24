@@ -59,7 +59,7 @@ For coding tasks, create local commits at completed logical checkpoints unless t
 - Verify the change before committing when appropriate.
 - Inspect current repository state with `git status` in bash before staging.
 - Stage only changes related to the current task.
-- Do not stage or commit unrelated/pre-existing user changes.
+- Do not stage or commit unrelated/pre-existing changes.
 - If task changes cannot be isolated cleanly, ask before committing.
 - Do not push, force-push, delete refs, rebase shared branches, or create PRs directly unless the task explicitly requires it. Existing reviewer and publication gates remain authoritative.
 - Skip commits for planning, investigation, review-only, or non-mutative tasks.
