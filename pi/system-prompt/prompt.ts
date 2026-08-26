@@ -223,9 +223,9 @@ export function compileSystemPrompt(pi: ExtensionAPI, modelId?: string): string 
 	});
 }
 
-export function registerPrompt(pi: ExtensionAPI): void {
+export function registerPrompt(pi: ExtensionAPI, compile: typeof compileSystemPrompt = compileSystemPrompt): void {
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!event.systemPrompt.startsWith(PI_DEFAULT_PREFIX)) return;
-		return { systemPrompt: compileSystemPrompt(pi, ctx.model?.id) };
+		return { systemPrompt: compile(pi, ctx.model?.id) };
 	});
 }
