@@ -43,15 +43,27 @@ export class SystemPromptViewer implements Component {
 	private pageSize = 1;
 	private maxOffset = 0;
 	private readonly displayPrompt: string;
+	private readonly preview: SystemPromptPreview;
+	private readonly theme: ViewerTheme;
+	private readonly terminalRows: () => number;
+	private readonly requestRender: () => void;
+	private readonly close: () => void;
+	private readonly copy: () => void;
 
 	constructor(
-		private readonly preview: SystemPromptPreview,
-		private readonly theme: ViewerTheme,
-		private readonly terminalRows: () => number,
-		private readonly requestRender: () => void,
-		private readonly close: () => void,
-		private readonly copy: () => void,
+		preview: SystemPromptPreview,
+		theme: ViewerTheme,
+		terminalRows: () => number,
+		requestRender: () => void,
+		close: () => void,
+		copy: () => void,
 	) {
+		this.preview = preview;
+		this.theme = theme;
+		this.terminalRows = terminalRows;
+		this.requestRender = requestRender;
+		this.close = close;
+		this.copy = copy;
 		this.displayPrompt = escapePromptForDisplay(preview.prompt);
 	}
 
