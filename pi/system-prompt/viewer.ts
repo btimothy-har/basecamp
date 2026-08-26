@@ -1,7 +1,7 @@
 import { copyToClipboard, type ExtensionCommandContext, type Theme } from "@earendil-works/pi-coding-agent";
 import { type Component, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 
-const VIEWER_CHROME_ROWS = 10;
+const RESERVED_TERMINAL_ROWS = 10;
 
 type ViewerTheme = Pick<Theme, "bold" | "fg">;
 type CopyText = (text: string) => Promise<void>;
@@ -42,7 +42,11 @@ export class SystemPromptViewer implements Component {
 	private offset = 0;
 	private pageSize = 1;
 	private maxOffset = 0;
+	private wrappedWidth = 0;
+	private wrappedLines: string[] = [];
 	private readonly displayPrompt: string;
+	private readonly characterCount: number;
+	private readonly sourceLines: number;
 	private readonly preview: SystemPromptPreview;
 	private readonly theme: ViewerTheme;
 	private readonly terminalRows: () => number;
@@ -65,6 +69,8 @@ export class SystemPromptViewer implements Component {
 		this.close = close;
 		this.copy = copy;
 		this.displayPrompt = escapePromptForDisplay(preview.prompt);
+		this.characterCount = Array.from(preview.prompt).length;
+		this.sourceLines = preview.prompt.split("\n").length;
 	}
 
 	invalidate(): void {}
@@ -73,19 +79,22 @@ export class SystemPromptViewer implements Component {
 		const safeWidth = Math.max(1, width);
 		const padding = safeWidth > 2 ? 1 : 0;
 		const contentWidth = Math.max(1, safeWidth - padding * 2);
-		const contentLines = wrapTextWithAnsi(this.displayPrompt, contentWidth);
-		const lines = contentLines.length > 0 ? contentLines : [""];
+		if (contentWidth !== this.wrappedWidth) {
+			const wrapped = wrapTextWithAnsi(this.displayPrompt, contentWidth);
+			this.wrappedLines = wrapped.length > 0 ? wrapped : [""];
+			this.wrappedWidth = contentWidth;
+		}
+		const lines = this.wrappedLines;
 
-		this.pageSize = Math.max(1, Math.min(lines.length, this.terminalRows() - VIEWER_CHROME_ROWS));
+		this.pageSize = Math.max(1, Math.min(lines.length, this.terminalRows() - RESERVED_TERMINAL_ROWS));
 		this.maxOffset = Math.max(0, lines.length - this.pageSize);
 		this.offset = Math.min(this.offset, this.maxOffset);
 
 		const firstVisible = this.offset + 1;
 		const lastVisible = Math.min(lines.length, this.offset + this.pageSize);
-		const sourceLines = this.preview.prompt.split("\n").length;
 		const status = this.preview.inactive
 			? this.theme.fg("warning", "Inactive: a Pi custom system prompt bypasses Basecamp replacement")
-			: this.theme.fg("success", "Fresh Basecamp compilation for the next turn");
+			: this.theme.fg("success", "Fresh Basecamp compilation");
 		const margin = " ".repeat(padding);
 		const body = lines
 			.slice(this.offset, this.offset + this.pageSize)
@@ -95,7 +104,7 @@ export class SystemPromptViewer implements Component {
 			this.theme.fg("border", "─".repeat(safeWidth)),
 			fitLine(` ${this.theme.fg("accent", this.theme.bold("System Prompt"))}`, safeWidth),
 			fitLine(` ${status}`, safeWidth),
-			fitLine(` ${this.preview.prompt.length} chars · ${sourceLines} source lines`, safeWidth),
+			fitLine(` ${this.characterCount} chars · ${this.sourceLines} source lines`, safeWidth),
 			...body,
 			fitLine(` Visual lines ${firstVisible}-${lastVisible} of ${lines.length}`, safeWidth),
 			fitLine(" ↑↓ line  PgUp/PgDn page  Home/End  c copy  Esc close", safeWidth),

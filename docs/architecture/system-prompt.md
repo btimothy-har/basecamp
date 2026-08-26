@@ -79,7 +79,8 @@ Prompt-block ordering is chosen for coherence rather than positional emphasis: t
 
 ## What it does
 
-- **`prompt.ts`**: the `before_agent_start` hook + `assemblePrompt`, plus the file loaders and their user-override fallback.
+- **`prompt.ts`**: the shared live compiler, `before_agent_start` hook, `assemblePrompt`, and user-override file loaders.
+- **`command.ts` · `viewer.ts`**: primary-only `/system-prompt` registration and its ephemeral pager.
 - **`context-builders.ts`**: pure fragment builders: worktree warning, unsafe-edit guidance, project-context block, capabilities index.
 - **`defaults/`**: the shipped fragments: the non-selectable top-level files (`environment.md`, `voice.md`, `craft.md`) and the selectable sets `modes/<mode>.md`, `styles/<style>.md`.
 
