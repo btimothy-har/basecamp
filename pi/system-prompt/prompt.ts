@@ -193,38 +193,39 @@ export function assemblePrompt(opts: AssembleOptions): string {
 
 const PI_DEFAULT_PREFIX = "You are an expert coding assistant";
 
-export function registerPrompt(pi: ExtensionAPI): void {
+function loadAgentPrompt(pi: ExtensionAPI): string | undefined {
+	const agentPromptFile = pi.getFlag("agent-prompt") as string | undefined;
+	if (!agentPromptFile) return undefined;
+
+	try {
+		return fs.readFileSync(agentPromptFile, "utf-8").trim();
+	} catch {
+		return undefined;
+	}
+}
+
+export function compileSystemPrompt(pi: ExtensionAPI, modelId?: string): string {
+	const workspace = getWorkspaceState();
+	const project = getProjectState();
+	const effectiveCwd = getWorkspaceEffectiveCwd();
+	const catalogContext = { cwd: effectiveCwd };
+
+	return assemblePrompt({
+		workspace,
+		project,
+		effectiveCwd,
+		skillItems: listCatalogItemsByType("skills", catalogContext),
+		agentItems: listCatalogItemsByType("agents", catalogContext),
+		contextFiles: discoverContextFiles(effectiveCwd),
+		agentPrompt: loadAgentPrompt(pi),
+		readOnly: pi.getFlag("read-only") === true,
+		modelId,
+	});
+}
+
+export function registerPrompt(pi: ExtensionAPI, compile: typeof compileSystemPrompt = compileSystemPrompt): void {
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (!event.systemPrompt.startsWith(PI_DEFAULT_PREFIX)) return;
-
-		const workspace = getWorkspaceState();
-		const project = getProjectState();
-		const effectiveCwd = getWorkspaceEffectiveCwd();
-		const catalogContext = { cwd: effectiveCwd };
-		const skillItems = listCatalogItemsByType("skills", catalogContext);
-		const agentItems = listCatalogItemsByType("agents", catalogContext);
-		const contextFiles = discoverContextFiles(effectiveCwd);
-		const agentPromptFile = pi.getFlag("agent-prompt") as string | undefined;
-		let agentPrompt: string | undefined;
-
-		if (agentPromptFile) {
-			try {
-				agentPrompt = fs.readFileSync(agentPromptFile, "utf-8").trim();
-			} catch {}
-		}
-
-		return {
-			systemPrompt: assemblePrompt({
-				workspace,
-				project,
-				effectiveCwd,
-				skillItems,
-				agentItems,
-				contextFiles,
-				agentPrompt,
-				readOnly: pi.getFlag("read-only") === true,
-				modelId: ctx.model?.id,
-			}),
-		};
+		return { systemPrompt: compile(pi, ctx.model?.id) };
 	});
 }

@@ -4,6 +4,14 @@ The context/prompt layer: assembles the replacement system prompt on every agent
 
 Basecamp fully *replaces* pi's default system prompt rather than appending to it, so this domain must provide everything: environment, working style, project context, and the skill/agent index. Tools are the one capability the prompt never lists; their contracts (description + parameter schema) reach the model through the API tools array on every request, so a prompt listing would be a second copy of the same text in the same cached prefix. It binds `before_agent_start`, builds the prompt, and returns it.
 
+## `/system-prompt` preview
+
+The primary-only `/system-prompt` command freshly compiles Basecamp's prompt through the same compiler helper used by `before_agent_start`. Because it does not depend on a previous hook result, it works before the first agent turn.
+
+The result opens in an ephemeral, read-only pager. Copy is an explicit action; closing the pager discards the preview, and the command persists nothing. When Pi is configured with a custom system prompt, the pager still shows Basecamp's compiled prompt but clearly labels it inactive because Pi bypasses it.
+
+The preview is the Basecamp compiler output, not the final API request. It excludes API tool schemas, mutations made later by other extensions or context hooks, and provider-payload rewrites.
+
 ## Architecture: 6 categories, 9 blocks
 
 The prompt is assembled from blocks grouped into categories, in this order:
@@ -71,7 +79,8 @@ Prompt-block ordering is chosen for coherence rather than positional emphasis: t
 
 ## What it does
 
-- **`prompt.ts`**: the `before_agent_start` hook + `assemblePrompt`, plus the file loaders and their user-override fallback.
+- **`prompt.ts`**: the shared live compiler, `before_agent_start` hook, `assemblePrompt`, and user-override file loaders.
+- **`command.ts` · `viewer.ts`**: primary-only `/system-prompt` registration and its ephemeral pager.
 - **`context-builders.ts`**: pure fragment builders: worktree warning, unsafe-edit guidance, project-context block, capabilities index.
 - **`defaults/`**: the shipped fragments: the non-selectable top-level files (`environment.md`, `voice.md`, `craft.md`) and the selectable sets `modes/<mode>.md`, `styles/<style>.md`.
 
