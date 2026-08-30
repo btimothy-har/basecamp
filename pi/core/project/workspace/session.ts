@@ -216,6 +216,10 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 		description: "Attach to an existing workspace worktree directory",
 		type: "string",
 	});
+	pi.registerFlag("nc", {
+		description: "Skip the session-start worktree cleanup sweep (dormant session worktrees are left in place)",
+		type: "boolean",
+	});
 	pi.registerFlag("read-only", {
 		description: "Prepend read-only operating constraints to the system prompt",
 		type: "boolean",
@@ -270,7 +274,10 @@ export function registerWorkspaceSession(pi: ExtensionAPI): void {
 			await restoreActiveWorktreeState(pi, ctx);
 		}
 
-		await sweepSessionWorktreesForSession(pi, ctx, isSubagent);
+		// --nc opts out of the startup cleanup: dormant session worktrees survive this launch.
+		if (pi.getFlag("nc") !== true) {
+			await sweepSessionWorktreesForSession(pi, ctx, isSubagent);
+		}
 
 		notifyUnsafeEditResult(ctx, unsafeEditResult);
 

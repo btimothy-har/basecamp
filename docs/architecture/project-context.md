@@ -14,7 +14,7 @@ The active project's working environment: *which project the session is in, its 
 
 - **`runtime.ts`**: `WorkspaceRuntimeService`: active-worktree state machine, effective cwd, `BASECAMP_*` env, cwd provider (survives `/reload`).
 - **`state.ts`**: `WorkspaceState` types + accessors (`getWorkspaceState`, `getWorkspaceEffectiveCwd`, `onWorkspaceChange`, `activate`/`attachWorkspaceWorktree`, …) + the allowed-roots registry. Thin reads over the runtime; no pluggable seam.
-- **`session.ts`**: `session_start` bootstrap: init, legacy-worktree migration, restore, `.env`, the `--worktree-dir`/`--read-only`/`--unsafe-edit` flags, the Logseq allowed-root.
+- **`session.ts`**: `session_start` bootstrap: init, legacy-worktree migration, restore, `.env`, the `--worktree-dir`/`--nc`/`--read-only`/`--unsafe-edit` flags, the Logseq allowed-root.
 - **`guards.ts` · `unsafe-edit.ts`**: edit guards: block writes to the protected checkout, retarget paths into the active worktree.
 - **`command.ts`** (`/worktree`, primary only) · **`affinity.ts`** (session↔worktree bridge) · **`setup.ts`** (per-repo worktree-setup command).
 
