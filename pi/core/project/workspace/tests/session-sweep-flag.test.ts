@@ -112,7 +112,7 @@ describe("session_start --nc vs cold backstop sweep", () => {
 	it("reaps cold clean residue at session start without the flag", async (t) => {
 		const envSnapshot = snapshotWorkspaceEnv();
 		clearAgentDepthEnv();
-		const residueDir = path.join(worktreesRoot(), REPO_IDENTITY, "wt-nc", "residue");
+		const residueDir = coldResidueDir();
 		fsSync.mkdirSync(residueDir, { recursive: true });
 		const notifications: string[] = [];
 		t.after(async () => {
@@ -140,7 +140,7 @@ describe("session_start --nc vs cold backstop sweep", () => {
 	it("leaves the same residue in place when --nc is set", async (t) => {
 		const envSnapshot = snapshotWorkspaceEnv();
 		clearAgentDepthEnv();
-		const residueDir = path.join(worktreesRoot(), REPO_IDENTITY, "wt-nc", "residue");
+		const residueDir = coldResidueDir();
 		fsSync.mkdirSync(residueDir, { recursive: true });
 		const notifications: string[] = [];
 		t.after(async () => {
