@@ -84,21 +84,20 @@ describe("RULESET", () => {
 	it("denies any unauthorized approving review without bypassing publication routing", () => {
 		assert.match(
 			RULESET,
-			/D6 Unauthorized approving review: any `gh pr review` invocation that includes `--approve` must be denied unless recent_human_messages explicitly request or authorize submitting an approving review/,
+			/D6 Unauthorized approving review: any command that submits an approving pull request review.*must be denied unless recent_human_messages explicitly request or authorize that approval action/,
 		);
-		assert.match(
-			RULESET,
-			/PR number or other options between `review` and `--approve`, such as `gh pr review 123 --approve`/,
-		);
+		assert.match(RULESET, /`gh pr review --approve`.*`-a` alias.*`gh api`.*`APPROVE` review event/);
+		assert.match(RULESET, /PR number or other options before an approval flag.*`gh pr review 123 --approve`/);
 		assert.match(
 			RULESET,
 			/General PR preparation or update requests, readiness requests, posting comments, or clearing feedback do not count as approval authorization/,
 		);
 		assert.match(
 			RULESET,
-			/When explicit approval authorization exists, route_to_user under U2 for final publication confirmation; never approve outright/,
+			/When explicit approval authorization exists, route_to_user for final publication confirmation under the same policy as U2; never approve outright/,
 		);
-		assert.match(RULESET, /U2 Publishing to humans: gh pr\/issue create, comment, edit, merge, or review/);
+		assert.match(RULESET, /Classify both denied and authorized forms as `gh-publish`/);
+		assert.match(RULESET, /U2 Publishing to humans:.*approving-review gh api calls permitted by D6/);
 	});
 
 	it("defines every category the reviewer keys policy on", () => {
