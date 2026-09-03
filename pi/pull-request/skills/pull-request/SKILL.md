@@ -14,7 +14,7 @@ When handling a pull request, match the requested scope:
 
 Follow the applicable sections in order.
 
-Repository instructions and PR templates take precedence over generic defaults. Never merge, close, or approve the PR.
+Repository instructions and PR templates take precedence over generic defaults. Never merge or close the PR. Submit an approving review only when the user explicitly requests or authorizes that approval action. Preparing or updating a PR, marking it ready, posting comments, or clearing review feedback does not authorize approval.
 
 ## 1. Establish context
 
@@ -183,4 +183,4 @@ Report:
 - review status
 - unresolved blockers or follow-ups
 
-The lifecycle stops after completed CI and any explicitly requested readiness/review workflow. Never merge, close, or approve the PR.
+The lifecycle stops after completed CI and any explicitly requested readiness/review workflow. Never merge or close the PR, and never approve it without the explicit user authorization required above.

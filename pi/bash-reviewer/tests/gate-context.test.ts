@@ -75,12 +75,29 @@ describe("RULESET", () => {
 	});
 
 	// U5 keys on the command being unusual, not on tracing every command back to the
-	// conversation; the routine-work sentence is what stops a fast model from routing a
-	// git commit for feeling unrelated to the last message.
+	// conversation; the routine-work sentence keeps D6 narrow instead of broadening U5.
 	it("scopes the unusual-command catch-all away from routine development", () => {
 		assert.match(RULESET, /U5 Unusual active commands/);
 		assert.match(RULESET, /never routed on this ground/);
-		assert.doesNotMatch(RULESET, /Intent alignment/);
+	});
+
+	it("denies any unauthorized approving review without bypassing publication routing", () => {
+		assert.match(
+			RULESET,
+			/D6 Unauthorized approving review: any command that submits an approving pull request review.*must be denied unless recent_human_messages explicitly request or authorize that approval action/,
+		);
+		assert.match(RULESET, /`gh pr review --approve`.*`-a` alias.*`gh api`.*`APPROVE` review event/);
+		assert.match(RULESET, /PR number or other options before an approval flag.*`gh pr review 123 --approve`/);
+		assert.match(
+			RULESET,
+			/General PR preparation or update requests, readiness requests, posting comments, or clearing feedback do not count as approval authorization/,
+		);
+		assert.match(
+			RULESET,
+			/When explicit approval authorization exists, route_to_user for final publication confirmation under the same policy as U2; never approve outright/,
+		);
+		assert.match(RULESET, /Classify both denied and authorized forms as `gh-publish`/);
+		assert.match(RULESET, /U2 Publishing to humans:.*approving-review gh api calls permitted by D6/);
 	});
 
 	it("defines every category the reviewer keys policy on", () => {

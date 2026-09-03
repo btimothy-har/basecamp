@@ -100,9 +100,13 @@ describe("pull-request skill", () => {
 			"never run `gh pr ready`",
 			"Treat only an explicit affirmative answer as ready intent",
 			"not a guaranteed hard gate",
-			"Never merge, close, or approve",
+			"Never merge or close the PR",
+			"Submit an approving review only when the user explicitly requests or authorizes that approval action",
+			"does not authorize approval",
+			"never approve it without the explicit user authorization required above",
 		]) {
 			assert.ok(content.includes(contract), `skill should state: ${contract}`);
 		}
+		assert.doesNotMatch(content, /Never merge, close, or approve/);
 	});
 });
