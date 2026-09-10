@@ -26,7 +26,7 @@ function argsFor(calls: { command: string; args: string[] }[], command: string, 
 	return calls.find((c) => c.command === command && c.args.join(" ").startsWith(prefix))?.args;
 }
 
-/** The quoted argv handed to the pane's shell: 'hunk' 'diff' '<target>' [...]. */
+/** The quoted argv handed to the pane's shell. */
 function hunkArgvOf(calls: { command: string; args: string[] }[]): string[] | undefined {
 	return argsFor(calls, "herdr", "pane run")?.slice(3);
 }
@@ -59,7 +59,7 @@ describe("/diff checkpoints", () => {
 
 		await h.run();
 
-		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${PREV_SHA}'`]);
+		assert.deepEqual(hunkArgvOf(h.calls), [`'${h.hunkExecutable}'`, "'diff'", `'${PREV_SHA}'`]);
 		assert.deepEqual(getCheckpoint(WORKTREE), { base: BASE, last: PREV_SHA }, "last never advances");
 	});
 
@@ -69,7 +69,7 @@ describe("/diff checkpoints", () => {
 
 		await h.run();
 
-		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${BASE}'`]);
+		assert.deepEqual(hunkArgvOf(h.calls), [`'${h.hunkExecutable}'`, "'diff'", `'${BASE}'`]);
 		assert.ok(h.notices.some((n) => /no checkpoint recorded yet/.test(n.message)));
 		assert.deepEqual(getCheckpoint(WORKTREE), { base: BASE, last: HEAD_SHA });
 	});
@@ -82,7 +82,7 @@ describe("/diff checkpoints", () => {
 
 		await h.run();
 
-		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${BASE}'`]);
+		assert.deepEqual(hunkArgvOf(h.calls), [`'${h.hunkExecutable}'`, "'diff'", `'${BASE}'`]);
 		assert.deepEqual(getCheckpoint(WORKTREE), { base: BASE, last: HEAD_SHA });
 	});
 
@@ -94,7 +94,7 @@ describe("/diff checkpoints", () => {
 
 		await second.run();
 
-		assert.deepEqual(hunkArgvOf(second.calls), ["'hunk'", "'diff'", `'${HEAD_SHA}'`]);
+		assert.deepEqual(hunkArgvOf(second.calls), [`'${second.hunkExecutable}'`, "'diff'", `'${HEAD_SHA}'`]);
 		assert.deepEqual(getCheckpoint(WORKTREE), { base: BASE, last: HEAD_SHA });
 	});
 
@@ -114,7 +114,7 @@ describe("/diff checkpoints", () => {
 		await h.run();
 
 		assert.deepEqual(getCheckpoint(WORKTREE), { base: BASE, last: HEAD_SHA });
-		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${BASE}'`]);
+		assert.deepEqual(hunkArgvOf(h.calls), [`'${h.hunkExecutable}'`, "'diff'", `'${BASE}'`]);
 	});
 
 	it("drops a checkpoint that is no longer in this branch's history", async (t) => {
@@ -129,7 +129,7 @@ describe("/diff checkpoints", () => {
 
 		await h.run();
 
-		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${BASE}'`]);
+		assert.deepEqual(hunkArgvOf(h.calls), [`'${h.hunkExecutable}'`, "'diff'", `'${BASE}'`]);
 		assert.ok(h.notices.some((n) => /no longer in this branch's history/.test(n.message)));
 		assert.deepEqual(getCheckpoint(WORKTREE), { base: BASE, last: HEAD_SHA }, "the stale checkpoint is replaced");
 	});
@@ -145,7 +145,13 @@ describe("/diff agent rationale", () => {
 
 		await h.run();
 
-		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${BASE}'`, "'--agent-context'", `'${target}'`]);
+		assert.deepEqual(hunkArgvOf(h.calls), [
+			`'${h.hunkExecutable}'`,
+			"'diff'",
+			`'${BASE}'`,
+			"'--agent-context'",
+			`'${target}'`,
+		]);
 		assert.equal(fs.existsSync(target), false, "a rendered sidecar is consumed at review close");
 	});
 
@@ -158,7 +164,13 @@ describe("/diff agent rationale", () => {
 
 		await h.run();
 
-		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${PREV_SHA}'`, "'--agent-context'", `'${target}'`]);
+		assert.deepEqual(hunkArgvOf(h.calls), [
+			`'${h.hunkExecutable}'`,
+			"'diff'",
+			`'${PREV_SHA}'`,
+			"'--agent-context'",
+			`'${target}'`,
+		]);
 		assert.equal(fs.existsSync(target), false);
 	});
 
@@ -171,7 +183,11 @@ describe("/diff agent rationale", () => {
 
 		await h.run();
 
-		assert.deepEqual(hunkArgvOf(h.calls), ["'hunk'", "'diff'", `'${BASE}'`], "stale rationale is not rendered");
+		assert.deepEqual(
+			hunkArgvOf(h.calls),
+			[`'${h.hunkExecutable}'`, "'diff'", `'${BASE}'`],
+			"stale rationale is not rendered",
+		);
 		assert.equal(fs.existsSync(target), true, "an unrendered sidecar survives the review");
 	});
 

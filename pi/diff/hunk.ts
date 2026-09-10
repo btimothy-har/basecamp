@@ -27,7 +27,8 @@ export type HunkAvailability = { available: true; binary: HunkBinary } | { avail
 /** A live hunk session, reduced to what selecting and reporting one needs. */
 export interface HunkSession {
 	sessionId: string;
-	repoRoot: string;
+	/** Non-VCS inputs such as patch files have no repository root. */
+	repoRoot?: string;
 	launchedAt: string;
 }
 
@@ -97,8 +98,7 @@ function toSession(raw: unknown): HunkSession | null {
 	if (
 		typeof sessionId !== "string" ||
 		!sessionId.trim() ||
-		typeof repoRoot !== "string" ||
-		!repoRoot.trim() ||
+		(repoRoot !== undefined && (typeof repoRoot !== "string" || !repoRoot.trim())) ||
 		typeof launchedAt !== "string" ||
 		!launchedAt.trim()
 	) {

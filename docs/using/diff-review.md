@@ -26,4 +26,12 @@ Agents annotate the same diff as they work, recording the reasoning behind their
 
 `/diff` is primary-only and needs both Herdr and `hunk`. If either is missing, it reports what is and changes nothing.
 
+## After a hunk upgrade
+
+`/diff` uses the hunk installation on Pi's inherited `PATH` for both the pane and its session commands. If session discovery fails, the error names that executable and its version. A fresh shell may find a newer installation than an already-running Pi process.
+
+Check `command -v hunk` and `hunk --version` in a fresh terminal, then restart Pi from that shell if it selects the intended installation. `/reload` does not refresh the process's inherited `PATH`. Save any existing review notes before restarting Pi: ownership tracking survives `/reload`, not a process restart.
+
+For a transient discovery failure in the same Pi session, keep the review pane open and retry `/diff` once hunk reconnects. If the previous review cannot reconnect and you want to abandon it, explicitly close that pane before retrying.
+
 For the internals behind checkpoints, annotation anchoring, and the sidecar model, see [Diff Surface Internals](../architecture/diff-surface.md).

@@ -34,6 +34,7 @@ function sessionList(ids: string[]): ExecResult {
 }
 
 export interface Harness {
+	hunkExecutable: string;
 	calls: { command: string; args: string[] }[];
 	notices: { message: string; type?: string }[];
 	sent: { content: string }[];
@@ -44,8 +45,16 @@ export interface HarnessOptions {
 	hunkAvailable?: boolean;
 	/** Sessions already live before /diff runs. */
 	preexisting?: string[];
+	launchedSessionId?: string;
 	/** hunk never registers, simulating a launch that died. */
 	neverRegisters?: boolean;
+	/** Consumed per discovery call; otherwise use the normal live-session fixture. */
+	sessionReads?: (string[] | { fail: string })[];
+	/** Runs after pane launch to simulate shell/environment skew. */
+	onPaneRun?: () => void;
+	/** An old pane was explicitly closed, rather than merely disconnected from hunk. */
+	pendingPaneMissing?: boolean;
+	paneGetError?: string;
 	/** Consumed one per `comment list`, so carried and fresh notes differ. */
 	noteReads?: (Note[] | { fail: string })[];
 	confirm?: boolean;
@@ -67,7 +76,9 @@ export function harness(options: HarnessOptions = {}): Harness {
 	const sent: { content: string }[] = [];
 	let handler: CommandHandler | undefined;
 
+	const hunkExecutable = path.join(process.env.BASECAMP_SCRATCH_DIR ?? "", "bin", "hunk");
 	const reads = [...(options.noteReads ?? [])];
+	const sessionReads = [...(options.sessionReads ?? [])];
 	let launched = false;
 
 	const exec = async (command: string, args: string[]): Promise<ExecResult> => {
@@ -79,15 +90,20 @@ export function harness(options: HarnessOptions = {}): Harness {
 		}
 		if (command === "git" && joined.includes("merge-base")) return ok(BASE);
 		if (command === "git" && joined.includes("rev-parse") && joined.includes("HEAD")) return ok(HEAD_SHA);
-		if (command === "hunk" && joined === "--version") {
-			return options.hunkAvailable === false ? { ...ok(), code: 127 } : ok("0.17.6");
+		if (command === hunkExecutable && joined === "--version") {
+			return options.hunkAvailable === false ? { ...ok(), code: 127 } : ok("0.21.1");
 		}
-		if (command === "hunk" && joined.startsWith("session list")) {
+		if (command === hunkExecutable && joined.startsWith("session list")) {
+			const next = sessionReads.shift();
+			if (next) {
+				if (Array.isArray(next)) return sessionList(next);
+				return { code: 1, stdout: "", stderr: next.fail, killed: false };
+			}
 			const live = [...(options.preexisting ?? [])];
-			if (launched && !options.neverRegisters) live.push(NEW_SESSION);
+			if (launched && !options.neverRegisters) live.push(options.launchedSessionId ?? NEW_SESSION);
 			return sessionList(live);
 		}
-		if (command === "hunk" && joined.startsWith("session comment list")) {
+		if (command === hunkExecutable && joined.startsWith("session comment list")) {
 			const next = reads.shift() ?? [];
 			if (!Array.isArray(next)) return { code: 1, stdout: "", stderr: next.fail, killed: false };
 			return ok(JSON.stringify({ comments: next.map((n) => ({ source: "user", ...n })) }));
@@ -98,8 +114,15 @@ export function harness(options: HarnessOptions = {}): Harness {
 		}
 		if (command === "herdr" && joined.startsWith("pane run")) {
 			const code = options.paneRunCode ?? 0;
-			if (code === 0) launched = true;
+			if (code === 0) {
+				launched = true;
+				options.onPaneRun?.();
+			}
 			return code === 0 ? ok() : { ...ok(), code };
+		}
+		if (command === "herdr" && joined.startsWith("pane get")) {
+			const error = options.pendingPaneMissing ? "pane_not_found" : options.paneGetError;
+			return error ? { ...ok(), code: 1, stderr: JSON.stringify({ error: { code: error } }) } : ok();
 		}
 		if (command === "herdr" && joined.startsWith("pane close")) {
 			const code = options.paneCloseCode ?? 0;
@@ -134,6 +157,7 @@ export function harness(options: HarnessOptions = {}): Harness {
 
 	registerDiffCommand(pi, { attempts: 3, intervalMs: 1 });
 	return {
+		hunkExecutable,
 		calls,
 		notices,
 		sent,
@@ -146,6 +170,9 @@ export function harness(options: HarnessOptions = {}): Harness {
 
 export function herdrEnv(t: TestContext, overrides: Record<string, string | undefined> = {}): string {
 	const scratch = fs.mkdtempSync(path.join(os.tmpdir(), "diff-cmd-"));
+	const bin = path.join(scratch, "bin");
+	fs.mkdirSync(bin);
+	fs.writeFileSync(path.join(bin, "hunk"), "#!/bin/sh\n", { mode: 0o755 });
 	const vars: Record<string, string | undefined> = {
 		HERDR_ENV: "1",
 		HERDR_SOCKET_PATH: "/tmp/herdr.sock",
@@ -155,6 +182,7 @@ export function herdrEnv(t: TestContext, overrides: Record<string, string | unde
 		BASECAMP_WORKTREE_DIR: WORKTREE,
 		BASECAMP_WORKTREE_LABEL: "feature",
 		BASECAMP_SCRATCH_DIR: scratch,
+		PATH: bin,
 		...overrides,
 	};
 	const originals = new Map<string, string | undefined>();

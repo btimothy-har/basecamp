@@ -64,7 +64,14 @@ describe("/diff", () => {
 			"--env",
 			"HUNK_DISABLE_UPDATE_NOTICE=1",
 		]);
-		assert.deepEqual(argsFor(h.calls, "herdr", "pane run"), ["pane", "run", "w9:p2", "'hunk'", "'diff'", `'${BASE}'`]);
+		assert.deepEqual(argsFor(h.calls, "herdr", "pane run"), [
+			"pane",
+			"run",
+			"w9:p2",
+			`'${h.hunkExecutable}'`,
+			"'diff'",
+			`'${BASE}'`,
+		]);
 		assert.deepEqual(argsFor(h.calls, "herdr", "pane close"), ["pane", "close", "w9:p2"]);
 	});
 
@@ -74,7 +81,7 @@ describe("/diff", () => {
 
 		await h.run();
 
-		const read = argsFor(h.calls, "hunk", "session comment list");
+		const read = argsFor(h.calls, h.hunkExecutable, "session comment list");
 		assert.deepEqual(read, ["session", "comment", "list", NEW_SESSION, "--type", "user", "--json"]);
 	});
 
@@ -210,7 +217,7 @@ describe("/diff", () => {
 		herdrEnv(t);
 		rememberPane(WORKTREE, "w9:pDead");
 		attachSession(WORKTREE, STALE_SESSION);
-		const h = harness({ preexisting: [], noteReads: [{ fail: "No active session matches sessionId" }, []] });
+		const h = harness({ pendingPaneMissing: true, noteReads: [{ fail: "No active session matches sessionId" }, []] });
 
 		await h.run();
 
@@ -220,12 +227,11 @@ describe("/diff", () => {
 	});
 
 	it("recovers when a pane that never registered a session can no longer be closed", async (t) => {
-		// `herdr pane close` exits 1 for a pane that is already gone, so retrying it
-		// forever would strand /diff exactly as the dead-session case did. No session
-		// ever attached here, so there are no notes to protect by stopping.
+		// Only pane_not_found proves an unidentified review can no longer hold notes.
+		// A missing daemon registration alone is not permission to close its TUI.
 		herdrEnv(t);
 		rememberPane(WORKTREE, "w9:pGone");
-		const h = harness({ paneCloseCode: 7, noteReads: [[]] });
+		const h = harness({ pendingPaneMissing: true, paneCloseCode: 7, noteReads: [[]] });
 
 		await h.run();
 

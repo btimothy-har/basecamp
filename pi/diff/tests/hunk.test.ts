@@ -205,6 +205,15 @@ describe("listHunkSessions", () => {
 		assert.deepEqual(await listHunkSessions(pi, BINARY, "/other/worktree"), { ok: true, sessions: [] });
 	});
 
+	it("ignores non-VCS sessions whose registration legitimately omits repoRoot", async () => {
+		const payload = JSON.parse(SESSION_LIST_JSON);
+		payload.sessions.push({ sessionId: "patch-session", inputKind: "patch", launchedAt: "2026-09-10T06:00:00Z" });
+		const pi = createMockPi(() => okJson(JSON.stringify(payload)));
+		const read = await listHunkSessions(pi, BINARY, WORKTREE);
+		assert.equal(read.ok, true);
+		assert.equal(read.ok ? read.sessions.length : -1, 2);
+	});
+
 	const session = { sessionId: SESSION_ID, repoRoot: WORKTREE, launchedAt: "2026-07-27T16:00:00.000Z" };
 	const invalidSessions = [
 		null,
@@ -212,7 +221,6 @@ describe("listHunkSessions", () => {
 		{},
 		{ ...session, sessionId: "" },
 		{ ...session, sessionId: 42 },
-		{ ...session, repoRoot: undefined },
 		{ ...session, repoRoot: 42 },
 		{ ...session, repoRoot: " " },
 		{ ...session, launchedAt: undefined },
