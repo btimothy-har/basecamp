@@ -91,39 +91,47 @@ describe("/diff hunk discovery", () => {
 
 		const second = harness({
 			preexisting: ["foreign", NEW_SESSION],
-			launchedSessionId: "replacement",
-			noteReads: [[{ filePath: "a.ts", newRange: [2, 2], body: "recover me" }], []],
+			noteReads: [[{ filePath: "a.ts", newRange: [2, 2], body: "recover me" }]],
 		});
 		await second.run();
 
 		const reads = second.calls.filter((call) => call.args.slice(0, 3).join(" ") === "session comment list");
 		assert.deepEqual(
 			reads.map((call) => call.args[3]),
-			[NEW_SESSION, "replacement"],
+			[NEW_SESSION],
 		);
 		const readIndex = second.calls.indexOf(reads[0]!);
 		const closeIndex = second.calls.findIndex((call) => call.args[1] === "close");
 		const splitIndex = second.calls.findIndex((call) => call.args[1] === "split");
-		assert.ok(readIndex < closeIndex && closeIndex < splitIndex, "recover notes before replacing the pane");
+		assert.ok(readIndex < closeIndex, "read recovered notes before closing their pane");
+		assert.equal(splitIndex, -1, "recovery must finish without another user-paced wait");
+		assert.equal(second.sent.length, 1);
 		assert.match(second.sent[0]?.content ?? "", /recover me/);
-		assert.equal(fs.existsSync(sidecar), false);
+		assert.equal(ownedReview(WORKTREE), undefined);
+		assert.deepEqual(getCheckpoint(WORKTREE), checkpoint);
+		assert.equal(fs.existsSync(sidecar), true, "recovery must not consume rationale for a new review");
+
+		const fresh = harness({ preexisting: ["foreign"], launchedSessionId: "fresh-review" });
+		await fresh.run();
+		assert.equal(fs.existsSync(sidecar), false, "the next explicit review can consume its rationale");
+		assert.deepEqual(fresh.sent, [], "recovered notes must not be delivered twice");
 	});
 
-	it("delivers carried notes even when the replacement's discovery fails", async (t) => {
+	it("opens a fresh diff when the previous review has no recovered notes", async (t) => {
 		herdrEnv(t);
 		rememberPane(WORKTREE, "w9:pStale");
 		attachSession(WORKTREE, STALE_SESSION);
 		const h = harness({
-			sessionReads: [[STALE_SESSION], { fail: SKEW_ERROR }, { fail: SKEW_ERROR }, { fail: SKEW_ERROR }],
-			noteReads: [[{ filePath: "a.ts", body: "already read" }]],
+			preexisting: [STALE_SESSION],
+			noteReads: [[], [{ filePath: "a.ts", body: "new feedback" }]],
 		});
 
 		await h.run();
 
-		assert.match(h.sent[0]?.content ?? "", /already read/);
-		assert.equal(h.notices.length, 1);
-		assert.match(h.notices[0]?.message ?? "", /could not discover/);
-		assert.equal(h.calls.filter((call) => call.args[1] === "close").length, 1, "only the drained pane may close");
+		assert.equal(h.sent.length, 1);
+		assert.match(h.sent[0]?.content ?? "", /new feedback/);
+		assert.deepEqual(h.notices, []);
+		assert.equal(h.calls.filter((call) => call.args[1] === "close").length, 2);
 	});
 
 	it("tolerates a transient daemon boot failure within the launch poll window", async (t) => {

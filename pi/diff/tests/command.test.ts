@@ -160,20 +160,21 @@ describe("/diff", () => {
 		assert.equal(h.sent.length, 0);
 	});
 
-	it("delivers carried notes when the pane fails to split", async (t) => {
+	it("delivers recovered notes even when the old pane cannot close", async (t) => {
 		herdrEnv(t);
 		rememberPane(WORKTREE, "w9:pStale");
 		attachSession(WORKTREE, STALE_SESSION);
 		const h = harness({
 			preexisting: [STALE_SESSION],
-			paneSplitCode: 3,
+			paneCloseCode: 3,
 			noteReads: [[{ filePath: "old.ts", newRange: [4, 4], body: "earlier" }]],
 		});
 
 		await h.run();
 
-		assert.match(h.notices.at(-1)?.message ?? "", /could not split a Herdr pane/);
+		assert.match(h.notices.at(-1)?.message ?? "", /could not close the previous review's pane/);
 		assert.match(h.sent[0]?.content ?? "", /earlier/, "drained notes must not be discarded on failure");
+		assert.equal(argsFor(h.calls, "herdr", "pane split"), undefined);
 	});
 
 	it("closes the pane and delivers carried notes when hunk fails to launch", async (t) => {
@@ -186,16 +187,14 @@ describe("/diff", () => {
 		assert.match(h.notices.at(-1)?.message ?? "", /could not start hunk/);
 	});
 
-	it("drains an owned stale review by session id before replacing it", async (t) => {
+	it("delivers an owned stale review and stops before opening another diff", async (t) => {
 		herdrEnv(t);
 		rememberPane(WORKTREE, "w9:pStale");
 		attachSession(WORKTREE, STALE_SESSION);
 		const h = harness({
 			preexisting: [STALE_SESSION],
-			noteReads: [
-				[{ filePath: "old.ts", newRange: [7, 7], body: "from the abandoned review" }],
-				[{ filePath: "new.ts", newRange: [9, 9], body: "from this review" }],
-			],
+			noteReads: [[{ filePath: "old.ts", newRange: [7, 7], body: "from the abandoned review" }]],
+			onPaneRun: () => assert.fail("recovery must not start another review"),
 		});
 
 		await h.run();
@@ -206,9 +205,10 @@ describe("/diff", () => {
 		const split = seq.findIndex((c) => c.startsWith("herdr pane split"));
 		assert.ok(staleRead >= 0 && staleClose >= 0, "the stale review must be read and its pane closed");
 		assert.ok(staleRead < staleClose, "notes must be read before the pane that holds them is closed");
-		assert.ok(staleClose < split, "the stale pane must go before a replacement opens");
+		assert.equal(split, -1, "the agent must handle the recovered notes before another diff opens");
+		assert.equal(h.sent.length, 1);
 		assert.match(h.sent[0]?.content ?? "", /from the abandoned review/);
-		assert.match(h.sent[0]?.content ?? "", /from this review/);
+		assert.match(h.notices[0]?.message ?? "", /Run \/diff again after the agent handles them/);
 	});
 
 	it("recovers when the remembered session died with its pane", async (t) => {

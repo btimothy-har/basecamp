@@ -81,6 +81,8 @@ Putting the sidecar inside the root would satisfy reload, but not in a worktree:
 
 Reloading a session to the **same** ref preserves its notes; reloading to a **different** ref destroys all of them, agent notes included, with no warning. `/diff` therefore replaces sessions rather than repointing them, and drains a leftover session's user notes before closing its pane.
 
+Nonempty recovered notes are delivered immediately and finish that invocation; a new review requires another explicit `/diff`. Holding them through the next review would leave the only copy in an interrupted handler after their old pane closed. Delivering them and continuing would be unsafe too: `sendUserMessage` starts an agent turn even with `deliverAs: "followUp"` when idle, allowing edits while the next diff is open. A prior review with no notes can be replaced in the same invocation.
+
 The pane id is `processScoped` (`basecamp.diffPanes`) because a hunk pane outlives the session that opened it; losing the id on `/reload` would strand a pane nothing can close. Until discovery succeeds, the same state retains the prelaunch session IDs. A retry can identify the one new session and read its notes before replacing it. Ambiguous candidates or legacy state without a baseline remain blocked rather than guessing ownership.
 
 An absent daemon registration does not prove a TUI has no notes: it may be disconnected. An unidentified or disconnected review is left open until it reconnects or the user explicitly abandons its pane. Only Herdr's `pane_not_found` response permits forgetting such a review; other probe failures preserve it. Failure paths never report an empty review.

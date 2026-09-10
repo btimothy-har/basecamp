@@ -32,6 +32,6 @@ Agents annotate the same diff as they work, recording the reasoning behind their
 
 Check `command -v hunk` and `hunk --version` in a fresh terminal, then restart Pi from that shell if it selects the intended installation. `/reload` does not refresh the process's inherited `PATH`. Save any existing review notes before restarting Pi: ownership tracking survives `/reload`, not a process restart.
 
-For a transient discovery failure in the same Pi session, keep the review pane open and retry `/diff` once hunk reconnects. If the previous review cannot reconnect and you want to abandon it, explicitly close that pane before retrying.
+For a transient discovery failure in the same Pi session, keep the review pane open and retry `/diff` once hunk reconnects. If that retry recovers notes, it sends them immediately and finishes without opening another diff. Run `/diff` again after the agent handles those notes. If the previous review cannot reconnect and you want to abandon it, explicitly close that pane before retrying.
 
 For the internals behind checkpoints, annotation anchoring, and the sidecar model, see [Diff Surface Internals](../architecture/diff-surface.md).

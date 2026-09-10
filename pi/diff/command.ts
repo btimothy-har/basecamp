@@ -177,6 +177,13 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	if (drained.lost) {
 		ctx.ui.notify("The previous review's notes were lost — hunk was closed before confirming here.", "warning");
 	}
+	if (drained.notes.length > 0) {
+		// Delivery starts an agent turn; opening another review now would let the
+		// agent edit the same files while the user is reviewing them.
+		ctx.ui.notify("Recovered the previous review's annotations. Run /diff again after the agent handles them.", "info");
+		deliver(pi, drained.notes);
+		return;
+	}
 
 	const before = new Set(live.sessions.map((s) => s.sessionId));
 
@@ -186,7 +193,6 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 		env: HUNK_PANE_ENV,
 	});
 	if (pane.status !== "ok") {
-		deliver(pi, drained.notes);
 		ctx.ui.notify(`/diff could not split a Herdr pane: ${pane.message}`, "error");
 		return;
 	}
@@ -196,20 +202,17 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	const launched = await runInHerdrPane(pi, pane.value.paneId, launch.argv);
 	if (launched.status !== "ok") {
 		await closeAndForget(pi, worktreeDir, pane.value.paneId);
-		deliver(pi, drained.notes);
 		ctx.ui.notify(`/diff could not start hunk: ${launched.message}`, "error");
 		return;
 	}
 
 	const discovery = await awaitLaunchedSession(pi, binary, worktreeDir, before, poll);
 	if (!discovery.ok) {
-		deliver(pi, drained.notes);
 		reportDiscoveryFailure(ctx, binary, discovery.reason);
 		return;
 	}
 	const session = discovery.session;
 	if (!session) {
-		deliver(pi, drained.notes);
 		ctx.ui.notify("/diff started hunk but it never registered a session — check the diff pane for its error.", "error");
 		return;
 	}
@@ -224,7 +227,6 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	// Read on cancel too: notes already written are the user's, not a draft.
 	const read = await readUserNotes(pi, binary, session.sessionId);
 	if (!read.ok) {
-		deliver(pi, drained.notes);
 		ctx.ui.notify(
 			`/diff could not read your annotations (${read.reason}). The hunk pane is still open so they are not lost.`,
 			"error",
@@ -236,9 +238,8 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	// Hand the notes over before touching local state: hunk's pane is already
 	// closed, so this is the only copy, and clearing the sidecar can still throw
 	// on a permissions or busy error.
-	const notes = [...drained.notes, ...read.notes];
-	deliver(pi, notes);
-	if (notes.length === 0) ctx.ui.notify("No annotations were left on the diff.", "info");
+	deliver(pi, read.notes);
+	if (read.notes.length === 0) ctx.ui.notify("No annotations were left on the diff.", "info");
 	consumeReview(worktreeDir, resolved, launch.sidecarAttached);
 }
 
