@@ -147,10 +147,7 @@ describe("listHunkSessions", () => {
 		const pi = createMockPi(() => fail(NO_SESSION_STDOUT, stderr));
 		const read = await listHunkSessions(pi, BINARY, WORKTREE);
 		assert.equal(read.ok, false);
-		assert.equal(
-			read.ok ? "" : read.reason,
-			`${BINARY.executable} (0.21.1) session list exited with code 1: ${stderr.trim()}`,
-		);
+		assert.equal(read.ok ? "" : read.reason, `exited with code 1: ${stderr.trim()}`);
 		assert.deepEqual(pi.execCalls, [
 			{ command: BINARY.executable, args: ["session", "list", "--json"], options: { timeout: 4000 } },
 		]);
@@ -169,7 +166,7 @@ describe("listHunkSessions", () => {
 		});
 		const read = await listHunkSessions(pi, BINARY, WORKTREE);
 		assert.equal(read.ok, false);
-		assert.match(read.ok ? "" : read.reason, /0\.21\.1.*ENOENT/);
+		assert.equal(read.ok ? "" : read.reason, "spawn hunk ENOENT");
 		assert.equal(pi.execCalls.length, 1);
 	});
 
@@ -177,7 +174,7 @@ describe("listHunkSessions", () => {
 		const pi = createMockPi(() => ({ ...okJson(SESSION_LIST_JSON), killed: true, stderr: "deadline exceeded" }));
 		const read = await listHunkSessions(pi, BINARY, WORKTREE);
 		assert.equal(read.ok, false);
-		assert.match(read.ok ? "" : read.reason, /killed or timed out.*4000.*deadline exceeded/);
+		assert.equal(read.ok ? "" : read.reason, "was killed or timed out (4000 ms limit): deadline exceeded");
 	});
 
 	it("returns every session for this worktree and excludes other repos", async () => {
@@ -194,7 +191,7 @@ describe("listHunkSessions", () => {
 			const pi = createMockPi(() => okJson(stdout));
 			const read = await listHunkSessions(pi, BINARY, WORKTREE);
 			assert.equal(read.ok, false);
-			assert.match(read.ok ? "" : read.reason, /no readable session list/);
+			assert.equal(read.ok ? "" : read.reason, "returned no readable session list");
 		});
 	}
 
@@ -227,7 +224,7 @@ describe("listHunkSessions", () => {
 			const pi = createMockPi(() => okJson(JSON.stringify({ sessions: [session, invalid] })));
 			const read = await listHunkSessions(pi, BINARY, WORKTREE);
 			assert.equal(read.ok, false);
-			assert.match(read.ok ? "" : read.reason, /invalid session at index 1/);
+			assert.equal(read.ok ? "" : read.reason, "returned an invalid session at index 1");
 		});
 	}
 });

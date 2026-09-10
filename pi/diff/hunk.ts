@@ -119,23 +119,22 @@ export async function listHunkSessions(
 	binary: HunkBinary,
 	worktreePath: string,
 ): Promise<HunkSessionRead> {
-	const context = `${binaryLabel(binary)} session list`;
 	let result: ExecResult;
 	try {
 		result = await pi.exec(binary.executable, ["session", "list", "--json"], { timeout: HUNK_TIMEOUT_MS });
 	} catch (err) {
-		return { ok: false, reason: `${context} failed: ${errorMessage(err)}` };
+		return { ok: false, reason: errorMessage(err) };
 	}
 	const failure = execFailure(result);
-	if (failure) return { ok: false, reason: `${context} ${failure}` };
+	if (failure) return { ok: false, reason: failure };
 	const parsed = parseJson(result.stdout);
 	if (!isObject(parsed) || !Array.isArray(parsed.sessions)) {
-		return { ok: false, reason: `${context} returned no readable session list` };
+		return { ok: false, reason: "returned no readable session list" };
 	}
 	const sessions: HunkSession[] = [];
 	for (const [index, raw] of parsed.sessions.entries()) {
 		const session = toSession(raw);
-		if (!session) return { ok: false, reason: `${context} returned an invalid session at index ${index}` };
+		if (!session) return { ok: false, reason: `returned an invalid session at index ${index}` };
 		if (session.repoRoot === worktreePath) sessions.push(session);
 	}
 	return { ok: true, sessions };
