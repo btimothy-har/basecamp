@@ -1,16 +1,12 @@
 /**
- * Hunk CLI adapter — pure, typed wrappers over the `hunk` binary.
- *
- * Talks to hunk's local daemon via its session/comment subcommands. Nothing
- * here throws. Probes treat an absent binary, daemon, or session as an empty
- * result, but the note read is a discriminated result: after a review, "the
- * read failed" and "you wrote nothing" must never look alike, because notes
- * exist only in the TUI's memory and closing it destroys them. The exec
- * facility is passed in so callers and tests can substitute it.
+ * A review uses one hunk executable even when the pane's shell has a different
+ * PATH. Failed session and note reads must never imply emptiness: closing a
+ * live review would destroy the only copy of the user's notes.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { errorMessage } from "#core/errors.ts";
+import { resolveHunkExecutable } from "./hunk-executable.ts";
 
 export type HunkExec = Pick<ExtensionAPI, "exec">;
 
@@ -21,12 +17,18 @@ const HUNK_TIMEOUT_MS = 4000;
 const HUNK_INSTALL_HINT =
 	"Install hunk to use /diff: `npm i -g hunkdiff`, `brew install hunk`, or add it via Nix (`hunk` on nixpkgs).";
 
-export type HunkAvailability = { available: true } | { available: false; message: string };
+export interface HunkBinary {
+	executable: string;
+	version: string;
+}
+
+export type HunkAvailability = { available: true; binary: HunkBinary } | { available: false; message: string };
 
 /** A live hunk session, reduced to what selecting and reporting one needs. */
 export interface HunkSession {
 	sessionId: string;
-	repoRoot: string;
+	/** Non-VCS inputs such as patch files have no repository root. */
+	repoRoot?: string;
 	launchedAt: string;
 }
 
@@ -38,6 +40,8 @@ export interface UserNote {
 	body: string;
 }
 
+export type HunkSessionRead = { ok: true; sessions: HunkSession[] } | { ok: false; reason: string };
+
 export type UserNoteRead = { ok: true; notes: UserNote[] } | { ok: false; reason: string };
 
 function isObject(value: unknown): value is Record<string, unknown> {
@@ -48,14 +52,33 @@ function isNumberPair(value: unknown): value is [number, number] {
 	return Array.isArray(value) && value.length === 2 && typeof value[0] === "number" && typeof value[1] === "number";
 }
 
-/** `hunk --version` is the cheapest probe that fails fast when the binary is absent. */
-export async function detectHunk(pi: HunkExec): Promise<HunkAvailability> {
+function execFailure(result: ExecResult): string | null {
+	const status = result.killed
+		? `was killed or timed out (${HUNK_TIMEOUT_MS} ms limit)`
+		: result.code !== 0
+			? `exited with code ${result.code}`
+			: null;
+	if (!status) return null;
+	const stderr = result.stderr.trim();
+	return stderr ? `${status}: ${stderr}` : status;
+}
+
+function binaryLabel(binary: HunkBinary): string {
+	return `${binary.executable} (${binary.version})`;
+}
+
+export async function detectHunk(pi: HunkExec, cwd: string): Promise<HunkAvailability> {
+	const executable = await resolveHunkExecutable(process.env.PATH, cwd);
+	if (!executable) return { available: false, message: `hunk is not on PATH. ${HUNK_INSTALL_HINT}` };
 	try {
-		const result = await pi.exec("hunk", ["--version"], { timeout: HUNK_TIMEOUT_MS });
-		if (result.code === 0) return { available: true };
-		return { available: false, message: `hunk exited with code ${result.code}. ${HUNK_INSTALL_HINT}` };
+		const result = await pi.exec(executable, ["--version"], { cwd, timeout: HUNK_TIMEOUT_MS });
+		const failure = execFailure(result);
+		if (failure) return { available: false, message: `${executable} --version ${failure}` };
+		const version = result.stdout.trim();
+		if (!version) return { available: false, message: `${executable} --version returned no version` };
+		return { available: true, binary: { executable, version } };
 	} catch (err) {
-		return { available: false, message: `hunk is not on PATH: ${errorMessage(err)}. ${HUNK_INSTALL_HINT}` };
+		return { available: false, message: `${executable} --version failed: ${errorMessage(err)}` };
 	}
 }
 
@@ -70,12 +93,18 @@ function parseJson(stdout: string): unknown {
 }
 
 function toSession(raw: unknown): HunkSession | null {
-	if (!isObject(raw) || typeof raw.sessionId !== "string") return null;
-	return {
-		sessionId: raw.sessionId,
-		repoRoot: typeof raw.repoRoot === "string" ? raw.repoRoot : "",
-		launchedAt: typeof raw.launchedAt === "string" ? raw.launchedAt : "",
-	};
+	if (!isObject(raw)) return null;
+	const { sessionId, repoRoot, launchedAt } = raw;
+	if (
+		typeof sessionId !== "string" ||
+		!sessionId.trim() ||
+		(repoRoot !== undefined && (typeof repoRoot !== "string" || !repoRoot.trim())) ||
+		typeof launchedAt !== "string" ||
+		!launchedAt.trim()
+	) {
+		return null;
+	}
+	return { sessionId, repoRoot, launchedAt };
 }
 
 /**
@@ -85,22 +114,30 @@ function toSession(raw: unknown): HunkSession | null {
  * matches more than one live session; enumerating stays unambiguous however
  * many are open, and lets a caller identify the one it just launched.
  */
-export async function listHunkSessions(pi: HunkExec, worktreePath: string): Promise<HunkSession[]> {
+export async function listHunkSessions(
+	pi: HunkExec,
+	binary: HunkBinary,
+	worktreePath: string,
+): Promise<HunkSessionRead> {
 	let result: ExecResult;
 	try {
-		result = await pi.exec("hunk", ["session", "list", "--json"], { timeout: HUNK_TIMEOUT_MS });
-	} catch {
-		return [];
+		result = await pi.exec(binary.executable, ["session", "list", "--json"], { timeout: HUNK_TIMEOUT_MS });
+	} catch (err) {
+		return { ok: false, reason: errorMessage(err) };
 	}
-	if (result.code !== 0) return [];
+	const failure = execFailure(result);
+	if (failure) return { ok: false, reason: failure };
 	const parsed = parseJson(result.stdout);
-	if (!isObject(parsed) || !Array.isArray(parsed.sessions)) return [];
-	const sessions: HunkSession[] = [];
-	for (const raw of parsed.sessions) {
-		const session = toSession(raw);
-		if (session && session.repoRoot === worktreePath) sessions.push(session);
+	if (!isObject(parsed) || !Array.isArray(parsed.sessions)) {
+		return { ok: false, reason: "returned no readable session list" };
 	}
-	return sessions;
+	const sessions: HunkSession[] = [];
+	for (const [index, raw] of parsed.sessions.entries()) {
+		const session = toSession(raw);
+		if (!session) return { ok: false, reason: `returned an invalid session at index ${index}` };
+		if (session.repoRoot === worktreePath) sessions.push(session);
+	}
+	return { ok: true, sessions };
 }
 
 function toUserNote(raw: unknown): UserNote | null {
@@ -124,21 +161,21 @@ function toUserNote(raw: unknown): UserNote | null {
  *
  * `--type user` filters server-side; the `source` check guards shape drift.
  */
-export async function readUserNotes(pi: HunkExec, sessionId: string): Promise<UserNoteRead> {
+export async function readUserNotes(pi: HunkExec, binary: HunkBinary, sessionId: string): Promise<UserNoteRead> {
+	const context = `${binaryLabel(binary)} session comment list`;
 	let result: ExecResult;
 	try {
-		result = await pi.exec("hunk", ["session", "comment", "list", sessionId, "--type", "user", "--json"], {
+		result = await pi.exec(binary.executable, ["session", "comment", "list", sessionId, "--type", "user", "--json"], {
 			timeout: HUNK_TIMEOUT_MS,
 		});
 	} catch (err) {
-		return { ok: false, reason: errorMessage(err) };
+		return { ok: false, reason: `${context} failed: ${errorMessage(err)}` };
 	}
-	if (result.code !== 0) {
-		return { ok: false, reason: result.stderr.trim() || `hunk exited with code ${result.code}` };
-	}
+	const failure = execFailure(result);
+	if (failure) return { ok: false, reason: `${context} ${failure}` };
 	const parsed = parseJson(result.stdout);
 	if (!isObject(parsed) || !Array.isArray(parsed.comments)) {
-		return { ok: false, reason: "hunk returned no readable comment list" };
+		return { ok: false, reason: `${context} returned no readable comment list` };
 	}
 	const notes: UserNote[] = [];
 	for (const raw of parsed.comments) {

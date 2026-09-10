@@ -1,8 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
-	detectHunk,
-	type HunkAvailability,
+	type HunkBinary,
 	type HunkExec,
 	type HunkSession,
 	listHunkSessions,
@@ -29,6 +28,7 @@ interface MockPi {
 }
 
 const WORKTREE = "/worktrees/org/repo/wt/main";
+const BINARY: HunkBinary = { executable: "/bin with 'quotes;$()/hunk", version: "0.21.1" };
 
 function createMockPi(
 	handler: (command: string, args: string[], options?: { timeout?: number }) => Promise<ExecResult> | ExecResult,
@@ -141,47 +141,40 @@ const MULTI_NOTE_JSON = JSON.stringify({
 	],
 });
 
-describe("detectHunk", () => {
-	it("returns available when hunk --version exits 0", async () => {
-		const pi = createMockPi(() => okJson("0.17.6\n"));
-		const result = await detectHunk(pi);
-		assert.deepEqual(result, { available: true } satisfies HunkAvailability);
-		assert.deepEqual(pi.execCalls, [{ command: "hunk", args: ["--version"], options: { timeout: 4000 } }]);
-	});
-
-	it("returns an actionable unavailable result when exec throws (missing binary)", async () => {
-		const pi = createMockPi(() => {
-			throw new Error("spawn hunk ENOENT");
-		});
-		const result = await detectHunk(pi);
-		assert.equal(result.available, false);
-		const message: string = result.available ? "" : result.message;
-		assert.match(message, /not on PATH/);
-		assert.match(message, /npm i -g hunkdiff/);
-		assert.match(message, /brew install hunk/);
-		assert.match(message, /Nix/);
-	});
-
-	it("returns unavailable on a nonzero exit", async () => {
-		const pi = createMockPi(() => ({ code: 127, stdout: "", stderr: "command not found", killed: false }));
-		const result = await detectHunk(pi);
-		assert.equal(result.available, false);
-		assert.match(result.available ? "" : result.message, /code 127/);
-	});
-});
-
 describe("listHunkSessions", () => {
-	it("returns nothing when no daemon or session is running", async () => {
-		const pi = createMockPi(() => fail(NO_SESSION_STDOUT));
-		assert.deepEqual(await listHunkSessions(pi, WORKTREE), []);
-		assert.deepEqual(pi.execCalls[0]?.args, ["session", "list", "--json"]);
+	it("preserves nonzero exit status and stderr instead of implying no sessions", async () => {
+		const stderr = "error: unknown command 'list'\nrequired support: session list\n";
+		const pi = createMockPi(() => fail(NO_SESSION_STDOUT, stderr));
+		const read = await listHunkSessions(pi, BINARY, WORKTREE);
+		assert.equal(read.ok, false);
+		assert.equal(read.ok ? "" : read.reason, `exited with code 1: ${stderr.trim()}`);
+		assert.deepEqual(pi.execCalls, [
+			{ command: BINARY.executable, args: ["session", "list", "--json"], options: { timeout: 4000 } },
+		]);
 	});
 
-	it("returns nothing when exec throws (no binary)", async () => {
+	it("reports an exit code even without stderr", async () => {
+		const pi = createMockPi(() => fail(""));
+		const read = await listHunkSessions(pi, BINARY, WORKTREE);
+		assert.equal(read.ok, false);
+		assert.match(read.ok ? "" : read.reason, /exited with code 1/);
+	});
+
+	it("reports thrown exec errors without retrying or changing binaries", async () => {
 		const pi = createMockPi(() => {
 			throw new Error("spawn hunk ENOENT");
 		});
-		assert.deepEqual(await listHunkSessions(pi, WORKTREE), []);
+		const read = await listHunkSessions(pi, BINARY, WORKTREE);
+		assert.equal(read.ok, false);
+		assert.equal(read.ok ? "" : read.reason, "spawn hunk ENOENT");
+		assert.equal(pi.execCalls.length, 1);
+	});
+
+	it("rejects killed or timed-out output even when code is zero and JSON looks valid", async () => {
+		const pi = createMockPi(() => ({ ...okJson(SESSION_LIST_JSON), killed: true, stderr: "deadline exceeded" }));
+		const read = await listHunkSessions(pi, BINARY, WORKTREE);
+		assert.equal(read.ok, false);
+		assert.equal(read.ok ? "" : read.reason, "was killed or timed out (4000 ms limit): deadline exceeded");
 	});
 
 	it("returns every session for this worktree and excludes other repos", async () => {
@@ -190,20 +183,71 @@ describe("listHunkSessions", () => {
 			{ sessionId: "ac693860-1df2-4259-a2e7-67af689b0cd9", repoRoot: WORKTREE, launchedAt: "2026-07-27T15:38:01.368Z" },
 			{ sessionId: "c142bb1b-8d91-4269-9463-d81bab9f8559", repoRoot: WORKTREE, launchedAt: "2026-07-27T16:41:55.869Z" },
 		];
-		assert.deepEqual(await listHunkSessions(pi, WORKTREE), expected);
+		assert.deepEqual(await listHunkSessions(pi, BINARY, WORKTREE), { ok: true, sessions: expected });
 	});
 
-	it("returns nothing when stdout is JSON without a sessions array", async () => {
-		const pi = createMockPi(() => okJson(JSON.stringify({ ok: true })));
-		assert.deepEqual(await listHunkSessions(pi, WORKTREE), []);
+	for (const stdout of ["", "not json", "null", "[]", '{"ok":true}', '{"sessions":null}']) {
+		it(`reports malformed session-list output ${JSON.stringify(stdout)}`, async () => {
+			const pi = createMockPi(() => okJson(stdout));
+			const read = await listHunkSessions(pi, BINARY, WORKTREE);
+			assert.equal(read.ok, false);
+			assert.equal(read.ok ? "" : read.reason, "returned no readable session list");
+		});
+	}
+
+	it("distinguishes a genuinely empty list from failure", async () => {
+		const pi = createMockPi(() => okJson('{"sessions":[]}'));
+		assert.deepEqual(await listHunkSessions(pi, BINARY, WORKTREE), { ok: true, sessions: [] });
 	});
+
+	it("returns a successful empty result when valid sessions belong to other worktrees", async () => {
+		const pi = createMockPi(() => okJson(SESSION_LIST_JSON));
+		assert.deepEqual(await listHunkSessions(pi, BINARY, "/other/worktree"), { ok: true, sessions: [] });
+	});
+
+	it("ignores non-VCS sessions whose registration legitimately omits repoRoot", async () => {
+		const payload = JSON.parse(SESSION_LIST_JSON);
+		payload.sessions.push({ sessionId: "patch-session", inputKind: "patch", launchedAt: "2026-09-10T06:00:00Z" });
+		const pi = createMockPi(() => okJson(JSON.stringify(payload)));
+		const read = await listHunkSessions(pi, BINARY, WORKTREE);
+		assert.equal(read.ok, true);
+		assert.equal(read.ok ? read.sessions.length : -1, 2);
+	});
+
+	const session = { sessionId: SESSION_ID, repoRoot: WORKTREE, launchedAt: "2026-07-27T16:00:00.000Z" };
+	const invalidSessions = [
+		null,
+		[],
+		{},
+		{ ...session, sessionId: "" },
+		{ ...session, sessionId: 42 },
+		{ ...session, repoRoot: 42 },
+		{ ...session, repoRoot: " " },
+		{ ...session, launchedAt: undefined },
+		{ ...session, launchedAt: 42 },
+		{ ...session, launchedAt: "" },
+	];
+	for (const invalid of invalidSessions) {
+		it(`rejects the whole list rather than dropping an invalid session ${JSON.stringify(invalid)}`, async () => {
+			const pi = createMockPi(() => okJson(JSON.stringify({ sessions: [session, invalid] })));
+			const read = await listHunkSessions(pi, BINARY, WORKTREE);
+			assert.equal(read.ok, false);
+			assert.equal(read.ok ? "" : read.reason, "returned an invalid session at index 1");
+		});
+	}
 });
 
 describe("readUserNotes", () => {
 	it("addresses the session by id, never by repo", async () => {
 		const pi = createMockPi(() => okJson(NO_NOTES_JSON));
-		await readUserNotes(pi, SESSION_ID);
-		assert.deepEqual(pi.execCalls[0]?.args, ["session", "comment", "list", SESSION_ID, "--type", "user", "--json"]);
+		await readUserNotes(pi, BINARY, SESSION_ID);
+		assert.deepEqual(pi.execCalls, [
+			{
+				command: BINARY.executable,
+				args: ["session", "comment", "list", SESSION_ID, "--type", "user", "--json"],
+				options: { timeout: 4000 },
+			},
+		]);
 	});
 
 	it("reports a nonzero exit as a failure rather than as zero notes", async () => {
@@ -213,7 +257,7 @@ describe("readUserNotes", () => {
 			stderr: "hunk: Multiple active sessions match repoRoot /x; specify sessionId instead.\n",
 			killed: false,
 		}));
-		const read = await readUserNotes(pi, SESSION_ID);
+		const read = await readUserNotes(pi, BINARY, SESSION_ID);
 		assert.equal(read.ok, false);
 		assert.match(read.ok ? "" : read.reason, /Multiple active sessions/);
 	});
@@ -222,25 +266,32 @@ describe("readUserNotes", () => {
 		const pi = createMockPi(() => {
 			throw new Error("spawn hunk ENOENT");
 		});
-		const read = await readUserNotes(pi, SESSION_ID);
+		const read = await readUserNotes(pi, BINARY, SESSION_ID);
 		assert.equal(read.ok, false);
 		assert.match(read.ok ? "" : read.reason, /ENOENT/);
 	});
 
+	it("reports killed reads even when their output is a valid empty review", async () => {
+		const pi = createMockPi(() => ({ ...okJson(NO_NOTES_JSON), killed: true }));
+		const read = await readUserNotes(pi, BINARY, SESSION_ID);
+		assert.equal(read.ok, false);
+		assert.match(read.ok ? "" : read.reason, /0\.21\.1.*killed or timed out/);
+	});
+
 	it("reports unparsable output as a failure, not emptiness", async () => {
 		const pi = createMockPi(() => okJson("No active Hunk sessions.\n"));
-		const read = await readUserNotes(pi, SESSION_ID);
+		const read = await readUserNotes(pi, BINARY, SESSION_ID);
 		assert.equal(read.ok, false);
 	});
 
 	it("distinguishes a genuinely empty review from a failure", async () => {
 		const pi = createMockPi(() => okJson(NO_NOTES_JSON));
-		assert.deepEqual(await readUserNotes(pi, SESSION_ID), { ok: true, notes: [] });
+		assert.deepEqual(await readUserNotes(pi, BINARY, SESSION_ID), { ok: true, notes: [] });
 	});
 
 	it("keeps both anchor sides, drops ai notes, and never invents a range", async () => {
 		const pi = createMockPi(() => okJson(MULTI_NOTE_JSON));
-		const read = await readUserNotes(pi, SESSION_ID);
+		const read = await readUserNotes(pi, BINARY, SESSION_ID);
 		assert.equal(read.ok, true);
 		assert.deepEqual(read.ok ? read.notes : [], [
 			{ filePath: "pi/code-review/README.md", newRange: [45, 45], body: "hi" },

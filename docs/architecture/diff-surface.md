@@ -31,14 +31,20 @@ Two concurrent reviews of the same worktree are not supported; only one runs at 
 ## Flow
 
 ```
+<hunk-path> session list --json
 herdr pane split $HERDR_PANE_ID --direction right --ratio 0.5 --cwd <worktree> \
                 --no-focus --env HUNK_DISABLE_UPDATE_NOTICE=1
-herdr pane run <pane_id> 'hunk' 'diff' '<target>' ['--agent-context' '<sidecar>']
-hunk session comment list --repo <worktree> --type user --json
+herdr pane run <pane_id> '<hunk-path>' 'diff' '<target>' ['--agent-context' '<sidecar>']
+<hunk-path> session list --json
+<hunk-path> session comment list <session-id> --type user --json
 herdr pane close <pane_id>
 ```
 
 The default target is `merge-base(detectDefaultBranch(), HEAD)` passed as a **single** argument. `hunk diff <target>` becomes `git diff --no-ext-diff --find-renames <target>`, so one view carries committed *and* uncommitted work; three-dot `main...HEAD` would show only commits. On the default branch the merge-base is HEAD, degrading to a working-tree diff with no special case. `/diff last` substitutes the recorded checkpoint SHA as the target; nothing else in the flow changes.
+
+`<hunk-path>` is resolved once from Pi's inherited `PATH` to an absolute executable path. The version probe, pane launch, session discovery, and comment reads all use that path, rather than letting a fresh pane shell select a different installation. Shell startup files are not evaluated for resolution.
+
+Session discovery is a preflight before any pane is replaced or opened. A failed CLI call or invalid session-list response is an error, not evidence that no sessions exist. The diagnostic includes the selected executable, version, and failure reason. This matters after upgrades: hunk 0.21's signed daemon authentication rejects a 0.20 client even though `--version` succeeds. Basecamp delegates authentication to hunk and does not switch installations or restart its daemon. After launch, polling tolerates transient daemon-startup failures through its retry window; if discovery still fails on the final attempt, that error is reported rather than a registration timeout.
 
 hunk and herdr are pre-1.0 and host-installed, so the behaviour recorded here is observation of a moving target, not a contract.
 
@@ -75,7 +81,11 @@ Putting the sidecar inside the root would satisfy reload, but not in a worktree:
 
 Reloading a session to the **same** ref preserves its notes; reloading to a **different** ref destroys all of them, agent notes included, with no warning. `/diff` therefore replaces sessions rather than repointing them, and drains a leftover session's user notes before closing its pane.
 
-The pane id is `processScoped` (`basecamp.diffPanes`) because a hunk pane outlives the session that opened it; losing the id on `/reload` would strand a pane nothing can close.
+Nonempty recovered notes are delivered immediately and finish that invocation; a new review requires another explicit `/diff`. Holding them through the next review would leave the only copy in an interrupted handler after their old pane closed. Delivering them and continuing would be unsafe too: `sendUserMessage` starts an agent turn even with `deliverAs: "followUp"` when idle, allowing edits while the next diff is open. A prior review with no notes can be replaced in the same invocation.
+
+The pane id is `processScoped` (`basecamp.diffPanes`) because a hunk pane outlives the session that opened it; losing the id on `/reload` would strand a pane nothing can close. Until discovery succeeds, the same state retains the prelaunch session IDs. A retry can identify the one new session and read its notes before replacing it. Ambiguous candidates or legacy state without a baseline remain blocked rather than guessing ownership.
+
+An absent daemon registration does not prove a TUI has no notes: it may be disconnected. An unidentified or disconnected review is left open until it reconnects or the user explicitly abandons its pane. Only Herdr's `pane_not_found` response permits forgetting such a review; other probe failures preserve it. Failure paths never report an empty review.
 
 ## `herdr pane run` is unescaped send-keys
 

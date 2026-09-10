@@ -5,99 +5,21 @@ import { errorMessage } from "#core/errors.ts";
 import { gitOutput, isMergedInto, resolveReviewBase } from "#core/git/repo.ts";
 import { isSubagent } from "#core/host/env.ts";
 import { withHerdrBlocked } from "#core/ui/herdr.ts";
-import { checkHerdrEligibility, closeHerdrPane, runInHerdrPane, splitHerdrPane } from "#core/ui/herdr-pane.ts";
+import { checkHerdrEligibility, runInHerdrPane, splitHerdrPane } from "#core/ui/herdr-pane.ts";
 import { formatAnnotations } from "./annotations.ts";
 import { type Checkpoint, forgetCheckpoint, recordCheckpoint, validateCheckpoint } from "./checkpoints.ts";
-import { detectHunk, type HunkSession, listHunkSessions, readUserNotes, type UserNote } from "./hunk.ts";
+import { detectHunk, type HunkBinary, listHunkSessions, readUserNotes, type UserNote } from "./hunk.ts";
 import { type DiffModeKind, parseDiffArgs } from "./mode.ts";
-import { attachSession, forgetPane, forgetSession, ownedReview, rememberPane } from "./session-state.ts";
+import { awaitLaunchedSession, closeAndForget, drainOwnedReview, type LaunchPoll } from "./review-session.ts";
+import { attachSession, rememberPane } from "./session-state.ts";
 import { clearSidecar, readSidecarBase, sidecarPath } from "./sidecar.ts";
 import { reviewWorktreeDir } from "./worktree.ts";
 
 // hunk's own update nag would render inside a pane Basecamp owns.
 const HUNK_PANE_ENV = { HUNK_DISABLE_UPDATE_NOTICE: "1" };
 
-/** Generous enough for a cold Node TUI to boot and register. */
-export interface LaunchPoll {
-	attempts: number;
-	intervalMs: number;
-}
+/** Generous enough for a cold TUI to boot and register. */
 const DEFAULT_LAUNCH_POLL: LaunchPoll = { attempts: 24, intervalMs: 250 };
-
-interface Drained {
-	notes: UserNote[];
-	/** A live review we could not safely replace; stop rather than destroy it. */
-	blocked?: string;
-	/** A review whose window is already gone, so its notes are unrecoverable. */
-	lost?: boolean;
-}
-
-/**
- * A review left over from an earlier `/diff` still holds its notes in memory,
- * so they are read before its pane is closed — closing would discard them.
- *
- * Only a review this process opened is drained; a hunk the user launched
- * themselves is left alone rather than reported as if it were this review.
- *
- * A read that fails against a *live* session blocks, because closing would
- * destroy notes we could not recover. A session that is no longer registered
- * is the opposite case: quitting hunk without confirming already lost those
- * notes, so the id is cleared and the caller carries on. Retaining it would
- * fail identically on every future call, and the state survives /reload.
- */
-async function drainOwnedReview(pi: ExtensionAPI, worktreeDir: string, live: HunkSession[]): Promise<Drained> {
-	const owned = ownedReview(worktreeDir);
-	if (!owned) return { notes: [] };
-
-	const sessionAlive = owned.sessionId !== undefined && live.some((s) => s.sessionId === owned.sessionId);
-
-	if (owned.sessionId !== undefined && !sessionAlive) {
-		if (!(await closeAndForget(pi, worktreeDir, owned.paneId))) forgetSession(worktreeDir);
-		return { notes: [], lost: true };
-	}
-
-	if (sessionAlive && owned.sessionId !== undefined) {
-		const read = await readUserNotes(pi, owned.sessionId);
-		if (!read.ok) {
-			return { notes: [], blocked: `could not read the previous review's notes (${read.reason})` };
-		}
-		if (await closeAndForget(pi, worktreeDir, owned.paneId)) return { notes: read.notes };
-		return { notes: read.notes, blocked: "could not close the previous review's pane" };
-	}
-
-	// A pane that never registered a session holds no notes, so a close that fails
-	// — which `herdr pane close` does deterministically once the pane is gone — is
-	// not worth stopping for. Blocking here would strand every later call.
-	if (!(await closeAndForget(pi, worktreeDir, owned.paneId))) forgetPane(worktreeDir);
-	return { notes: [] };
-}
-
-/** Keeps the ids whenever the close fails, so a later run can still reclaim the pane. */
-async function closeAndForget(pi: ExtensionAPI, worktreeDir: string, paneId: string): Promise<boolean> {
-	const closed = await closeHerdrPane(pi, paneId);
-	if (closed.status === "ok") forgetPane(worktreeDir);
-	return closed.status === "ok";
-}
-
-/**
- * `pane run` only proves the keystrokes reached a shell, so hunk is polled
- * until it registers with its daemon. The session is identified by diffing
- * against the ids present beforehand, which stays correct when the user has
- * their own hunk open on the same worktree.
- */
-async function awaitLaunchedSession(
-	pi: ExtensionAPI,
-	worktreeDir: string,
-	before: ReadonlySet<string>,
-	poll: LaunchPoll,
-): Promise<HunkSession | null> {
-	for (let attempt = 0; attempt < poll.attempts; attempt++) {
-		await new Promise((resolve) => setTimeout(resolve, poll.intervalMs));
-		const fresh = (await listHunkSessions(pi, worktreeDir)).filter((s) => !before.has(s.sessionId));
-		if (fresh.length > 0) return fresh[fresh.length - 1] ?? null;
-	}
-	return null;
-}
 
 interface HunkLaunch {
 	argv: string[];
@@ -117,18 +39,15 @@ interface HunkLaunch {
  * feature branch, because the annotate-time base and a `/diff last` target are
  * different quantities.
  */
-function hunkLaunch(target: string, base: string, worktreeDir: string): HunkLaunch {
-	const argv = ["hunk", "diff", target];
+function hunkLaunch(binary: HunkBinary, target: string, base: string, worktreeDir: string): HunkLaunch {
+	const argv = [binary.executable, "diff", target];
 	const sidecarAttached = readSidecarBase(worktreeDir) === base;
 	if (sidecarAttached) argv.push("--agent-context", sidecarPath(worktreeDir));
 	return { argv, sidecarAttached };
 }
 
-function deliver(pi: ExtensionAPI, ctx: ExtensionContext, notes: UserNote[]): void {
-	if (notes.length === 0) {
-		ctx.ui.notify("No annotations were left on the diff.", "info");
-		return;
-	}
+function deliver(pi: ExtensionAPI, notes: UserNote[]): void {
+	if (notes.length === 0) return;
 	// A user prompt, not a custom injection: these are the user's own review
 	// comments, so they arrive as if the user typed them — the agent weighs
 	// them like any other instruction from the user, not like extension output.
@@ -137,6 +56,15 @@ function deliver(pi: ExtensionAPI, ctx: ExtensionContext, notes: UserNote[]): vo
 	// Handing the message over is synchronous on this surface, and the session
 	// reports its own delivery failures, so there is no local result to inspect.
 	pi.sendUserMessage(formatAnnotations(notes), { deliverAs: "followUp" });
+}
+
+function reportDiscoveryFailure(ctx: ExtensionContext, binary: HunkBinary, reason: string): void {
+	ctx.ui.notify(
+		`/diff could not discover hunk sessions using ${binary.executable} (${binary.version}): ${reason}. ` +
+			"Unread review panes have been left open. Check that Pi and your shell use the same hunk installation; " +
+			"after an upgrade, save any review notes and restart Pi from a fresh shell.",
+		"error",
+	);
 }
 
 interface DiffTarget {
@@ -218,7 +146,8 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 		return;
 	}
 
-	const availability = await detectHunk(pi);
+	const worktreeDir = reviewWorktreeDir();
+	const availability = await detectHunk(pi, worktreeDir);
 	if (!availability.available) {
 		ctx.ui.notify(availability.message, "error");
 		return;
@@ -230,22 +159,33 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 		return;
 	}
 
-	const worktreeDir = reviewWorktreeDir();
+	const binary = availability.binary;
+	const live = await listHunkSessions(pi, binary, worktreeDir);
+	if (!live.ok) {
+		reportDiscoveryFailure(ctx, binary, live.reason);
+		return;
+	}
 	const resolved = await resolveDiffTarget(pi, ctx, worktreeDir, mode);
 	if (!resolved) return;
 
-	const live = await listHunkSessions(pi, worktreeDir);
-	const drained = await drainOwnedReview(pi, worktreeDir, live);
+	const drained = await drainOwnedReview(pi, binary, worktreeDir, live.sessions);
 	if (drained.blocked) {
-		deliver(pi, ctx, drained.notes);
+		deliver(pi, drained.notes);
 		ctx.ui.notify(`/diff stopped: ${drained.blocked}. The hunk pane is still open.`, "error");
 		return;
 	}
 	if (drained.lost) {
 		ctx.ui.notify("The previous review's notes were lost — hunk was closed before confirming here.", "warning");
 	}
+	if (drained.notes.length > 0) {
+		// Delivery starts an agent turn; opening another review now would let the
+		// agent edit the same files while the user is reviewing them.
+		ctx.ui.notify("Recovered the previous review's annotations. Run /diff again after the agent handles them.", "info");
+		deliver(pi, drained.notes);
+		return;
+	}
 
-	const before = new Set(live.map((s) => s.sessionId));
+	const before = new Set(live.sessions.map((s) => s.sessionId));
 
 	const pane = await splitHerdrPane(pi, {
 		paneId,
@@ -253,24 +193,26 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 		env: HUNK_PANE_ENV,
 	});
 	if (pane.status !== "ok") {
-		deliver(pi, ctx, drained.notes);
 		ctx.ui.notify(`/diff could not split a Herdr pane: ${pane.message}`, "error");
 		return;
 	}
-	rememberPane(worktreeDir, pane.value.paneId);
+	rememberPane(worktreeDir, pane.value.paneId, before);
 
-	const launch = hunkLaunch(resolved.target, resolved.base, worktreeDir);
+	const launch = hunkLaunch(binary, resolved.target, resolved.base, worktreeDir);
 	const launched = await runInHerdrPane(pi, pane.value.paneId, launch.argv);
 	if (launched.status !== "ok") {
 		await closeAndForget(pi, worktreeDir, pane.value.paneId);
-		deliver(pi, ctx, drained.notes);
 		ctx.ui.notify(`/diff could not start hunk: ${launched.message}`, "error");
 		return;
 	}
 
-	const session = await awaitLaunchedSession(pi, worktreeDir, before, poll);
+	const discovery = await awaitLaunchedSession(pi, binary, worktreeDir, before, poll);
+	if (!discovery.ok) {
+		reportDiscoveryFailure(ctx, binary, discovery.reason);
+		return;
+	}
+	const session = discovery.session;
 	if (!session) {
-		deliver(pi, ctx, drained.notes);
 		ctx.ui.notify("/diff started hunk but it never registered a session — check the diff pane for its error.", "error");
 		return;
 	}
@@ -283,9 +225,8 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	);
 
 	// Read on cancel too: notes already written are the user's, not a draft.
-	const read = await readUserNotes(pi, session.sessionId);
+	const read = await readUserNotes(pi, binary, session.sessionId);
 	if (!read.ok) {
-		deliver(pi, ctx, drained.notes);
 		ctx.ui.notify(
 			`/diff could not read your annotations (${read.reason}). The hunk pane is still open so they are not lost.`,
 			"error",
@@ -297,7 +238,8 @@ async function runDiff(pi: ExtensionAPI, ctx: ExtensionContext, poll: LaunchPoll
 	// Hand the notes over before touching local state: hunk's pane is already
 	// closed, so this is the only copy, and clearing the sidecar can still throw
 	// on a permissions or busy error.
-	deliver(pi, ctx, [...drained.notes, ...read.notes]);
+	deliver(pi, read.notes);
+	if (read.notes.length === 0) ctx.ui.notify("No annotations were left on the diff.", "info");
 	consumeReview(worktreeDir, resolved, launch.sidecarAttached);
 }
 
