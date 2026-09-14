@@ -47,9 +47,10 @@ function temporaryDirectory(): string {
 	return directory;
 }
 
-function writeLines(filePath: string, count: number): void {
+function writeLines(filePath: string, count: number, trailingNewline = true): void {
 	mkdirSync(path.dirname(filePath), { recursive: true });
-	writeFileSync(filePath, "line\n".repeat(count), "utf8");
+	const content = count === 0 ? "" : `${"line\n".repeat(count - 1)}line${trailingNewline ? "\n" : ""}`;
+	writeFileSync(filePath, content, "utf8");
 }
 
 function toolResultEvent(toolName: string, input: Record<string, unknown>, isError = false): ToolResultEvent {
@@ -109,15 +110,40 @@ function createHarness(initialCwd = process.cwd()) {
 }
 
 const EXACT_CAPS: ReadonlyArray<readonly [suffix: string, cap: number]> = [
-	["html", 350],
-	["htm", 350],
 	["ts", 350],
 	["tsx", 350],
-	["bash", 400],
+	["html", 350],
+	["htm", 350],
 	["sh", 400],
+	["bash", 400],
 	["zsh", 400],
 	["sql", 800],
+	["css", 500],
 	["py", 500],
+	["pyi", 500],
+	["js", 500],
+	["jsx", 500],
+	["mjs", 500],
+	["cjs", 500],
+	["go", 500],
+	["rs", 500],
+	["java", 500],
+	["kt", 500],
+	["kts", 500],
+	["scala", 500],
+	["swift", 500],
+	["rb", 500],
+	["php", 500],
+	["lua", 500],
+	["jl", 500],
+	["c", 500],
+	["h", 500],
+	["cpp", 500],
+	["cc", 500],
+	["cxx", 500],
+	["hpp", 500],
+	["hh", 500],
+	["cs", 500],
 ];
 
 describe("OMP file-length reminder", () => {
@@ -132,7 +158,7 @@ describe("OMP file-length reminder", () => {
 			await harness.emit(toolName, { path: target });
 			expect(harness.sent).toHaveLength(index);
 
-			writeLines(target, cap + 1);
+			writeLines(target, cap + 1, false);
 			await harness.emit(toolName, { path: target });
 			expect(harness.sent).toHaveLength(index + 1);
 			expect(harness.sent.at(-1)?.message.content).toContain(
