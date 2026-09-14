@@ -1,0 +1,7 @@
+{
+	"name": "basecamp",
+	"private": true,
+	"version": "0.8.0",
+	"description": "Basecamp — a way-of-working layer for Oh My Pi.",
+	"omp": {}
+}
