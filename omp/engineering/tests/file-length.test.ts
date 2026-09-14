@@ -2,12 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
-import type {
-	AgentEndEvent,
-	ExtensionAPI,
-	SessionStartEvent,
-	ToolResultEvent,
-} from "@oh-my-pi/pi-coding-agent";
+import type { AgentEndEvent, ExtensionAPI, SessionStartEvent, ToolResultEvent } from "@oh-my-pi/pi-coding-agent";
 import registerFileLengthReminder from "../file-length.ts";
 
 interface TestContext {
@@ -57,11 +52,7 @@ function writeLines(filePath: string, count: number): void {
 	writeFileSync(filePath, "line\n".repeat(count), "utf8");
 }
 
-function toolResultEvent(
-	toolName: string,
-	input: Record<string, unknown>,
-	isError = false,
-): ToolResultEvent {
+function toolResultEvent(toolName: string, input: Record<string, unknown>, isError = false): ToolResultEvent {
 	return {
 		type: "tool_result",
 		toolCallId: "call-1",
@@ -80,10 +71,7 @@ function createHarness(initialCwd = process.cwd()) {
 	let sendError: Error | undefined;
 
 	const api = {
-		on<EventName extends keyof EventHandlers>(
-			eventName: EventName,
-			handler: EventHandlers[EventName],
-		): void {
+		on<EventName extends keyof EventHandlers>(eventName: EventName, handler: EventHandlers[EventName]): void {
 			handlers[eventName] = handler;
 		},
 		sendMessage(message: ReminderMessage, options?: ReminderOptions): void {
@@ -94,9 +82,7 @@ function createHarness(initialCwd = process.cwd()) {
 
 	registerFileLengthReminder(api as unknown as ExtensionAPI);
 
-	function handler<EventName extends keyof EventHandlers>(
-		eventName: EventName,
-	): EventHandlers[EventName] {
+	function handler<EventName extends keyof EventHandlers>(eventName: EventName): EventHandlers[EventName] {
 		const registered = handlers[eventName];
 		if (!registered) throw new Error(`${eventName} handler was not registered`);
 		return registered;
