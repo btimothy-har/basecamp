@@ -61,6 +61,7 @@ function lineLimit(filePath: string): { limit: number; suffix: string } | null {
 
 function lineCount(content: string): number {
 	if (content === "") return 0;
+	// Counting only newlines matches editor gutters and the repository's hard checker.
 	return content.split("\n").length - (content.endsWith("\n") ? 1 : 0);
 }
 
@@ -80,7 +81,7 @@ export default function registerFileLengthReminder(omp: ExtensionAPI): void {
 
 	omp.on("session_start", reset);
 	omp.on("agent_end", (event) => {
-		if (!("isTerminal" in event) || event.isTerminal !== false) reset();
+		if (event.willContinue !== true) reset();
 	});
 
 	omp.on("tool_result", (event, ctx) => {
