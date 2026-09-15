@@ -4,11 +4,15 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 import sys
 import textwrap
+import time
 from dataclasses import dataclass
 from pathlib import Path
+
+import pytest
 
 
 @dataclass(frozen=True)
@@ -64,8 +68,10 @@ def _write_fake_omp(path: Path) -> None:
 
             import json
             import os
+            import signal
             import subprocess
             import sys
+            import time
             from pathlib import Path
 
 
@@ -109,6 +115,16 @@ def _write_fake_omp(path: Path) -> None:
                 raise SystemExit(result.returncode)
 
             root = Path(git_output("rev-parse", "--show-toplevel"))
+            if os.environ.get("BOMP_WAIT_FOR_RELEASE"):
+                def note_interrupt(_signal: int, _frame: object) -> None:
+                    Path(os.environ["BOMP_INTERRUPT_MARKER"]).write_text("interrupted")
+
+                signal.signal(signal.SIGINT, note_interrupt)
+                Path(os.environ["BOMP_READY_MARKER"]).write_text(str(root))
+                release = Path(os.environ["BOMP_RELEASE_MARKER"])
+                while not release.exists():
+                    time.sleep(0.02)
+
             mutations = set(filter(None, os.environ.get("BOMP_MUTATIONS", "").split(",")))
             if "detached-commit" in mutations:
                 (root / "detached-commit.txt").write_text("detached commit\\n")
@@ -326,3 +342,60 @@ def test_bomp_detached_removes_changed_workspace_and_propagates_status(tmp_path:
     assert not (harness.source / "staged.txt").exists()
     assert not (harness.source / "untracked.txt").exists()
     assert not (harness.source / "ignored.tmp").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group signal behavior")
+def test_bomp_detached_does_not_clean_up_on_turn_interrupt(tmp_path: Path) -> None:
+    harness = _make_harness(tmp_path)
+    ready = tmp_path / "ready"
+    interrupted = tmp_path / "interrupted"
+    release = tmp_path / "release"
+    harness.environment.update(
+        {
+            "BOMP_WAIT_FOR_RELEASE": "1",
+            "BOMP_READY_MARKER": str(ready),
+            "BOMP_INTERRUPT_MARKER": str(interrupted),
+            "BOMP_RELEASE_MARKER": str(release),
+        }
+    )
+    entrypoint = Path(sys.executable).with_name("bomp")
+    process = subprocess.Popen(
+        [str(entrypoint), "--detached", "--cwd", str(harness.nested)],
+        cwd=harness.source.parent,
+        env=harness.environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+
+    try:
+        _wait_for_path(ready)
+        workspace = Path(ready.read_text())
+        os.killpg(process.pid, signal.SIGINT)
+        _wait_for_path(interrupted)
+
+        assert process.poll() is None
+        assert workspace.is_dir()
+        assert workspace in _worktrees(harness.source)
+
+        release.touch()
+        _stdout, stderr = process.communicate(timeout=20)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+
+    assert process.returncode == 0, stderr
+    assert not workspace.exists()
+    assert workspace not in _worktrees(harness.source)
+
+
+def _wait_for_path(path: Path) -> None:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if path.exists():
+            return
+        time.sleep(0.02)
+    message = f"Timed out waiting for {path}"
+    raise AssertionError(message)
