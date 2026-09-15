@@ -18,9 +18,11 @@ from typing import Final
 from rich.panel import Panel
 
 from basecamp.core.console import console
+from basecamp.core.exceptions import LauncherError
 from basecamp.core.settings import settings
 
 REPO_DIR: Final = Path(__file__).resolve().parents[2]
+OMP_PACKAGE: Final = "@oh-my-pi/pi-coding-agent"
 
 # Pre-consolidation Pi package registrations to clean up — each was its own
 # `pi install` target before the single-extension layout.
@@ -38,7 +40,7 @@ _LEGACY_PACKAGE_SUBPATHS: Final = (
 )
 
 
-def _uninstall_legacy_pi_packages(pi: str) -> None:
+def _uninstall_legacy_pi_packages(pi: str, repo_dir: Path) -> None:
     """Remove stale per-package registrations from the pre-consolidation layout.
 
     Best-effort: entries that were never registered (or were already removed)
@@ -47,7 +49,7 @@ def _uninstall_legacy_pi_packages(pi: str) -> None:
     removed = []
     for subpath in _LEGACY_PACKAGE_SUBPATHS:
         result = subprocess.run(
-            [pi, "uninstall", str(REPO_DIR / subpath)],
+            [pi, "uninstall", str(repo_dir / subpath)],
             check=False,
             capture_output=True,
             text=True,
@@ -58,13 +60,13 @@ def _uninstall_legacy_pi_packages(pi: str) -> None:
         console.print(f"  Unregistered {len(removed)} legacy Pi package registration(s).")
 
 
-def _install_pi_extension() -> None:
+def _install_pi_extension(repo_dir: Path) -> None:
     npm = shutil.which("npm")
     if not npm:
         console.print("  [yellow]⚠[/yellow] npm not found — skipping extension install")
         return
     console.print("  Installing extension npm dependencies...")
-    result = subprocess.run([npm, "install"], cwd=REPO_DIR, check=False, capture_output=True, text=True)
+    result = subprocess.run([npm, "install"], cwd=repo_dir, check=False, capture_output=True, text=True)
     if result.returncode != 0:
         console.print("\n[red]npm install failed:[/red]")
         console.print(result.stderr.strip())
@@ -73,27 +75,100 @@ def _install_pi_extension() -> None:
     if not pi:
         console.print("  [yellow]⚠[/yellow] pi not found — skipping registration")
         return
-    _uninstall_legacy_pi_packages(pi)
+    _uninstall_legacy_pi_packages(pi, repo_dir)
     console.print("  Registering [bold]basecamp[/bold] with pi...")
-    result = subprocess.run([pi, "install", str(REPO_DIR)], check=False, capture_output=True, text=True)
+    result = subprocess.run([pi, "install", str(repo_dir)], check=False, capture_output=True, text=True)
     if result.returncode != 0:
         console.print("\n[red]pi install failed:[/red]")
         console.print(result.stderr.strip())
         sys.exit(1)
 
 
-def run_interactive_install() -> None:
-    """Run the basecamp install.
+def resolve_install_root(repo_dir: Path | None = None) -> Path:
+    """Resolve the source checkout that owns installable Basecamp resources."""
+    if repo_dir is not None:
+        explicit = repo_dir.expanduser().resolve()
+        if _is_basecamp_checkout(explicit):
+            return explicit
+        message = f"Basecamp source checkout not found at {explicit}."
+        raise LauncherError(message)
 
-    Called by install.py (bootstrap) and `basecamp install` (reconfiguration).
-    """
+    source = REPO_DIR.resolve()
+    if _is_basecamp_checkout(source):
+        return source
+    if settings.install_dir:
+        recorded = Path(settings.install_dir).expanduser().resolve()
+        if _is_basecamp_checkout(recorded):
+            return recorded
+    message = "Basecamp source checkout not found; run install.py from a Basecamp clone."
+    raise LauncherError(message)
+
+
+def _is_basecamp_checkout(path: Path) -> bool:
+    return (
+        (path / "install.py").is_file()
+        and (path / "package.json").is_file()
+        and (path / "pyproject.toml").is_file()
+        and (path / "src" / "basecamp" / "installer.py").is_file()
+        and (path / "pi" / "extension.ts").is_file()
+        and (path / "omp" / "package.json").is_file()
+        and (path / "omp" / "extension.ts").is_file()
+    )
+
+
+def _ensure_omp() -> None:
+    omp = shutil.which("omp")
+    if omp is not None:
+        _verify_omp(omp, existing=True)
+        return
+
+    bun = shutil.which("bun")
+    if bun is None:
+        console.print("\n[red]OMP is missing and Bun was not found.[/red]")
+        console.print("Install Bun, then rerun basecamp install: https://bun.sh/docs/installation")
+        raise SystemExit(1)
+
+    console.print(f"  Installing [bold]{OMP_PACKAGE}[/bold] with Bun...")
+    result = subprocess.run(
+        [bun, "install", "-g", OMP_PACKAGE],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        console.print("\n[red]OMP installation failed:[/red]")
+        console.print(result.stderr.strip())
+        raise SystemExit(1)
+
+    installed = shutil.which("omp")
+    if installed is None:
+        console.print("\n[red]OMP was installed but is not available on PATH.[/red]")
+        console.print("Add Bun's global bin directory to PATH, then rerun basecamp install.")
+        raise SystemExit(1)
+    _verify_omp(installed, existing=False)
+
+
+def _verify_omp(omp: str, *, existing: bool) -> None:
+    result = subprocess.run([omp, "--version"], check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        state = "existing" if existing else "installed"
+        console.print(f"\n[red]The {state} OMP executable could not start:[/red]")
+        console.print(result.stderr.strip() or f"exit status {result.returncode}")
+        raise SystemExit(1)
+    version = result.stdout.strip() or result.stderr.strip() or "version unknown"
+    console.print(f"  Using OMP: {version}")
+
+
+def run_interactive_install(repo_dir: Path | None = None) -> None:
+    """Install Basecamp and its runtime prerequisites from one source checkout."""
+    source_root = resolve_install_root(repo_dir)
     console.print()
     console.print(Panel.fit("basecamp install", style="bold blue"))
     console.print()
 
     console.print("[bold]Python tool[/bold]")
     console.print()
-    args = ["uv", "tool", "install", "--force", "--reinstall", str(REPO_DIR)]
+    args = ["uv", "tool", "install", "--force", "--reinstall", str(source_root)]
     console.print("  Installing [bold]basecamp[/bold] Python tool...")
     result = subprocess.run(args, check=False, capture_output=True, text=True)
     if result.returncode != 0:
@@ -102,11 +177,16 @@ def run_interactive_install() -> None:
         sys.exit(1)
 
     console.print()
+    console.print("[bold]OMP runtime[/bold]")
+    console.print()
+    _ensure_omp()
+
+    console.print()
     console.print("[bold]Pi extension[/bold]")
     console.print()
-    _install_pi_extension()
+    _install_pi_extension(source_root)
 
-    settings.set_install_metadata(install_dir=str(REPO_DIR))
+    settings.set_install_metadata(install_dir=str(source_root))
 
     console.print()
     console.print("[green]✓[/green] Installed.")
