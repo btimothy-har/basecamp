@@ -3,12 +3,17 @@
 from __future__ import annotations
 
 import os
+import shutil
 import subprocess
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from basecamp.core.exceptions import LauncherError
 from basecamp.core.models import ProjectConfig
+from basecamp.core.projects import load_projects
+from basecamp.core.settings import settings
 
 _GIT_TIMEOUT_SECONDS = 5
 
@@ -155,3 +160,41 @@ def _run_git(cwd: Path, *args: str) -> str | None:
     if result.returncode != 0:
         return None
     return result.stdout.strip() or None
+
+
+def run_launch(
+    args: Sequence[str],
+    *,
+    cwd: Path | None = None,
+    projects: Mapping[str, ProjectConfig] | None = None,
+    extension_dir: Path | None = None,
+) -> None:
+    """Validate and replace this process with the project-aware OMP launch."""
+    if shutil.which("omp") is None:
+        message = "OMP executable not found on PATH; install Oh My Pi before using bomp."
+        raise LauncherError(message)
+
+    package = extension_dir or resolve_extension_dir(install_dir=settings.install_dir)
+    if not _is_omp_package(package):
+        message = f"Basecamp OMP extension not found at {package}; run basecamp install."
+        raise LauncherError(message)
+
+    configured_projects = projects if projects is not None else load_projects()
+    plan = build_launch(cwd or Path.cwd(), args, configured_projects, package)
+    for warning in plan.warnings:
+        print(f"bomp: warning: {warning}", file=sys.stderr)
+
+    try:
+        os.execvp("omp", plan.argv)
+    except OSError as exc:
+        message = f"Could not start OMP: {exc}"
+        raise LauncherError(message) from exc
+
+
+def main() -> None:
+    """Console entry point for ``bomp``."""
+    try:
+        run_launch(sys.argv[1:])
+    except LauncherError as exc:
+        print(f"bomp: error: {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
