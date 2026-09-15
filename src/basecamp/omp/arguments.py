@@ -6,8 +6,8 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path
 
-# Pinned OMP 18.1.21 launch flags. Known string flags consume a following token
-# even when it looks like another flag; --plan is the one shadowable exception.
+# Pinned OMP 18.1.21 launch flags. Built-in string flags consume a following
+# token even when it looks like another flag.
 OMP_STRING_VALUE_FLAGS = frozenset(
     {
         "--add-dir",
@@ -80,8 +80,6 @@ def option_consumes_next(argument: str, following: str | None) -> bool:
     """Mirror OMP's pre-extension value-consumption contract."""
     if following is None or (argument.startswith("--") and "=" in argument):
         return False
-    if argument == "--plan":
-        return not following.startswith("-")
     if argument in OMP_STRING_VALUE_FLAGS:
         return True
     if argument in OMP_OPTIONAL_VALUE_FLAGS:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import shlex
+import shutil
 import signal
 import subprocess
 import tempfile
@@ -140,12 +141,17 @@ def _reserve_workspace_path(plan: DetachedPlan) -> Path:
 
 def _cleanup_failed_creation(source_root: Path, workspace_path: Path) -> CleanupFailure | None:
     failure = remove_workspace(source_root, workspace_path)
-    if failure is None:
+    if failure is None or not workspace_path.exists():
         return None
-    try:
-        workspace_path.rmdir()
-    except OSError:
+    if (workspace_path / ".git").exists():
         return failure
+
+    recovery = ["rm", "-rf", "--", str(workspace_path)]
+    try:
+        shutil.rmtree(workspace_path)
+    except OSError as exc:
+        detail = f"{failure.detail}; recursive cleanup failed: {exc}"
+        return CleanupFailure(detail=detail, recovery_command=shlex.join(recovery))
     return None
 
 

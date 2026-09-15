@@ -48,7 +48,7 @@ def _init_repo(path: Path) -> str:
     [
         (["--detached"], True),
         (["--model", "test", "--detached"], True),
-        (["--plan", "--detached"], True),
+        (["--plan", "--detached"], False),
         (["--unknown-boolean", "--detached"], True),
         (["--append-system-prompt", "--detached"], False),
         (["--unknown-string", "--detached"], True),
@@ -314,6 +314,94 @@ def test_resolve_worktree_base_falls_back_for_unset_or_relative_config(
 
     expected = Path(expected_suffix) if expected_suffix.startswith("/") else tmp_path / "home" / expected_suffix
     assert result == expected
+
+
+def test_resolve_worktree_base_uses_named_profile_default(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = {"key": "worktree.base", "type": "string"}
+    monkeypatch.setattr(
+        detached_plan.subprocess,
+        "run",
+        lambda *args, **_kwargs: subprocess.CompletedProcess(args[0], 0, stdout=json.dumps(payload), stderr=""),
+    )
+
+    result = detached_plan.resolve_worktree_base(
+        "/bin/omp",
+        source_cwd=tmp_path,
+        profile="review",
+        environ={},
+        home=tmp_path / "home",
+    )
+
+    assert result == (tmp_path / "home" / ".omp" / "profiles" / "review" / "wt").resolve()
+
+
+def test_resolve_worktree_base_uses_existing_xdg_profile_root(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    payload = {"key": "worktree.base", "type": "string"}
+    monkeypatch.setattr(
+        detached_plan.subprocess,
+        "run",
+        lambda *args, **_kwargs: subprocess.CompletedProcess(args[0], 0, stdout=json.dumps(payload), stderr=""),
+    )
+    xdg_root = tmp_path / "xdg" / "omp" / "profiles" / "review"
+    xdg_root.mkdir(parents=True)
+
+    result = detached_plan.resolve_worktree_base(
+        "/bin/omp",
+        source_cwd=tmp_path,
+        profile=None,
+        environ={"OMP_PROFILE": "review", "XDG_DATA_HOME": str(tmp_path / "xdg")},
+        home=tmp_path / "home",
+    )
+
+    assert result == xdg_root / "wt"
+
+
+def test_resolve_worktree_base_reports_config_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        detached_plan.subprocess,
+        "run",
+        lambda *args, **_kwargs: subprocess.CompletedProcess(args[0], 1, stdout="", stderr="invalid profile\n"),
+    )
+
+    with pytest.raises(LauncherError, match="invalid profile"):
+        detached_plan.resolve_worktree_base(
+            "/bin/omp",
+            source_cwd=tmp_path,
+            profile=None,
+            environ={},
+            home=tmp_path / "home",
+        )
+
+
+def test_plan_detached_launch_rejects_worktree_base_inside_source(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    _init_repo(repo)
+    monkeypatch.setattr(
+        detached_plan,
+        "resolve_worktree_base",
+        lambda *_args, **_kwargs: repo / "managed",
+    )
+
+    with pytest.raises(LauncherError, match="worktree base to be outside"):
+        detached_plan.plan_detached_launch(
+            repo,
+            ["--detached"],
+            omp_executable="/bin/omp",
+            environ={},
+            home=tmp_path / "home",
+        )
 
 
 def test_plan_detached_launch_combines_validated_inputs(

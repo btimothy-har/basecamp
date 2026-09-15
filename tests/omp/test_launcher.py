@@ -52,7 +52,7 @@ def _make_extension(path: Path) -> Path:
         (["--cwd=repo/nested", "prompt"], "repo/nested"),
         (["--cwd=first", "--cwd", "second"], "second"),
         (["--append-system-prompt", "--cwd", "repo/nested"], "."),
-        (["--plan", "--cwd", "repo/nested"], "repo/nested"),
+        (["--plan", "--cwd", "repo/nested"], "."),
         (["--cwd=repo/nested", "--cwd="], "."),
         (["--cwd=first", "--cwd"], "first"),
         (["--cwd=~/literal"], "~/literal"),

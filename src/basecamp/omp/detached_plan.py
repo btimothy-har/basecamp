@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -199,6 +200,9 @@ def plan_detached_launch(
         environ=environ,
         home=active_home,
     )
+    if worktree_base == source.root or worktree_base.is_relative_to(source.root):
+        message = f"Detached mode requires OMP's worktree base to be outside the source checkout: {worktree_base}"
+        raise LauncherError(message)
     return DetachedPlan(arguments=arguments, source=source, worktree_base=worktree_base)
 
 
@@ -264,7 +268,7 @@ def resolve_worktree_base(
         raise LauncherError(message) from exc
     configured = payload.get("value") if isinstance(payload, dict) else None
     config_base = _absolute_omp_path(configured if isinstance(configured, str) else None, home)
-    return config_base or home / ".omp" / "wt"
+    return config_base or _default_worktree_base(profile, environ, home)
 
 
 def _run_git(cwd: Path, *args: str) -> str:
@@ -287,14 +291,43 @@ def _run_git(cwd: Path, *args: str) -> str:
 
 
 def _absolute_omp_path(value: str | None, home: Path) -> Path | None:
-    if not value:
+    trimmed = value.strip() if value is not None else ""
+    if not trimmed:
         return None
-    if value == "~":
+    if trimmed == "~":
         return home
-    if value.startswith("~/"):
-        return (home / value[2:]).resolve()
-    path = Path(value)
+    if trimmed.startswith("~/"):
+        return (home / trimmed[2:]).resolve()
+    path = Path(trimmed)
     return path.resolve() if path.is_absolute() else None
+
+
+def _default_worktree_base(
+    profile: str | None,
+    environ: Mapping[str, str],
+    home: Path,
+) -> Path:
+    active_profile = _active_profile(profile, environ)
+    config_root = home / environ.get("PI_CONFIG_DIR", ".omp")
+    if active_profile is not None:
+        config_root = config_root / "profiles" / active_profile
+
+    xdg_data = environ.get("XDG_DATA_HOME")
+    if sys.platform in {"darwin", "linux"} and xdg_data:
+        xdg_root = Path(xdg_data) / "omp"
+        if active_profile is not None:
+            xdg_root = xdg_root / "profiles" / active_profile
+        if xdg_root.is_absolute() and xdg_root.exists():
+            return (xdg_root / "wt").resolve()
+    return (config_root / "wt").resolve()
+
+
+def _active_profile(profile: str | None, environ: Mapping[str, str]) -> str | None:
+    selected = profile
+    if selected is None:
+        selected = environ.get("OMP_PROFILE") if "OMP_PROFILE" in environ else environ.get("PI_PROFILE")
+    normalized = selected.strip() if selected is not None else ""
+    return None if not normalized or normalized == "default" else normalized
 
 
 def _flag_name(argument: str) -> str:

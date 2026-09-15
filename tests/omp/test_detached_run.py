@@ -92,6 +92,26 @@ def test_create_workspace_reports_omp_failure(
         detached_run.create_workspace(plan, omp_executable="/tools/omp", environ={})
 
 
+def test_create_workspace_removes_unregistered_partial_output(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    plan = _plan(tmp_path)
+
+    def fail_after_writing(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        if command[0] != "git":
+            workspace = Path(command[-2])
+            (workspace / "partial.txt").write_text("partial")
+        return subprocess.CompletedProcess(command, 1, stdout="", stderr="creation failed\n")
+
+    monkeypatch.setattr(detached_run, "_run_captured", fail_after_writing)
+
+    with pytest.raises(LauncherError, match="creation failed"):
+        detached_run.create_workspace(plan, omp_executable="/tools/omp", environ={})
+
+    assert list(plan.worktree_base.iterdir()) == []
+
+
 def test_supervise_omp_uses_requested_cwd_environment_and_status(tmp_path: Path) -> None:
     capture = tmp_path / "capture.txt"
     child = tmp_path / "child.py"
