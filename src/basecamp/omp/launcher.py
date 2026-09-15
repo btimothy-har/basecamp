@@ -6,6 +6,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -17,6 +18,46 @@ from basecamp.core.settings import settings
 
 _GIT_TIMEOUT_SECONDS = 5
 
+# Bomp must select roots before OMP starts. These pinned 18.1.21 built-ins
+# consume any following token, even a flag-looking one such as ``--cwd``.
+_OMP_STRING_VALUE_FLAGS = frozenset(
+    {
+        "--add-dir",
+        "--alias",
+        "--append-system-prompt",
+        "--api-key",
+        "--approval-mode",
+        "--config",
+        "--cwd",
+        "--export",
+        "--extension",
+        "--fork",
+        "--hook",
+        "--max-time",
+        "--mode",
+        "--model",
+        "--models",
+        "--plan",
+        "--plan-yolo-into",
+        "--plugin-dir",
+        "--prewalk-into",
+        "--profile",
+        "--prompt-cache-key",
+        "--provider",
+        "--provider-session-id",
+        "--service-tier",
+        "--session-dir",
+        "--skills",
+        "--slow",
+        "--smol",
+        "--system-prompt",
+        "--thinking",
+        "--tools",
+        "--trusted-extension",
+        "-e",
+    }
+)
+
 
 @dataclass(frozen=True)
 class LaunchPlan:
@@ -27,24 +68,47 @@ class LaunchPlan:
     warnings: tuple[str, ...]
 
 
-def effective_cwd(cwd: Path, args: Sequence[str]) -> Path:
+def effective_cwd(
+    cwd: Path,
+    args: Sequence[str],
+    *,
+    home: Path | None = None,
+) -> Path:
     """Resolve the directory OMP will use without consuming its arguments."""
     selected = cwd
+    has_explicit_cwd = False
+    allows_home = False
     index = 0
     while index < len(args):
         argument = args[index]
         if argument == "--":
             break
         if argument == "--cwd" and index + 1 < len(args):
-            selected = _resolve_cli_path(args[index + 1], cwd)
+            value = args[index + 1]
+            selected = _resolve_cli_path(value, cwd)
+            has_explicit_cwd = bool(value)
             index += 2
             continue
         if argument.startswith("--cwd="):
             value = argument.removeprefix("--cwd=")
-            if value:
-                selected = _resolve_cli_path(value, cwd)
+            selected = _resolve_cli_path(value, cwd)
+            has_explicit_cwd = bool(value)
+            index += 1
+            continue
+        if argument == "--allow-home" or argument.startswith("--allow-home="):
+            allows_home = True
+            index += 1
+            continue
+        if argument in _OMP_STRING_VALUE_FLAGS and index + 1 < len(args):
+            index += 2
+            continue
         index += 1
-    return selected.resolve()
+    return _apply_omp_home_fallback(
+        selected.resolve(),
+        home=(home or Path.home()).resolve(),
+        has_explicit_cwd=has_explicit_cwd,
+        allows_home=allows_home,
+    )
 
 
 def canonical_checkout(cwd: Path) -> Path | None:
@@ -83,7 +147,7 @@ def build_launch(
 ) -> LaunchPlan:
     """Build OMP argv from the configured project containing the effective cwd."""
     active_home = (home or Path.home()).resolve()
-    checkout = canonical_checkout(effective_cwd(cwd, args))
+    checkout = canonical_checkout(effective_cwd(cwd, args, home=active_home))
     project_name, roots, warnings = _project_roots(checkout, projects, active_home)
     generated = ["--extension", str(extension_dir.resolve())]
     generated.extend(f"--add-dir={root}" for root in roots)
@@ -102,9 +166,13 @@ def _project_roots(
     if checkout is None:
         return None, [], []
 
-    matches = [
-        (name, project) for name, project in projects.items() if _configured_path(project.repo_root, home) == checkout
-    ]
+    matches: list[tuple[str, ProjectConfig]] = []
+    for name, project in projects.items():
+        try:
+            if _configured_path(project.repo_root, home) == checkout:
+                matches.append((name, project))
+        except (OSError, RuntimeError):
+            continue
     if not matches:
         return None, [], []
     if len(matches) > 1:
@@ -118,8 +186,13 @@ def _project_roots(
     roots: list[Path] = []
     warnings: list[str] = []
     for configured in project.additional_dirs:
-        root = _configured_path(configured, home)
-        if root.is_dir() and os.access(root, os.R_OK | os.X_OK):
+        try:
+            root = _configured_path(configured, home)
+            is_available = root.is_dir() and os.access(root, os.R_OK | os.X_OK)
+        except (OSError, RuntimeError):
+            root = _absolute_configured_path(configured, home)
+            is_available = False
+        if is_available:
             roots.append(root)
         else:
             warnings.append(f"Skipping unavailable Basecamp project directory: {root}")
@@ -127,19 +200,39 @@ def _project_roots(
 
 
 def _configured_path(value: str, home: Path) -> Path:
+    return _absolute_configured_path(value, home).resolve()
+
+
+def _absolute_configured_path(value: str, home: Path) -> Path:
     if value == "~":
         return home
     if value.startswith("~/"):
-        return (home / value[2:]).resolve()
+        return home / value[2:]
     path = Path(value)
-    if not path.is_absolute():
-        path = home / path
-    return path.resolve()
+    return path if path.is_absolute() else home / path
 
 
 def _resolve_cli_path(value: str, cwd: Path) -> Path:
-    path = Path(value).expanduser()
+    path = Path(value)
     return path if path.is_absolute() else cwd / path
+
+
+def _apply_omp_home_fallback(
+    selected: Path,
+    *,
+    home: Path,
+    has_explicit_cwd: bool,
+    allows_home: bool,
+) -> Path:
+    if has_explicit_cwd or allows_home or selected != home:
+        return selected
+    for candidate in (home / "tmp", Path("/tmp"), Path("/var/tmp"), Path(tempfile.gettempdir())):
+        try:
+            if candidate.is_dir() and candidate.resolve() != selected:
+                return candidate.resolve()
+        except OSError:
+            continue
+    return selected
 
 
 def _is_omp_package(path: Path) -> bool:

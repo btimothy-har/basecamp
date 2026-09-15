@@ -49,6 +49,10 @@ def _make_extension(path: Path) -> Path:
         (["--cwd", "repo/nested", "prompt"], "repo/nested"),
         (["--cwd=repo/nested", "prompt"], "repo/nested"),
         (["--cwd=first", "--cwd", "second"], "second"),
+        (["--append-system-prompt", "--cwd", "repo/nested"], "."),
+        (["--cwd=repo/nested", "--cwd="], "."),
+        (["--cwd=first", "--cwd"], "first"),
+        (["--cwd=~/literal"], "~/literal"),
         (["--", "--cwd=ignored"], "."),
     ],
 )
@@ -58,6 +62,17 @@ def test_effective_cwd_observes_omp_syntax_without_consuming_args(
     expected: str,
 ) -> None:
     assert launcher.effective_cwd(tmp_path, args) == (tmp_path / expected).resolve()
+
+
+def test_effective_cwd_mirrors_omp_home_fallback(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    fallback = home / "tmp"
+    fallback.mkdir(parents=True)
+
+    assert launcher.effective_cwd(home, [], home=home) == fallback.resolve()
+    assert launcher.effective_cwd(home, ["--cwd="], home=home) == fallback.resolve()
+    assert launcher.effective_cwd(home, ["--allow-home"], home=home) == home.resolve()
+    assert launcher.effective_cwd(home, ["--cwd", str(home)], home=home) == home.resolve()
 
 
 def test_build_launch_matches_subdirectory_and_preserves_all_user_args(tmp_path: Path) -> None:
@@ -203,6 +218,31 @@ def test_build_launch_warns_and_skips_unavailable_directories(
         f"Skipping unavailable Basecamp project directory: {unreadable.resolve()}",
         f"Skipping unavailable Basecamp project directory: {missing.resolve()}",
     )
+
+
+def test_build_launch_skips_directory_that_cannot_be_resolved(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    cyclic = tmp_path / "cyclic"
+    available = tmp_path / "available"
+    _init_repo(repo)
+    cyclic.symlink_to(cyclic)
+    available.mkdir()
+
+    plan = launcher.build_launch(
+        repo,
+        [],
+        {
+            "demo": ProjectConfig(
+                repo_root=str(repo),
+                additional_dirs=[str(cyclic), str(available)],
+            )
+        },
+        tmp_path / "omp",
+        home=tmp_path,
+    )
+
+    assert plan.warnings == (f"Skipping unavailable Basecamp project directory: {cyclic}",)
+    assert f"--add-dir={available.resolve()}" in plan.argv
 
 
 def test_resolve_extension_dir_prefers_editable_source_checkout(tmp_path: Path) -> None:
