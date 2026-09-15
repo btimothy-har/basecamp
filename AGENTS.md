@@ -10,7 +10,7 @@ The repo is organized by the artifacts it ships:
 |---------|-----------|---------|
 | Basecamp Pi extension | `pi/` (`pi/extension.ts` + `pi/<domain>/`) | The legacy Pi package, registered from the repo root: all session, workspace, workflow, and agent behavior, assembled from domain modules |
 | Basecamp OMP extension | `omp/` | The independently loadable Oh My Pi migration target: portable skills plus OMP-native behavior, registered from its own package root |
-| `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, and `basecamp.hub` (daemon + agents dashboard) subpackages |
+| `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, `basecamp.hub` (daemon + agents dashboard), and `basecamp.omp` (migration launcher) subpackages |
 
 `evals/` is deliberately outside the shipped products. It contains repository-local evaluation harness integrations and may depend on evaluator APIs that production Basecamp never imports.
 
@@ -18,9 +18,9 @@ The repo is organized by the artifacts it ships:
 
 The repo root is the legacy Pi package (`package.json` / `tsconfig.json` / `biome.json`); `omp/package.json` and `omp/tsconfig.json` own the OMP extension's Bun toolchain. Python tooling is `pyproject.toml` + `install.py` + `Makefile`. Two boundary lints live in `scripts/`: `check-boundaries.ts` and `check-file-length.ts` (see File Length Limits).
 
-`pi/` holds the legacy TypeScript extension — one domain per directory under `pi/<domain>/`, composed by `pi/extension.ts` in a fixed order (core first). `omp/` holds the independent OMP extension and portable skills. `src/basecamp/` holds the Python package. The per-directory layout is visible on the filesystem; domain architecture depth lives in `docs/architecture/`.
+`pi/` holds the legacy TypeScript extension — one domain per directory under `pi/<domain>/`, composed by `pi/extension.ts` in a fixed order (core first). `omp/` holds the independent OMP extension and portable skills. `src/basecamp/` holds the Python package, including the `bomp` launcher under `src/basecamp/omp/`. The per-directory layout is visible on the filesystem; domain architecture depth lives in `docs/architecture/`.
 
-`basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.)
+`basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.) `bomp` is an additional OMP migration entrypoint, not the legacy Pi default: it loads the root `omp/` plugin, prepends a matched project's existing additional directories as native OMP flags, uses OMP's prompt and context discovery, and never mutates OMP configuration.
 
 Legacy Pi TypeScript imports use Node subpath aliases, never parent traversal: `./sibling.ts` is the only legal relative form and every `../` is spelled `#<domain>/…`. Cross-domain, `#core/*` is free (from inside core too) and other domains resolve only via `#<domain>/index.ts`; core imports no other domain. Enforced by `scripts/check-boundaries.ts` in `npm run check`. OMP code is a separate type graph and never imports executable modules from `pi/`.
 
@@ -122,8 +122,8 @@ Workstreams are durable, **repo-neutral** coordination state owned by the `works
 ## Development
 
 - **Python**: 3.12+, managed with `uv`
-- **Install (dev)**: `uv run install.py` (installs the `basecamp` tool, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
-- **Iterate on the CLI**: `uv run install.py` installs a **non-editable** snapshot of `basecamp` on PATH, so for live iteration against your working tree run the CLI via `uv run basecamp <cmd>` (the `uv sync` editable dev venv) rather than re-installing after each change
+- **Install (dev)**: `uv run install.py` (installs the `basecamp` and `bomp` tools, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
+- **Iterate on the CLI**: `uv run install.py` installs a **non-editable** snapshot of `basecamp` on PATH, so for live iteration against your working tree run entrypoints via `uv run basecamp <cmd>` or `uv run bomp <args>` (the `uv sync` editable dev venv) rather than re-installing after each change
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
 - **Legacy TypeScript check**: `npm run check` at the repo root (tsc whole-graph + biome + import-boundary + file-length checks)
 - **OMP check**: `bun install --cwd omp --frozen-lockfile` then `bun run --cwd omp check`; OMP dependencies are isolated from the root Node graph
@@ -142,7 +142,7 @@ These repository caps are hard and take precedence over the shipped Pi agent's s
 ### Testing
 
 - **Run all**: `make test` from repo root runs the Python, legacy Node, and OMP Bun suites.
-- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` is root `tests/`, with domain suites under `tests/core/`, `tests/workspace/`, `tests/hub/`, `tests/config_cli/`, and `tests/evals/` beside the CLI-shell tests; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
+- **Python**: `uv run pytest` uses root `pyproject.toml` — `testpaths` is root `tests/`, with domain suites under `tests/core/`, `tests/workspace/`, `tests/hub/`, `tests/omp/`, `tests/config_cli/`, and `tests/evals/` beside the CLI-shell tests; imports resolve via the editable install (`uv sync`), no `pythonpath` stitching.
 - **Legacy TypeScript/JavaScript**: `npm test` runs the Node test runner over every domain's `pi/<domain>/**/*.test.ts` (one child process per test file), `pi/extension.test.ts` (whole-graph load + registration under strict Node), and the pure dashboard-model tests under `tests/hub/*.test.js`. A new domain's tests must be added to the `test` glob list in `package.json`.
 - **OMP TypeScript**: `bun test --cwd omp` runs `omp/**/*.test.ts` against the separately locked OMP API.
 - **Tests live beside their code**: `pi/<domain>/**/tests/` and `omp/<domain>/**/tests/` (TS), and `tests/<domain>/` (Python).
