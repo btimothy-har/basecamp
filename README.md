@@ -13,6 +13,18 @@ pi
 
 Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-works/pi).
 
+## OMP migration
+
+`bomp` is an additional migration launcher for Basecamp's independent [Oh My Pi](https://github.com/can1357/oh-my-pi) plugin; the Pi quick start above remains the default. Install Basecamp as above, then make sure the `omp` command and Bun 1.3.14+ are available:
+
+```bash
+bomp [OMP arguments...]
+```
+
+`bomp` explicitly loads Basecamp's bundled `omp/` plugin and passes every user argument through unchanged. When launched from a configured Basecamp project's repository, a subdirectory, or a linked worktree, it first prepends configured additional directories that currently exist as native OMP `--add-dir=<absolute-path>` flags.
+
+The migration surface is currently limited to five portable skills (`data-analysis`, `data-warehousing`, `marimo`, `python-development`, and `sql`) and OMP-native file-length reminders. OMP retains its default prompt and context discovery: `bomp` does not apply Basecamp's Pi prompt replacement, carry over configured `context` or `working_style`, or modify OMP configuration.
+
 ## What basecamp does
 
 - **Replaces the default system prompt**: full control over agent behavior, consistent across sessions
