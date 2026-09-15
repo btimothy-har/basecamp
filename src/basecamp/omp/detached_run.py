@@ -9,7 +9,7 @@ import signal
 import subprocess
 import tempfile
 from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
 from types import FrameType
@@ -69,7 +69,12 @@ def create_workspace(
         command.extend(("--profile", plan.arguments.profile))
     command.extend(("worktree", "add", "--detach", "--quiet", str(workspace_path), "HEAD"))
     try:
-        result = _run_captured(command, cwd=plan.source.root, environ=environ)
+        result = _run_captured(
+            command,
+            cwd=plan.source.root,
+            environ=environ,
+            isolate_from_terminal=True,
+        )
     except (OSError, subprocess.SubprocessError) as exc:
         failure = _cleanup_failed_creation(plan.source.root, workspace_path)
         suffix = _cleanup_suffix(failure)
@@ -120,7 +125,7 @@ def remove_workspace(source_root: Path, workspace_path: Path) -> CleanupFailure 
     """Force-remove only the initial checkout owned by this invocation."""
     command = ["git", "-C", str(source_root), "worktree", "remove", "--force", str(workspace_path)]
     try:
-        result = _run_captured(command)
+        result = _run_captured(command, isolate_from_terminal=True)
     except (OSError, subprocess.SubprocessError) as exc:
         return CleanupFailure(detail=str(exc), recovery_command=shlex.join(command))
     if result.returncode == 0:
@@ -200,6 +205,7 @@ def _run_captured(
     *,
     cwd: Path | None = None,
     environ: Mapping[str, str] | None = None,
+    isolate_from_terminal: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     process = subprocess.Popen(
         list(command),
@@ -208,8 +214,10 @@ def _run_captured(
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        start_new_session=isolate_from_terminal,
     )
-    with _supervisor_signals(process):
+    signal_context = nullcontext() if isolate_from_terminal else _supervisor_signals(process)
+    with signal_context:
         try:
             stdout, stderr = process.communicate(timeout=_COMMAND_TIMEOUT_SECONDS)
         except BaseException:
