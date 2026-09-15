@@ -1,7 +1,8 @@
 import { type ExtensionAPI, Text, type Theme } from "@oh-my-pi/pi-coding-agent";
+import { findRepoRoot } from "@oh-my-pi/pi-coding-agent/capability/fs";
 import { buildReviewArtifact, prepareReview, reviewPriorityCounts } from "./artifact.ts";
 import { navigateReviewFindings } from "./navigator/index.ts";
-import { findRepositoryRoot, repositoryRelativePath } from "./paths.ts";
+import { repositoryRelativePath } from "./paths.ts";
 import {
 	createReviewFindingsParameters,
 	type FeedbackStatus,
@@ -67,7 +68,7 @@ export default function registerReviewTool(pi: ExtensionAPI): void {
 		loadMode: "essential",
 		async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
 			const params = rawParams as ReviewFindingsInput;
-			const repositoryRoot = await findRepositoryRoot(ctx.cwd);
+			const repositoryRoot = await findRepoRoot(ctx.cwd);
 			const prepared = prepareReview({
 				...params,
 				findings: params.findings.map((finding) => ({

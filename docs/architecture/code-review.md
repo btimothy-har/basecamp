@@ -33,7 +33,7 @@ Persistent-session artifacts survive resume and rewind, move with the session, c
 - `omp/review/schema.ts`: strict native-shaped tool input and versioned artifact types.
 - `omp/review/artifact.ts`: deterministic ordering, IDs, counts, and artifact construction.
 - `omp/review/tool.ts`: `review_findings`, artifact save, and passive transcript renderer.
-- `omp/review/paths.ts`: repository-root discovery and finding-path normalization.
+- `omp/review/paths.ts`: in-repository finding-path normalization; OMP's `findRepoRoot` owns root discovery.
 - `omp/review/navigator/`: keyboard model, terminal rendering, and `ui.custom` list/card loop.
 
 ## Legacy Pi review
