@@ -21,7 +21,19 @@ Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-w
 bomp [OMP arguments...]
 ```
 
-`bomp` explicitly loads Basecamp's bundled `omp/` plugin and passes every user argument through unchanged. When launched from a configured Basecamp project's repository, a subdirectory, or a linked worktree, it first prepends configured additional directories that currently exist as native OMP `--add-dir=<absolute-path>` flags.
+Without `--detached`, `bomp` preserves every user-supplied OMP argument, including `--cwd`, and directly execs OMP. It explicitly loads Basecamp's bundled `omp/` plugin; when launched from a configured Basecamp project's repository, a subdirectory, or a linked worktree, it first prepends configured additional directories that currently exist as native OMP `--add-dir=<absolute-path>` flags.
+
+For a disposable session from the source checkout's current commit:
+
+```bash
+bomp --detached [OMP arguments...]
+```
+
+Detached mode requires a clean Git checkout and creates a new detached-HEAD worktree at source `HEAD` under OMP's worktree base. A source `--cwd` may select a nested directory; only in detached mode does `bomp` consume it and start OMP at the corresponding path in the new worktree.
+
+When OMP finally exits, `bomp` force-removes the initial checkout, discarding staged, unstaged, untracked, and ignored files plus detached commits. To retain code, run OMP's native `/wt <branch>` before exit; it switches to a branch worktree and moves the live transcript. Chat history otherwise remains ordinary durable OMP history. After cleanup, an ordinary `bomp --resume <id>` lets OMP interactively re-root a transcript whose recorded working directory was removed.
+
+If cleanup fails, `bomp` prints the exact targeted `git -C '<source-root>' worktree remove --force '<initial-worktree>'` recovery command. Use that command; do not run the broad `omp worktree clear --all` command.
 
 The migration surface is currently limited to five portable skills (`data-analysis`, `data-warehousing`, `marimo`, `python-development`, and `sql`) and OMP-native file-length reminders. OMP retains its default prompt and context discovery: `bomp` does not apply Basecamp's Pi prompt replacement, carry over configured `context` or `working_style`, or modify OMP configuration.
 

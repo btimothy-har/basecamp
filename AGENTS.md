@@ -20,7 +20,7 @@ The repo root is the legacy Pi package (`package.json` / `tsconfig.json` / `biom
 
 `pi/` holds the legacy TypeScript extension — one domain per directory under `pi/<domain>/`, composed by `pi/extension.ts` in a fixed order (core first). `omp/` holds the independent OMP extension and portable skills. `src/basecamp/` holds the Python package, including the `bomp` launcher under `src/basecamp/omp/`. The per-directory layout is visible on the filesystem; domain architecture depth lives in `docs/architecture/`.
 
-`basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.) `bomp` is an additional OMP migration entrypoint, not the legacy Pi default: it loads the root `omp/` plugin, prepends a matched project's existing additional directories as native OMP flags, uses OMP's prompt and context discovery, and never mutates OMP configuration.
+`basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.) `bomp` is an additional OMP migration entrypoint, not the legacy Pi default. Ordinary launches load the root `omp/` plugin, prepend a matched project's existing additional directories, preserve every supplied OMP argument, use OMP's prompt and context discovery, never mutate OMP configuration, and directly exec OMP; `--detached` selects the disposable-worktree supervisor described below.
 
 Legacy Pi TypeScript imports use Node subpath aliases, never parent traversal: `./sibling.ts` is the only legal relative form and every `../` is spelled `#<domain>/…`. Cross-domain, `#core/*` is free (from inside core too) and other domains resolve only via `#<domain>/index.ts`; core imports no other domain. Enforced by `scripts/check-boundaries.ts` in `npm run check`. OMP code is a separate type graph and never imports executable modules from `pi/`.
 
@@ -84,6 +84,14 @@ Legacy TypeScript ships as **one** Pi extension (`pi/extension.ts`; manifest = t
 The OMP migration target is a separate Bun package rooted at `omp/`; OMP loads `omp/extension.ts` through that package's `omp.extensions` manifest. Its executable modules use only OMP APIs and remain independently loadable from legacy Pi.
 
 Core owns the substrate the other domains build on: framework UI (`pi/core/ui/`, not its own domain), git/worktree mechanics (`pi/core/git/`), the hub-daemon connector (`pi/core/hub/`), and the **agent-dispatch primitive** (`pi/core/swarm/`, `#core/swarm` — a primitive rather than a feature, because multiple domains dispatch agents). The feature domains ride on that substrate: `pull-request` owns the primary-only `/pull-request` prompt command and authoritative PR guidance skill; `code-review` owns the primary-only `/code-review` prompt command and authoritative review skill while consuming `#core/swarm`; and `workstreams` also consumes `#core/swarm`. The Python daemon and browser dashboard live under `src/basecamp/hub/`.
+
+### OMP Detached Sessions
+
+Ordinary `bomp` remains a direct-exec adapter that preserves all OMP arguments. `bomp --detached` is instead a single-invocation supervisor: it requires a clean source checkout, consumes its own `--detached` and source `--cwd` (which may be nested), resolves OMP's worktree base, and creates an initial detached-HEAD checkout at source `HEAD` through the public `omp [--profile <name>] worktree add --detach --quiet <path> HEAD` command.
+
+The child starts at the corresponding path inside that checkout so OMP owns repository context and its native `/wt <branch>` restart into a branch worktree can move the live transcript. The supervisor waits for final exit, then force-removes only the initial checkout with `git -C '<source-root>' worktree remove --force '<initial-worktree>'`; staged, unstaged, untracked, and ignored files and detached commits there are deliberately discarded. Retaining code requires `/wt <branch>` before exit. OMP still owns ordinary durable chat history, and an ordinary `bomp --resume <id>` can interactively re-root a transcript after its recorded cwd is removed.
+
+A cleanup failure prints that exact, shell-quoted targeted Git command; never substitute the broad `omp worktree clear --all`. No Basecamp daemon or persistent registry participates in this lifecycle.
 
 ### Diff Surface
 
