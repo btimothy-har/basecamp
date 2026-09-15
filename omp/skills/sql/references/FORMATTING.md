@@ -177,7 +177,6 @@ SELECT
 |------------|---------|
 | Keywords uppercase | `SELECT`, `FROM`, `WHERE`, `JOIN` |
 | Functions uppercase | `COUNT()`, `COALESCE()`, `DATE_TRUNC()` |
-| Explicit `INNER JOIN` | Never bare `JOIN` |
 | Explicit `AS` for aliases | `FROM table AS t`, `column AS alias` |
 
 ## Column Order

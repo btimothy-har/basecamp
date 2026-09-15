@@ -161,23 +161,6 @@ LEFT JOIN employees AS e_dir
 
 ## JOINs
 
-### Explicit JOIN Syntax
-
-Always use explicit `INNER JOIN`, never implicit `JOIN`.
-
-```sql
--- BAD: Implicit JOIN type
-FROM orders o
-JOIN users u ON o.user_id = u.id
-
--- GOOD: Explicit JOIN with meaningful aliases
-FROM orders AS o
-INNER JOIN users AS buyer
-  ON o.user_id = buyer.id
-LEFT JOIN users AS seller
-  ON o.seller_id = seller.id
-```
-
 ### JOIN Organization
 
 1. **Order JOINs logically** — main tables first, lookups last
@@ -195,31 +178,4 @@ LEFT JOIN users AS seller
 -- Get shipping address (optional)
 LEFT JOIN addresses AS ship_addr
   ON o.shipping_address_id = ship_addr.id
-```
-
-## Set Operations
-
-### UNION ALL vs UNION DISTINCT
-
-Default to `UNION ALL`. Use `UNION DISTINCT` only when deduplication is explicitly needed.
-
-| Operator | Use When |
-|----------|----------|
-| `UNION ALL` | Sets are mutually exclusive (default) |
-| `UNION DISTINCT` | Duplicates are expected and need removal |
-
-```sql
--- GOOD: UNION ALL for mutually exclusive sets
-SELECT id, 'pending' AS status
-FROM pending_orders
-UNION ALL
-SELECT id, 'completed' AS status
-FROM completed_orders
-
--- GOOD: UNION DISTINCT with explanation
-SELECT email
-FROM customers
-UNION DISTINCT  -- Some users may appear in both tables
-SELECT email
-FROM newsletter_subscribers
 ```
