@@ -39,6 +39,17 @@ class CleanupFailure:
     recovery_command: str
 
 
+@dataclass
+class DeferredSignals:
+    """Termination signal deferred until an owned workspace is cleaned."""
+
+    received: int | None = None
+
+    @property
+    def status(self) -> int | None:
+        return 128 + self.received if self.received is not None else None
+
+
 def create_workspace(
     plan: DetachedPlan,
     *,
@@ -116,6 +127,29 @@ def remove_workspace(source_root: Path, workspace_path: Path) -> CleanupFailure 
         return None
     detail = result.stderr.strip() or f"exit status {result.returncode}"
     return CleanupFailure(detail=detail, recovery_command=shlex.join(command))
+
+
+@contextmanager
+def defer_termination_signals() -> Iterator[DeferredSignals]:
+    """Delay process termination across gaps between managed child commands."""
+    state = DeferredSignals()
+    previous: dict[signal.Signals, signal.Handlers] = {}
+
+    def record(process_signal: int, _frame: FrameType | None) -> None:
+        state.received = state.received or process_signal
+
+    process_signals = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, "SIGQUIT"):
+        process_signals.append(signal.SIGQUIT)
+    if hasattr(signal, "SIGHUP"):
+        process_signals.append(signal.SIGHUP)
+    try:
+        for process_signal in process_signals:
+            previous[process_signal] = signal.signal(process_signal, record)
+        yield state
+    finally:
+        for process_signal, handler in previous.items():
+            signal.signal(process_signal, handler)
 
 
 def report_cleanup_failure(

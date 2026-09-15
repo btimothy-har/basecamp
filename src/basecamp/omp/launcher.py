@@ -16,7 +16,13 @@ from basecamp.core.projects import load_projects
 from basecamp.core.settings import settings
 from basecamp.omp.arguments import effective_cwd
 from basecamp.omp.detached_plan import is_detached_requested, plan_detached_launch
-from basecamp.omp.detached_run import create_workspace, remove_workspace, report_cleanup_failure, supervise_omp
+from basecamp.omp.detached_run import (
+    create_workspace,
+    defer_termination_signals,
+    remove_workspace,
+    report_cleanup_failure,
+    supervise_omp,
+)
 
 _GIT_TIMEOUT_SECONDS = 5
 
@@ -207,25 +213,35 @@ def _run_detached_launch(
         omp_executable=omp_executable,
         environ=environ,
     )
-    workspace = create_workspace(detached, omp_executable=omp_executable, environ=environ)
-    try:
-        print(
-            f"bomp: detached worktree {workspace.path}; use /wt <branch> before exit to retain code.",
-            file=sys.stderr,
-        )
-        _print_warnings(workspace.warnings)
-        launch = build_launch(
-            workspace.launch_cwd,
-            detached.arguments.omp_args,
-            projects,
-            package,
-        )
-        _print_warnings(launch.warnings)
-        return supervise_omp(launch.argv, cwd=workspace.launch_cwd, environ=environ)
-    finally:
-        failure = remove_workspace(detached.source.root, workspace.path)
-        if failure is not None:
-            report_cleanup_failure(failure, workspace_path=workspace.path, stream=sys.stderr)
+    status: int | None = None
+    with defer_termination_signals() as termination:
+        workspace = create_workspace(detached, omp_executable=omp_executable, environ=environ)
+        try:
+            if termination.status is None:
+                print(
+                    f"bomp: detached worktree {workspace.path}; use /wt <branch> before exit to retain code.",
+                    file=sys.stderr,
+                )
+                _print_warnings(workspace.warnings)
+                launch = build_launch(
+                    workspace.launch_cwd,
+                    detached.arguments.omp_args,
+                    projects,
+                    package,
+                )
+                _print_warnings(launch.warnings)
+            if termination.status is None:
+                status = supervise_omp(launch.argv, cwd=workspace.launch_cwd, environ=environ)
+        finally:
+            failure = remove_workspace(detached.source.root, workspace.path)
+            if failure is not None:
+                report_cleanup_failure(failure, workspace_path=workspace.path, stream=sys.stderr)
+    if termination.status is not None:
+        return termination.status
+    if status is None:
+        message = "Detached OMP launch ended without a child status."
+        raise LauncherError(message)
+    return status
 
 
 def _print_warnings(warnings: Sequence[str]) -> None:

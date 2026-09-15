@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import signal
 import subprocess
 from pathlib import Path
 
@@ -445,3 +446,44 @@ def test_run_launch_reports_cleanup_failure_without_overriding_child_status(
 
     assert status == 19
     assert "could not remove detached worktree" in capsys.readouterr().err
+
+
+def test_run_launch_defers_termination_until_owned_workspace_is_cleaned(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    extension = _make_extension(tmp_path / "omp")
+    source = tmp_path / "source"
+    workspace_path = tmp_path / "worktree"
+    detached = DetachedPlan(
+        arguments=DetachedArguments(source_cwd=source, omp_args=(), profile=None),
+        source=GitSource(root=source, relative_cwd=Path("."), head="abc1234"),
+        worktree_base=tmp_path,
+    )
+    workspace = DetachedWorkspace(path=workspace_path, launch_cwd=workspace_path, warnings=())
+    cleaned: list[tuple[Path, Path]] = []
+
+    def create_then_terminate(*_args: object, **_kwargs: object) -> DetachedWorkspace:
+        launcher.os.kill(launcher.os.getpid(), signal.SIGTERM)
+        return workspace
+
+    monkeypatch.setattr(launcher.shutil, "which", lambda _command: "/tools/omp")
+    monkeypatch.setattr(launcher, "plan_detached_launch", lambda *_args, **_kwargs: detached)
+    monkeypatch.setattr(launcher, "create_workspace", create_then_terminate)
+    monkeypatch.setattr(launcher, "remove_workspace", lambda root, path: cleaned.append((root, path)))
+    monkeypatch.setattr(
+        launcher,
+        "supervise_omp",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("child must not start")),
+    )
+
+    status = launcher.run_launch(
+        ["--detached"],
+        cwd=tmp_path,
+        projects={},
+        extension_dir=extension,
+        environ={},
+    )
+
+    assert status == 128 + signal.SIGTERM
+    assert cleaned == [(source, workspace_path)]

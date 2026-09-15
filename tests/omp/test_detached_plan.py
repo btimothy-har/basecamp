@@ -49,6 +49,8 @@ def _init_repo(path: Path) -> str:
         (["--detached"], True),
         (["--model", "test", "--detached"], True),
         (["--plan", "--detached"], False),
+        (["--plan", "--profile", "review", "--detached"], False),
+        (["--plan", "--profile", "review", "prompt", "--detached"], True),
         (["--unknown-boolean", "--detached"], True),
         (["--append-system-prompt", "--detached"], False),
         (["--unknown-string", "--detached"], True),
@@ -100,6 +102,27 @@ def test_parse_detached_arguments_uses_last_cwd_and_preserves_separator(tmp_path
 
     assert result.source_cwd == second.resolve()
     assert result.omp_args == ("--", "--cwd=literal", "--detached")
+
+
+def test_parse_detached_arguments_uses_bootstrapped_profile(tmp_path: Path) -> None:
+    result = detached_plan.parse_detached_arguments(
+        tmp_path,
+        ["--detached", "--plan", "--profile", "review"],
+        home=tmp_path / "home",
+    )
+
+    assert result.source_cwd == tmp_path.resolve()
+    assert result.omp_args == ("--plan", "--profile", "review")
+    assert result.profile == "review"
+
+
+def test_parse_detached_arguments_rejects_alias_management_action(tmp_path: Path) -> None:
+    with pytest.raises(LauncherError, match="--alias management action"):
+        detached_plan.parse_detached_arguments(
+            tmp_path,
+            ["--detached", "--alias", "review"],
+            home=tmp_path / "home",
+        )
 
 
 def test_parse_detached_arguments_honors_flag_looking_cwd_value(tmp_path: Path) -> None:
@@ -360,6 +383,23 @@ def test_resolve_worktree_base_uses_existing_xdg_profile_root(
     )
 
     assert result == xdg_root / "wt"
+
+
+def test_default_worktree_base_ignores_xdg_for_custom_agent_dir(tmp_path: Path) -> None:
+    xdg_root = tmp_path / "xdg" / "omp"
+    xdg_root.mkdir(parents=True)
+
+    result = detached_plan._default_worktree_base(
+        None,
+        {
+            "PI_CODING_AGENT_DIR": str(tmp_path / "custom-agent"),
+            "PI_CONFIG_DIR": "",
+            "XDG_DATA_HOME": str(tmp_path / "xdg"),
+        },
+        tmp_path / "home",
+    )
+
+    assert result == (tmp_path / "home" / ".omp" / "wt").resolve()
 
 
 def test_resolve_worktree_base_reports_config_failure(

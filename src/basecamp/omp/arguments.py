@@ -46,6 +46,7 @@ OMP_STRING_VALUE_FLAGS = frozenset(
     }
 )
 OMP_OPTIONAL_VALUE_FLAGS = frozenset({"--resume", "--session", "-r"})
+OMP_PROFILE_BOUNDARY = "--omp-profile-boundary"
 OMP_VALUELESS_FLAGS = frozenset(
     {
         "--advisor",
@@ -66,6 +67,7 @@ OMP_VALUELESS_FLAGS = frozenset(
         "--no-skills",
         "--no-title",
         "--no-tools",
+        OMP_PROFILE_BOUNDARY,
         "--plan-yolo",
         "--prewalk",
         "--print",
@@ -84,7 +86,7 @@ def option_consumes_next(argument: str, following: str | None) -> bool:
         return True
     if argument in OMP_OPTIONAL_VALUE_FLAGS:
         return bool(following) and not following.startswith("-")
-    if _is_unknown_long_option(argument):
+    if is_unknown_long_option(argument):
         return not following.startswith("-")
     return False
 
@@ -130,7 +132,7 @@ def effective_cwd(
     )
 
 
-def _is_unknown_long_option(argument: str) -> bool:
+def is_unknown_long_option(argument: str) -> bool:
     return (
         argument.startswith("--")
         and "=" not in argument

@@ -10,7 +10,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from basecamp.core.exceptions import LauncherError
-from basecamp.omp.arguments import effective_cwd, option_consumes_next
+from basecamp.omp.arguments import (
+    OMP_OPTIONAL_VALUE_FLAGS,
+    OMP_PROFILE_BOUNDARY,
+    effective_cwd,
+    is_unknown_long_option,
+    option_consumes_next,
+)
 
 _COMMAND_TIMEOUT_SECONDS = 10
 _SESSION_SOURCE_FLAGS = frozenset(
@@ -102,16 +108,31 @@ class DetachedPlan:
     worktree_base: Path
 
 
+@dataclass(frozen=True)
+class _IndexedArgument:
+    value: str
+    source_index: int | None
+
+
+@dataclass(frozen=True)
+class _ProfileBootstrap:
+    arguments: tuple[_IndexedArgument, ...]
+    profile: str | None
+    alias_name: str | None
+    error: str | None
+
+
 def is_detached_requested(args: Sequence[str]) -> bool:
-    """Return whether an unconsumed launcher-owned flag enables detached mode."""
+    """Return whether OMP's two-stage parsing leaves a launcher-owned flag."""
+    bootstrap = _bootstrap_profile_args(args)
     index = 0
-    while index < len(args):
-        argument = args[index]
+    while index < len(bootstrap.arguments):
+        argument = bootstrap.arguments[index].value
         if argument == "--":
             return False
         if argument == "--detached":
             return True
-        following = args[index + 1] if index + 1 < len(args) else None
+        following = bootstrap.arguments[index + 1].value if index + 1 < len(bootstrap.arguments) else None
         index += 2 if option_consumes_next(argument, following) else 1
     return False
 
@@ -123,18 +144,26 @@ def parse_detached_arguments(
     home: Path | None = None,
 ) -> DetachedArguments:
     """Consume Basecamp tokens and reject OMP modes without a new session."""
-    source_cwd = effective_cwd(cwd, args, home=home)
-    omp_args: list[str] = []
-    profile: str | None = None
+    bootstrap = _bootstrap_profile_args(args)
+    if bootstrap.error is not None:
+        raise LauncherError(bootstrap.error)
+    if bootstrap.alias_name is not None:
+        message = "Detached mode cannot be combined with OMP's --alias management action."
+        raise LauncherError(message)
+
+    removed_indices: set[int] = set()
+    detached_indices: set[int] = set()
     can_dispatch_command = True
     index = 0
-
-    while index < len(args):
-        argument = args[index]
+    while index < len(bootstrap.arguments):
+        token = bootstrap.arguments[index]
+        argument = token.value
         if argument == "--":
-            omp_args.extend(args[index:])
             break
         if argument == "--detached":
+            if token.source_index is not None:
+                removed_indices.add(token.source_index)
+                detached_indices.add(token.source_index)
             index += 1
             continue
 
@@ -142,43 +171,117 @@ def parse_detached_arguments(
         if flag in _SESSION_SOURCE_FLAGS:
             message = f"Detached mode starts a new session and cannot be combined with {flag}."
             raise LauncherError(message)
+        following = bootstrap.arguments[index + 1] if index + 1 < len(bootstrap.arguments) else None
         if argument == "--cwd":
-            if index + 1 >= len(args):
+            if following is None:
                 message = "Detached mode requires a value after --cwd."
                 raise LauncherError(message)
+            if token.source_index is not None:
+                removed_indices.add(token.source_index)
+            if following.source_index is not None:
+                removed_indices.add(following.source_index)
             index += 2
             continue
         if argument.startswith("--cwd="):
+            if token.source_index is not None:
+                removed_indices.add(token.source_index)
             index += 1
             continue
         if flag == "--session-dir":
-            _validate_session_dir(argument, args, index)
-        if argument == "--profile":
-            profile = _profile_value(args, index)
-        elif argument.startswith("--profile="):
-            profile = argument.removeprefix("--profile=")
-            if not profile:
-                message = "--profile requires a profile name."
-                raise LauncherError(message)
+            _validate_session_dir(argument, following.value if following is not None else None)
 
-        following = args[index + 1] if index + 1 < len(args) else None
-        consumes_next = option_consumes_next(argument, following)
+        following_value = following.value if following is not None else None
+        consumes_next = option_consumes_next(argument, following_value)
         if can_dispatch_command and not argument.startswith("-"):
             if argument in _NON_LAUNCH_COMMANDS:
                 message = f"Detached mode only starts OMP sessions; remove --detached before using '{argument}'."
                 raise LauncherError(message)
             can_dispatch_command = False
-        omp_args.append(argument)
+        index += 2 if consumes_next else 1
+
+    source_args = tuple(
+        token.value
+        for token in bootstrap.arguments
+        if token.source_index is None or token.source_index not in detached_indices
+    )
+    source_cwd = effective_cwd(cwd, source_args, home=home)
+    omp_args = tuple(argument for index, argument in enumerate(args) if index not in removed_indices)
+    return DetachedArguments(
+        source_cwd=source_cwd,
+        omp_args=omp_args,
+        profile=bootstrap.profile,
+    )
+
+
+def _bootstrap_profile_args(args: Sequence[str]) -> _ProfileBootstrap:
+    stripped: list[_IndexedArgument] = []
+    profile: str | None = None
+    alias_name: str | None = None
+    error: str | None = None
+    insert_boundary = False
+    pass_through = False
+    index = 0
+
+    while index < len(args):
+        argument = args[index]
+        if pass_through:
+            stripped.append(_IndexedArgument(argument, index))
+            index += 1
+            continue
+        if insert_boundary:
+            if not argument.startswith("-"):
+                stripped.append(_IndexedArgument(OMP_PROFILE_BOUNDARY, None))
+            insert_boundary = False
+        if argument == "--":
+            pass_through = True
+            stripped.append(_IndexedArgument(argument, index))
+            index += 1
+            continue
+
+        flag = _flag_name(argument)
+        if flag in {"--profile", "--alias"}:
+            inline = argument.startswith(f"{flag}=")
+            value = argument.partition("=")[2] if inline else (args[index + 1] if index + 1 < len(args) else "")
+            if not value or (not inline and value.startswith("-")):
+                error = f"{flag} requires a {'profile name' if flag == '--profile' else 'command name'}."
+                stripped.append(_IndexedArgument(argument, index))
+                index += 1
+                continue
+            if flag == "--profile":
+                profile = value
+            else:
+                alias_name = value
+            insert_boundary = _needs_profile_boundary(stripped)
+            index += 1 if inline else 2
+            continue
+
+        stripped.append(_IndexedArgument(argument, index))
+        following = args[index + 1] if index + 1 < len(args) else None
+        if argument == "--detached":
+            index += 1
+            continue
+        if argument == "--plan":
+            consumes_next = following is not None and not following.startswith("-")
+        else:
+            consumes_next = option_consumes_next(argument, following)
         if consumes_next and following is not None:
-            omp_args.append(following)
+            stripped.append(_IndexedArgument(following, index + 1))
             index += 1
         index += 1
 
-    return DetachedArguments(
-        source_cwd=source_cwd,
-        omp_args=tuple(omp_args),
+    return _ProfileBootstrap(
+        arguments=tuple(stripped),
         profile=profile,
+        alias_name=alias_name,
+        error=error,
     )
+
+
+def _needs_profile_boundary(arguments: Sequence[_IndexedArgument]) -> bool:
+    if not arguments:
+        return False
+    previous = arguments[-1].value
+    return previous == "--plan" or previous in OMP_OPTIONAL_VALUE_FLAGS or is_unknown_long_option(previous)
 
 
 def plan_detached_launch(
@@ -308,12 +411,14 @@ def _default_worktree_base(
     home: Path,
 ) -> Path:
     active_profile = _active_profile(profile, environ)
-    config_root = home / environ.get("PI_CONFIG_DIR", ".omp")
+    config_name = (environ.get("PI_CONFIG_DIR") or ".omp").lstrip("/\\")
+    config_root = home / config_name
     if active_profile is not None:
         config_root = config_root / "profiles" / active_profile
 
     xdg_data = environ.get("XDG_DATA_HOME")
-    if sys.platform in {"darwin", "linux"} and xdg_data:
+    has_custom_agent_dir = active_profile is None and bool(environ.get("PI_CODING_AGENT_DIR"))
+    if sys.platform in {"darwin", "linux"} and xdg_data and not has_custom_agent_dir:
         xdg_root = Path(xdg_data) / "omp"
         if active_profile is not None:
             xdg_root = xdg_root / "profiles" / active_profile
@@ -334,19 +439,9 @@ def _flag_name(argument: str) -> str:
     return argument.partition("=")[0] if argument.startswith("--") else argument
 
 
-def _validate_session_dir(argument: str, args: Sequence[str], index: int) -> None:
-    if argument.startswith("--session-dir="):
-        value = argument.removeprefix("--session-dir=")
-    else:
-        value = args[index + 1] if index + 1 < len(args) else ""
+def _validate_session_dir(argument: str, following: str | None) -> None:
+    value = argument.removeprefix("--session-dir=") if argument.startswith("--session-dir=") else following or ""
     if value and Path(value).is_absolute():
         return
     message = "Detached mode requires --session-dir to use an absolute path outside the disposable checkout."
     raise LauncherError(message)
-
-
-def _profile_value(args: Sequence[str], index: int) -> str:
-    if index + 1 >= len(args) or not args[index + 1] or args[index + 1].startswith("-"):
-        message = "--profile requires a profile name."
-        raise LauncherError(message)
-    return args[index + 1]
