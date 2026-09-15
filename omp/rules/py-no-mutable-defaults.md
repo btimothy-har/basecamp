@@ -1,6 +1,6 @@
 ---
 description: "Avoid mutable list/dict/set defaults in function signatures; use None or immutable sentinels"
-condition: "(?m)^[ \\t]*(?:async[ \\t]+)?def[ \\t]+\\w+[ \\t]*\\([^)\\n]*=\\s*(?:\\[[^\\]\\n]*\\]|\\{[^}\\n]*\\}|(?:list|dict|set)\\(\\s*\\))"
+condition: "(?m)^[ \\t]*(?:async[ \\t]+)?def[ \\t]+\\w+[ \\t]*\\((?:[^()\\n]|\\((?:[^()\\n]|\\([^()\\n]*\\))*\\))*?=\\s*(?:\\[[^\\]\\n]*\\]|\\{[^}\\n]*\\}|(?:list|dict|set)\\(\\s*\\))"
 scope: "tool:edit(*.py), tool:write(*.py)"
 interruptMode: never
 ---
