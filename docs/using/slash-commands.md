@@ -9,8 +9,11 @@
 | `/title [text]` | Generate a session title from the conversation, or set one manually |
 | `/model-aliases` | Manage model aliases (list, add, edit, remove) |
 | `/pull-request [additional instructions]` | Prepare or publish a pull request and carry it through CI |
+| `/review [focus]` | Run OMP's native review and present the final consolidated findings for interactive feedback |
 | `/code-review [additional instructions]` | Run an independent multi-agent review of the current branch |
 
 `/system-prompt` is a primary-only inspection command. Its preview is ephemeral and read-only, offers an explicit copy action, and persists nothing.
 
-`/pull-request` and `/code-review` are thin primary-only prompt commands. Each unconditionally directs the agent to load and apply its matching model-invocable skill, with any arguments passed as additional instructions; the skills remain the authoritative guidance.
+`/pull-request` and legacy Pi `/code-review` are thin primary-only prompt commands. Each unconditionally directs the agent to load and apply its matching model-invocable skill, with any arguments passed as additional instructions; the skills remain the authoritative guidance.
+
+OMP `/review` keeps OMP's native scope selection, diff handling, and reviewer fan-out. Basecamp adds a final `review_findings` presentation step: validated P0–P3 findings open in a keyboard navigator, and optional comments are stored with their findings. Persistent sessions receive an `artifact://` payload for the agent to read before continuing; `--no-session` receives a readable path to the same JSON in OMP's content-addressed blob store. In headless modes interactive feedback is marked unavailable.

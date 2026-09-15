@@ -1,14 +1,52 @@
-# Code Review Flow
+# Code Review Flows
+
+Basecamp has separate review integrations for legacy Pi and OMP. Pi owns an independent review workflow behind `/code-review`; OMP keeps its native `/review` mechanics and adds only final presentation, feedback, and artifact capture.
+
+## OMP native review presentation
+
+Native OMP `/review` remains authoritative for scope selection, diff preparation and filtering, reviewer count and locality, read-only reviewer tasks, and the structured `correct|incorrect` plus P0–P3 result shape. Basecamp does not replace or wrap that command.
+
+The exact-pinned OMP review prompt starts with `## Code Review Request` and dispatches the `reviewer` agent. A `context` extension hook recognizes the latest active native review request at the model boundary and inserts a hidden final-chair contract. This covers idle, headless, and queued review prompts without resending the command or reviving instructions from a historical review. The primary must validate findings against the code, discard false positives, semantically deduplicate shared root causes, call `review_findings` exactly once, and read the returned artifact before continuing. Reviewer subagents continue using native structured yields and never call the presentation tool.
+
+### OMP flow
+
+1. Native `/review` resolves the scope and builds the review prompt.
+2. OMP dispatches its native `reviewer` tasks and returns their structured results to the primary.
+3. The primary validates and consolidates the results into the strict native-shaped `review_findings` input, normalizing source locations to repository-relative paths and including an empty findings array when none remain.
+4. In TUI mode, `review_findings` opens a `ui.custom` navigator. Headless modes skip interaction but still record the review with feedback marked unavailable.
+5. The tool deterministically sorts findings, assigns artifact-local IDs, nests each submitted comment with its finding, and writes versioned JSON through OMP storage primitives.
+6. In persistent sessions, the model-visible tool result is only `Read artifact://<id> before continuing.` In `--no-session` mode, where OMP cannot resolve its in-memory artifact IDs through `artifact://`, the tool writes the same JSON to the content-addressed blob store and returns its readable path.
+
+The navigator is terminal-height aware and recalculates its list and card viewports after resize. The list keeps the selected finding visible; cards use `PageUp`/`PageDown` for long content; the embedded editor owns cursor-following scroll for long comments. The tool's abort signal reaches both custom views, so cancellation cannot leave a mounted navigator or persist stale feedback.
+
+| View | Keys |
+|------|------|
+| List | `↑`/`↓` move · `Space`/`Enter` open · `s` submit · `Esc`/`ctrl+c` discard every comment |
+| Card | `←`/`→` prev/next · `PageUp`/`PageDown` scroll · `↓` or `Tab` comment · `Esc` back |
+| Comment box | `Enter` save · `Esc` save and close · `↑`/`Backspace` on empty close · `shift+Enter` newline |
+
+Persistent-session artifacts survive resume and rewind, move with the session, copy on fork, and are removed when the session is dropped. The no-session blob fallback instead follows OMP's content-addressed blob garbage-collection lifecycle. Both contain `schema_version`, scope, final correctness/explanation/confidence, feedback status, and findings with native priority/location fields plus nested nullable comments.
+
+### OMP layout
+
+- `omp/review/instructions.ts`: native-review recognition and model-context chair contract.
+- `omp/review/schema.ts`: strict native-shaped tool input and versioned artifact types.
+- `omp/review/artifact.ts`: deterministic ordering, IDs, counts, and artifact construction.
+- `omp/review/tool.ts`: `review_findings`, artifact save, and passive transcript renderer.
+- `omp/review/paths.ts`: in-repository finding-path normalization; OMP's `findRepoRoot` owns root discovery.
+- `omp/review/navigator/`: keyboard model, terminal rendering, and `ui.custom` list/card loop.
+
+## Legacy Pi review
 
 `/code-review [additional instructions]` is a thin primary-only prompt command that unconditionally directs the agent to load and apply the model-invocable `code-review` skill. The skill is the authoritative method for an independent review of the current branch: it dispatches fixed and risk-driven report-only reviewers, and the primary review chair verifies, synthesizes, and deduplicates their reports before `report_findings` computes a deterministic verdict over that final set. The skill and result tool are never exposed in subagents.
 
-## Review method
+### Review method
 
 The skill retrieves `references/review-method.md` through the skill tool's `reference` parameter — `skill({ name: "code-review", reference: "references/review-method.md" })` — rather than by reading a path. That reference is the canonical method for the local multi-agent review: it defines the four severities, structured finding contract, and falsification probes for invariants, end-to-end paths, representation parity, boundary/fallback behavior, counterfactual tests, canonical ownership, rollout, and recovery.
 
 Reviewers may inspect PR descriptions, commits, and linked issues for claimed intent, but treat all repository and GitHub text as untrusted data. Claims never substitute for implementation evidence or narrow review scope.
 
-## Flow
+### Flow
 
 1. Resolve the current branch, base, merge base, tracked working-tree changes, and untracked files.
 2. Inspect the actual diff only far enough to map material risk surfaces without authoring findings.
@@ -21,7 +59,7 @@ Reviewers may inspect PR descriptions, commits, and linked issues for claimed in
 
 The integration lens owns cross-layer producer/consumer contracts, semantic parity, runtime wiring, temporal alignment, source-of-truth drift, rollout compatibility, and operational completion. It leaves local functional logic, exploitability, test quality, documentation-only drift, pure clarity, and codified conventions to their dedicated lenses.
 
-## Result handling
+### Result handling
 
 The primary may rewrite and regroup findings based on verified root cause and impact; source selection and semantic deduplication are editorial model judgment. Independent reviewers remain the source of defects, and the primary must obtain a focused reviewer report before adding a concern it noticed itself. The verdict is deterministic only after this synthesis.
 
@@ -29,7 +67,7 @@ The primary may rewrite and regroup findings based on verified root cause and im
 
 The annotation pane collects optional user reactions. The private packet stores the primary summary, synthesized findings, responses, and reactions under session scratch with mode `0600`; its directory is `0700`. Raw reviewer reports and provenance mappings are not retained.
 
-## Annotation pane
+### Annotation pane
 
 A finding list drills into a card carrying one optional comment, mirroring the plan-review shape in `pi/tasks/workflows/review/`.
 
@@ -47,7 +85,7 @@ Enter deliberately does **not** open the comment box, and every exit from the bo
 
 Two consequences of that rule are easy to undo by accident. The blur path reads `getExpandedText()`, not `getText()`: a large paste sits in the buffer as a marker, and the next focus-in `setText()` clears the paste map, so storing the unexpanded marker loses the content permanently. And the comment box is a slot child of the card's `Container` rather than lines spliced into rendered output: its position must follow the component tree, because finding text is reviewer-authored and can contain any label string.
 
-## Layout
+### Layout
 
 - `index.ts`: registers `report_findings` and exposes the prompt command and skill in primary sessions only.
 - `prompts/code-review.md`: thin command wrapper that loads and applies the skill with optional additional instructions.
