@@ -397,6 +397,7 @@ def test_default_worktree_base_ignores_xdg_for_custom_agent_dir(tmp_path: Path) 
             "XDG_DATA_HOME": str(tmp_path / "xdg"),
         },
         tmp_path / "home",
+        tmp_path,
     )
 
     assert result == (tmp_path / "home" / ".omp" / "wt").resolve()

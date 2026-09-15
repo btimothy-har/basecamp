@@ -371,7 +371,7 @@ def resolve_worktree_base(
         raise LauncherError(message) from exc
     configured = payload.get("value") if isinstance(payload, dict) else None
     config_base = _absolute_omp_path(configured if isinstance(configured, str) else None, home)
-    return config_base or _default_worktree_base(profile, environ, home)
+    return config_base or _default_worktree_base(profile, environ, home, source_cwd)
 
 
 def _run_git(cwd: Path, *args: str) -> str:
@@ -399,8 +399,8 @@ def _absolute_omp_path(value: str | None, home: Path) -> Path | None:
         return None
     if trimmed == "~":
         return home
-    if trimmed.startswith("~/"):
-        return (home / trimmed[2:]).resolve()
+    if trimmed.startswith(("~/", "~\\")):
+        return Path(f"{home}{trimmed[1:]}").resolve()
     path = Path(trimmed)
     return path.resolve() if path.is_absolute() else None
 
@@ -409,15 +409,22 @@ def _default_worktree_base(
     profile: str | None,
     environ: Mapping[str, str],
     home: Path,
+    source_cwd: Path,
 ) -> Path:
     active_profile = _active_profile(profile, environ)
     config_name = (environ.get("PI_CONFIG_DIR") or ".omp").lstrip("/\\")
-    config_root = home / config_name
+    base_config_root = (home / config_name).resolve()
+    config_root = base_config_root
     if active_profile is not None:
         config_root = config_root / "profiles" / active_profile
 
     xdg_data = environ.get("XDG_DATA_HOME")
-    has_custom_agent_dir = active_profile is None and bool(environ.get("PI_CODING_AGENT_DIR"))
+    has_custom_agent_dir = _has_custom_agent_dir(
+        active_profile,
+        environ,
+        source_cwd=source_cwd,
+        base_config_root=base_config_root,
+    )
     if sys.platform in {"darwin", "linux"} and xdg_data and not has_custom_agent_dir:
         xdg_root = Path(xdg_data) / "omp"
         if active_profile is not None:
@@ -427,11 +434,39 @@ def _default_worktree_base(
     return (config_root / "wt").resolve()
 
 
+def _has_custom_agent_dir(
+    active_profile: str | None,
+    environ: Mapping[str, str],
+    *,
+    source_cwd: Path,
+    base_config_root: Path,
+) -> bool:
+    value = environ.get("PI_CODING_AGENT_DIR")
+    if active_profile is not None or not value:
+        return False
+    configured = Path(value)
+    resolved = (source_cwd / configured).resolve() if not configured.is_absolute() else configured.resolve()
+    default_agent = (base_config_root / "agent").resolve()
+    if resolved == default_agent:
+        return False
+
+    bypassed_profile = _normalized_profile(environ.get("PI_PROFILE"))
+    if "OMP_PROFILE" in environ and bypassed_profile is not None:
+        profile_agent = (base_config_root / "profiles" / bypassed_profile / "agent").resolve()
+        if resolved == profile_agent:
+            return False
+    return True
+
+
 def _active_profile(profile: str | None, environ: Mapping[str, str]) -> str | None:
     selected = profile
     if selected is None:
         selected = environ.get("OMP_PROFILE") if "OMP_PROFILE" in environ else environ.get("PI_PROFILE")
-    normalized = selected.strip() if selected is not None else ""
+    return _normalized_profile(selected)
+
+
+def _normalized_profile(profile: str | None) -> str | None:
+    normalized = profile.strip() if profile is not None else ""
     return None if not normalized or normalized == "default" else normalized
 
 
