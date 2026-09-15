@@ -30,15 +30,28 @@ jobs:
         node-version: 24
         cache: npm
 
-    - name: Install Extension Dependencies
+    - name: Setup Bun
+      uses: oven-sh/setup-bun@v2
+      with:
+        bun-version: 1.4.2
+
+    - name: Install Legacy Extension Dependencies
       run: |
         npm ci
 
-    - name: Typecheck Extension
+    - name: Install OMP Extension Dependencies
+      run: |
+        bun install --cwd omp --frozen-lockfile
+
+    - name: Typecheck Legacy Extension
       run: |
         npm run typecheck
 
-    - name: Lint Extension
+    - name: Typecheck OMP Extension
+      run: |
+        bun run --cwd omp check
+
+    - name: Lint Extensions
       run: |
         npm run lint
 
@@ -46,9 +59,13 @@ jobs:
       run: |
         uv run pytest
 
-    - name: Run Extension Tests
+    - name: Run Legacy Extension Tests
       run: |
         npm test
+
+    - name: Run OMP Extension Tests
+      run: |
+        bun test --cwd omp
 
   docs:
     name: Docs

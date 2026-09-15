@@ -22,6 +22,7 @@ EVAL_COMMAND = uv run python -m evals.terminal_bench.run $(EVAL_SELECTION) \
 
 sync:
 	uv sync --all-extras
+	bun install --cwd omp --frozen-lockfile
 
 compile:
 	uv lock -U
@@ -30,10 +31,12 @@ compile:
 test:
 	uv run pytest
 	npm test
+	bun test --cwd omp
 
 lint:
 	uv run ruff check . && uv run ruff format --check .
 	npm run check
+	bun run --cwd omp check
 
 fix:
 	uv run ruff check --fix . && uv run ruff format .

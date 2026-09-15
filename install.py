@@ -23,7 +23,7 @@ from basecamp.installer import run_interactive_install  # noqa: E402
 
 
 def main() -> None:
-    run_interactive_install()
+    run_interactive_install(repo_dir=REPO_DIR)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,25 @@
+{
+	"name": "basecamp",
+	"private": true,
+	"type": "module",
+	"version": "0.8.0",
+	"packageManager": "bun@1.4.2",
+	"engines": {
+		"bun": ">=1.3.14"
+	},
+	"description": "Basecamp — a way-of-working layer for Oh My Pi.",
+	"scripts": {
+		"check": "tsc --noEmit",
+		"test": "bun test"
+	},
+	"omp": {
+		"extensions": [
+			"./extension.ts"
+		]
+	},
+	"devDependencies": {
+		"@oh-my-pi/pi-coding-agent": "18.1.21",
+		"@types/bun": "1.4.2",
+		"typescript": "5.9.3"
+	}
+}

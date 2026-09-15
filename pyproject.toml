@@ -14,6 +14,7 @@ dependencies = [
 
 [project.scripts]
 basecamp = "basecamp.cli:main"
+bomp = "basecamp.omp.launcher:main"
 
 [build-system]
 requires = ["hatchling"]

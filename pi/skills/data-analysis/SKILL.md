@@ -85,7 +85,7 @@ Do not infer semantics from names alone. Inspect schemas, samples, docs, or exis
 
 ### 4. Plan Complex Analysis
 
-For complex analysis or research, apply the `planning` skill before using `plan()`. The plan should cover:
+For complex analysis or research, agree on a structured plan before execution. The plan should cover:
 - question and decision
 - base population and unit of analysis
 - source tables/files/docs
@@ -96,7 +96,7 @@ For complex analysis or research, apply the `planning` skill before using `plan(
 - assumptions and boundaries
 - ordered tasks
 
-For small questions, proceed directly with goal/task tracking.
+For small questions, proceed directly; add explicit tracking only when it helps preserve state or sequence.
 
 ### 5. Build the Analytical Dataset
 
