@@ -8,8 +8,6 @@ Follow [Tryceratops](https://github.com/guilatrova/tryceratops) linting rules fo
 |------|-------------|
 | TRY002 | Create custom exceptions, don't raise built-ins |
 | TRY003 | Keep error messages in exception class, not at raise site |
-| TRY201 | Use bare `raise` to re-raise, not `raise e` |
-| TRY203 | Remove useless try/except that only re-raises |
 | B904 | Use `raise ... from e` for exception chaining |
 | TRY400 | Use `logging.exception()` in except blocks, not `logging.error()` |
 
@@ -58,43 +56,6 @@ raise NotFoundError("User", user_id)
 raise NotFoundError("Order", order_id)
 ```
 
-## TRY201: Bare Raise for Re-raising
-
-Use bare `raise` to re-raise the current exception. Don't use `raise e`.
-
-```python
-# BAD: Re-raising with variable (TRY201)
-try:
-    process()
-except SomeError as e:
-    logger.exception("Failed")
-    raise e  # Resets traceback
-
-# GOOD: Bare raise preserves traceback
-try:
-    process()
-except SomeError:
-    logger.exception("Failed")
-    raise  # Original traceback preserved
-```
-
-## TRY203: Remove Useless Try/Except
-
-Don't wrap code in try/except if you're only going to re-raise.
-
-```python
-# BAD: Useless try/except (TRY203)
-def process(data):
-    try:
-        return transform(data)
-    except Exception:
-        raise  # Does nothing useful
-
-# GOOD: Just call the function
-def process(data):
-    return transform(data)
-```
-
 ## B904: Exception Chaining with `from`
 
 When raising a new exception from a caught one, use `from e` to preserve the chain. This is Ruff rule B904 (flake8-bugbear `raise-without-from-inside-except`), enabled with `select = ["B"]`.
@@ -122,7 +83,7 @@ In exception handlers, use `logging.exception()` to automatically include the tr
 try:
     process()
 except SomeError as e:
-    logging.error(f"Failed: {e}")  # No traceback!
+    logging.error("Failed: %s", e)  # No traceback!
 
 # GOOD: logging.exception includes traceback
 try:
@@ -184,7 +145,7 @@ class ConfigNotFoundError(NotFoundError):
 
 ### Structured Logging
 
-Use `extra={}` for structured context, not f-strings.
+Use `extra={}` for structured context.
 
 ```python
 import logging
@@ -195,8 +156,8 @@ logger = logging.getLogger(__name__)
 logger.info("Order processed", extra={"order_id": order.id, "total": total})
 logger.warning("Retry attempt", extra={"attempt": n, "max": MAX_RETRIES})
 
-# BAD: Unstructured, hard to parse/search
-logger.info(f"Processed order {order.id} with total {total}")
+# Less useful: context is embedded in an unstructured message
+logger.info("Processed order %s with total %s", order.id, total)
 ```
 
 ### Log Levels

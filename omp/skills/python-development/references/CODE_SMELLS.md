@@ -94,7 +94,7 @@ Catching exceptions and doing nothing, or returning None without indication of f
 def get_config(path: str) -> dict | None:
     try:
         return load_config(path)
-    except Exception:
+    except ConfigError:
         return None  # Caller can't distinguish "empty config" from "load failed"
 
 # GOOD: Explicit about failure
@@ -196,59 +196,6 @@ def process_order(order: Order) -> OrderResult:
     shipping = calculate_shipping(order.address, order.items)
     notify_customer(order.customer, payment, shipping)
     return OrderResult(payment=payment, shipping=shipping)
-```
-
-## Unnecessary Extraction
-
-The opposite of God Functions: extracting code into functions that add indirection without adding value. If a function is only called once, is trivial, and its name doesn't add clarity, inline it.
-
-```python
-# BAD: Trivial one-liner extracted for no reason
-def get_user_email(user: User) -> str:
-    return user.email
-
-def get_full_name(user: User) -> str:
-    return f"{user.first_name} {user.last_name}"
-
-# Then elsewhere:
-email = get_user_email(user)
-name = get_full_name(user)
-
-# GOOD: Just access the attribute or write inline
-email = user.email
-name = f"{user.first_name} {user.last_name}"
-```
-
-```python
-# BAD: Wrapping a clear stdlib call adds noise
-def is_empty(items: list) -> bool:
-    return len(items) == 0
-
-def contains_item(items: list, item: Any) -> bool:
-    return item in items
-
-# GOOD: Use the language directly
-if not items:
-    ...
-if item in items:
-    ...
-```
-
-**When extraction IS valuable:**
-- Logic is reused in multiple places
-- The function name explains *why*, not just *what*
-- The extracted code is complex enough to benefit from isolation
-- Testing the logic in isolation is valuable
-
-```python
-# GOOD: Extraction adds clarity about business intent
-def is_eligible_for_discount(order: Order) -> bool:
-    """Customer loyalty + minimum spend + not already discounted."""
-    return (
-        order.customer.loyalty_years >= 2
-        and order.subtotal >= Decimal("100")
-        and not order.has_discount
-    )
 ```
 
 ## Feature Envy

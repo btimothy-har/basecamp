@@ -16,9 +16,7 @@ description: "Python guidance for work involving .py files or dependency managem
 **Code Quality**
 - **Google Python Style Guide** - Follow it for formatting, naming, and structure
 - **Type hints everywhere** - All function signatures, return types, and complex variables
-- **Specific exceptions** - Catch and raise specific exception types, never bare `except:`
 - **Context managers** - Use `with` for files, connections, locks, and any resource cleanup
-- **No mutable defaults** - Never use `[]` or `{}` as default arguments
 
 **Decision Making**
 - **Readability over cleverness** - Clear code beats clever code
@@ -171,7 +169,6 @@ def process(order: Order) -> Result:
 | Mutable class attributes | Initialize in `__init__` or use `field(default_factory=...)` |
 | Stringly typed code | Use `StrEnum` for type safety |
 | God functions | Split by concern into focused functions |
-| Unnecessary extraction | Inline trivial one-liners; extract only when it adds clarity |
 
 ---
 
@@ -183,7 +180,6 @@ Follow [Tryceratops](https://github.com/guilatrova/tryceratops) rules. Enable wi
 |------|-------------|
 | TRY002 | Custom exceptions, not built-ins (`ValueError`, `Exception`) |
 | TRY003 | Message logic in exception class, not at raise site |
-| TRY201 | Bare `raise` to re-raise, not `raise e` |
 | B904 | Use `raise ... from e` for exception chaining |
 | TRY400 | Use `logging.exception()` in except blocks |
 

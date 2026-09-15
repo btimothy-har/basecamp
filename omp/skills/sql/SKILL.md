@@ -17,17 +17,14 @@ Write clear, performant SQL. Determine the target database (BigQuery, PostgreSQL
 
 **NULL Handling**
 - **Be explicit** — Document three-valued logic; `NULL != NULL`
-- **Direct expressions** — Prefer `col IS NULL` over `COALESCE(col IS NULL, FALSE)`
 - **Understand aggregations** — `COUNT(*)` vs `COUNT(col)` behave differently with NULLs
 
 **Performance**
 - **Filter early** — Push WHERE clauses as close to source tables as possible
-- **UNION ALL by default** — Use DISTINCT only when deduplication is needed
 - **EXPLAIN first** — Profile before optimizing; don't guess at bottlenecks
 
 **Formatting**
 - **Match project conventions** — Follow the repository's keyword casing, comma placement, aliasing, and column ordering
-- **Explicit JOINs** — Prefer `INNER JOIN` over bare `JOIN`
 
 ## Quick Reference
 
@@ -72,7 +69,7 @@ Structure queries with CTEs for clarity and testability.
 | **One concept per CTE** | Each CTE is a logical unit of work |
 | **SELECT *** | Only internally; explicit columns at boundaries |
 | **Table aliases** | Short (2-3 chars), mnemonic: `fo` for `fct_orders` |
-| **JOINs** | Explicit `INNER JOIN`/`LEFT JOIN`; meaningful aliases |
+| **JOINs** | Meaningful aliases describing the table's role |
 
 ```sql
 WITH completed_orders AS (
@@ -100,7 +97,6 @@ Be explicit and consistent with NULL handling.
 | `COALESCE(bool_col, FALSE)` | Convert nullable boolean |
 | `COUNT(col)` vs `COUNT(*)` | Ignore NULLs vs count all rows |
 | `SAFE_CAST` | Graceful handling of invalid JSON/types |
-| `EXCEPT DISTINCT` | NULL-safe alternative to `NOT IN` |
 
 ```sql
 SELECT
@@ -151,8 +147,6 @@ Write performant SQL with platform-aware patterns. Choose the reference doc base
 
 | Pattern | Recommendation |
 |---------|----------------|
-| `UNION ALL` | Default choice; `DISTINCT` only when needed |
-| Window functions | Specify deterministic `ORDER BY` when ordering affects semantics |
 | Early filtering | Push WHERE as close to source as possible |
 
 **BigQuery-specific:**
@@ -160,7 +154,6 @@ Write performant SQL with platform-aware patterns. Choose the reference doc base
 | Pattern | Recommendation |
 |---------|----------------|
 | `COUNTIF` | Single-pass conditional aggregation |
-| `EXCEPT DISTINCT` | Prefer over `NOT IN` (NULL-safe) |
 | Partitioning | Filter on partition columns for cost control |
 
 **PostgreSQL-specific:**

@@ -2,33 +2,7 @@
 
 SQL's three-valued logic (TRUE, FALSE, NULL) requires explicit handling. Be consistent and intentional about NULL behavior.
 
-*Dialect note: NULL-handling concepts are universal, but some examples below use BigQuery syntax (`IF`, `SAFE_CAST`, `SAFE.`-prefixed functions, `STRUCT`, `JSON_VALUE`, `EXCEPT DISTINCT`). Adapt to your dialect's equivalents — e.g. `CASE WHEN` for `IF`, `TRY_CAST` or explicit validation for `SAFE_CAST`, `EXCEPT` for `EXCEPT DISTINCT`, and your engine's JSON functions.*
-
-## Boolean Expressions
-
-Use direct boolean expressions instead of wrapping in COALESCE or IF.
-
-| Pattern | Use |
-|---------|-----|
-| `IS NULL`, `IS NOT NULL` | Existence checks |
-| Direct boolean expression | `column IS NULL AS is_missing` |
-| `COALESCE(bool_col, FALSE)` | Convert NULL to FALSE for a nullable boolean column |
-
-```sql
--- BAD: Overly complex
-SELECT
-  COALESCE(is_active = TRUE, FALSE) AS is_active_flag,
-  COALESCE(concluded_at IS NULL, FALSE) AS is_active_project,
-  IF(score IS NOT NULL, TRUE, FALSE) AS has_score
-FROM projects
-
--- GOOD: Direct expressions
-SELECT
-  COALESCE(is_active, FALSE) AS is_active_flag,  -- Appropriate for nullable bool
-  concluded_at IS NULL AS is_active_project,     -- Direct boolean
-  score IS NOT NULL AS has_score                 -- Direct boolean
-FROM projects
-```
+*Dialect note: NULL-handling concepts are universal, but some examples below use BigQuery syntax (`IF`, `SAFE_CAST`, `SAFE.`-prefixed functions, `STRUCT`, `JSON_VALUE`). Adapt to your dialect's equivalents — e.g. `CASE WHEN` for `IF`, `TRY_CAST` or explicit validation for `SAFE_CAST`, and your engine's JSON functions.*
 
 ## Aggregations and NULLs
 
@@ -162,29 +136,6 @@ WHERE a IS NOT DISTINCT FROM b
 WHERE (a = b OR (a IS NULL AND b IS NULL))
 ```
 
-### NOT IN with NULLs
+### NOT IN and NULLs
 
-`NOT IN` returns NULL if any value in the list is NULL. Prefer `EXCEPT` or explicit handling:
-
-```sql
--- BAD: NOT IN with potential NULLs
-SELECT worker_id
-FROM employees
-WHERE worker_id NOT IN (
-  SELECT worker_id FROM terminated_employees
-)
-
--- GOOD: EXCEPT is NULL-safe
-SELECT worker_id
-FROM employees
-EXCEPT DISTINCT
-SELECT worker_id
-FROM terminated_employees
-
--- GOOD: Explicit NULL handling
-SELECT e.worker_id
-FROM employees AS e
-LEFT JOIN terminated_employees AS t
-  ON e.worker_id = t.worker_id
-WHERE t.worker_id IS NULL
-```
+Worth knowing when reading or debugging existing queries: `x NOT IN (...)` returns NULL — not FALSE — for every row if any compared value is NULL, so the predicate silently filters out everything. This is a consequence of three-valued logic, not a bug in the engine.

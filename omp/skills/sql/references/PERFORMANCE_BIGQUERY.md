@@ -4,26 +4,6 @@ BigQuery-specific optimizations and universal SQL performance patterns.
 
 ## BigQuery Optimizations
 
-### EXCEPT over NOT IN
-
-`NOT IN` is problematic with NULLs and less performant. Use `EXCEPT`:
-
-```sql
--- BAD: NOT IN with subquery
-SELECT worker_id
-FROM employees
-WHERE worker_id NOT IN (
-  SELECT worker_id FROM terminated_employees
-)
-
--- GOOD: EXCEPT is NULL-safe and performant
-SELECT worker_id
-FROM employees
-EXCEPT DISTINCT
-SELECT worker_id
-FROM terminated_employees
-```
-
 ### Conditional Aggregation
 
 Use single-pass conditional aggregation instead of multiple subqueries:
@@ -111,27 +91,6 @@ Use Query Execution Details in BigQuery Console. Look for:
 
 ## Window Functions
 
-### Always Specify ORDER BY
-
-Even when using the whole partition, specify ORDER BY for deterministic results:
-
-```sql
--- BAD: Non-deterministic ordering
-SELECT
-  worker_id,
-  ROW_NUMBER() OVER (PARTITION BY project_id, user_id) AS rn,
-FROM assignments
-
--- GOOD: Explicit ordering
-SELECT
-  worker_id,
-  ROW_NUMBER() OVER (
-    PARTITION BY project_id, user_id
-    ORDER BY created_at DESC  -- Most recent first
-  ) AS rn,
-FROM assignments
-```
-
 ### Named Window Frames
 
 Reuse window definitions with WINDOW clause:
@@ -174,28 +133,6 @@ WINDOW w AS (
   PARTITION BY project_id, user_id, role
   ORDER BY added_at
 )
-```
-
-## Set Operations
-
-### UNION ALL by Default
-
-`UNION ALL` is more performant than `UNION DISTINCT` (no sort/dedupe). Use DISTINCT only when needed:
-
-```sql
--- GOOD: UNION ALL for mutually exclusive sets
-SELECT worker_id, 'active' AS status
-FROM active_workers
-UNION ALL
-SELECT worker_id, 'terminated' AS status
-FROM terminated_workers
-
--- GOOD: UNION DISTINCT with explanation
-SELECT email
-FROM employees
-UNION DISTINCT  -- Some employees may have multiple records
-SELECT email
-FROM contractors
 ```
 
 ## Early Filtering
