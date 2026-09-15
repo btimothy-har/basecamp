@@ -33,7 +33,11 @@ function finding(overrides: Partial<ReviewFindingsInput["findings"][number]> = {
 	};
 }
 
-function toolHarness(ui: ExtensionContext["ui"], mode: ExtensionContext["mode"]) {
+function toolHarness(
+	ui: ExtensionContext["ui"],
+	mode: ExtensionContext["mode"],
+	artifactPath: string | null = "/tmp/42.code-review.log",
+) {
 	let definition: ToolDefinition | undefined;
 	const saved: SavedArtifact[] = [];
 	const api = {
@@ -46,12 +50,16 @@ function toolHarness(ui: ExtensionContext["ui"], mode: ExtensionContext["mode"])
 	if (!definition) throw new Error("review_findings was not registered");
 	const tool = definition;
 	const ctx = {
+		cwd: "/repo",
 		mode,
 		ui,
 		sessionManager: {
 			async saveArtifact(content: string, toolType: string): Promise<string> {
 				saved.push({ content, toolType });
 				return "42";
+			},
+			async getArtifactPath(): Promise<string | null> {
+				return artifactPath;
 			},
 		},
 	} as unknown as ExtensionContext;
@@ -85,7 +93,11 @@ describe("review_findings", () => {
 		expect(harness.saved[0]?.toolType).toBe("code-review");
 		expect(savedReview(harness.saved).feedback_status).toBe("submitted");
 		expect(savedReview(harness.saved).findings[0]?.feedback.comment).toBe("fix before merge");
-		expect(result.details).toMatchObject({ artifactRef: "artifact://42", commentedCount: 1 });
+		expect(result.details).toMatchObject({
+			artifactPersistent: true,
+			artifactRef: "artifact://42",
+			commentedCount: 1,
+		});
 	});
 
 	test("discards draft comments when the navigator is cancelled", async () => {
@@ -128,6 +140,21 @@ describe("review_findings", () => {
 		await harness.execute(reviewInput([finding({ line_end: 30 })]));
 
 		expect(savedReview(harness.saved).feedback_status).toBe("unavailable");
+	});
+
+	test("returns complete review JSON inline when the artifact is not persistent", async () => {
+		const ui = { custom: () => Promise.reject(new Error("must not open")) } as unknown as ExtensionContext["ui"];
+		const harness = toolHarness(ui, "print", null);
+
+		const result = await harness.execute(reviewInput([finding({ file_path: "/repo/src/app.ts" })]));
+		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
+
+		expect(result.details).toMatchObject({ artifactPersistent: false, artifactRef: "artifact://42" });
+		expect(text).toContain("This non-persistent session cannot resolve artifact://42");
+		expect(text).toContain('"schema_version": 1');
+		expect(JSON.parse(text.slice(text.indexOf("{"))) as ReviewArtifactV1).toMatchObject({
+			findings: [{ file_path: "src/app.ts" }],
+		});
 	});
 
 	test("skips navigation for an empty review", async () => {

@@ -1,3 +1,4 @@
+import { isAbsolute, relative, sep } from "node:path";
 import { type ExtensionAPI, Text, type Theme } from "@oh-my-pi/pi-coding-agent";
 import { buildReviewArtifact, prepareReview, reviewPriorityCounts } from "./artifact.ts";
 import { navigateReviewFindings } from "./navigator/index.ts";
@@ -10,9 +11,10 @@ import {
 } from "./schema.ts";
 
 const TOOL_DESCRIPTION =
-	"Present one final code review after all native OMP reviewer tasks finish. The primary agent must validate and semantically deduplicate every finding before calling this tool exactly once. Pass OMP-native priorities and source locations, with an empty findings array when no valid findings remain. This tool collects user feedback and returns an artifact URI; read that artifact before continuing. Reviewer subagents must not call this tool.";
+	"Present one final code review after all native OMP reviewer tasks finish. The primary agent must validate and semantically deduplicate every finding before calling this tool exactly once. Pass OMP-native priorities and source locations, with an empty findings array when no valid findings remain. This tool collects user feedback and returns an artifact URI to read before continuing, or the complete JSON inline in a non-persistent session. Reviewer subagents must not call this tool.";
 
 export interface ReviewToolDetails {
+	artifactPersistent: boolean;
 	artifactRef: string;
 	commentedCount: number;
 	counts: PriorityCounts;
@@ -20,6 +22,11 @@ export interface ReviewToolDetails {
 	findingCount: number;
 	overallCorrectness: OverallCorrectness;
 	scope: string;
+}
+
+function repositoryRelativePath(filePath: string, cwd: string): string {
+	if (!isAbsolute(filePath)) return filePath;
+	return relative(cwd, filePath).split(sep).join("/");
 }
 
 function renderReviewResult(details: ReviewToolDetails, theme: Theme): string {
@@ -43,12 +50,15 @@ function renderReviewResult(details: ReviewToolDetails, theme: Theme): string {
 	const findings = `${details.findingCount} finding${details.findingCount === 1 ? "" : "s"}`;
 	const comments = `${details.commentedCount} comment${details.commentedCount === 1 ? "" : "s"}`;
 	const counts = details.counts;
+	const location = details.artifactPersistent
+		? `${theme.fg("muted", "Full review and feedback:")} ${details.artifactRef}`
+		: theme.fg("muted", "Full review and feedback returned inline for this non-persistent session.");
 	return [
 		theme.fg("toolTitle", theme.bold(title)),
 		`${theme.fg(verdictColor, verdict)} · ${findings} · ${comments}`,
 		`P0 ${counts[0]}   P1 ${counts[1]}   P2 ${counts[2]}   P3 ${counts[3]}`,
 		"",
-		`${theme.fg("muted", "Full review and feedback:")} ${details.artifactRef}`,
+		location,
 	].join("\n");
 }
 
@@ -64,7 +74,13 @@ export default function registerReviewTool(pi: ExtensionAPI): void {
 		loadMode: "essential",
 		async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
 			const params = rawParams as ReviewFindingsInput;
-			const prepared = prepareReview(params);
+			const prepared = prepareReview({
+				...params,
+				findings: params.findings.map((finding) => ({
+					...finding,
+					file_path: repositoryRelativePath(finding.file_path, ctx.cwd),
+				})),
+			});
 			let feedbackStatus: FeedbackStatus;
 			let comments: Record<string, string> = {};
 
@@ -79,10 +95,13 @@ export default function registerReviewTool(pi: ExtensionAPI): void {
 			}
 
 			const artifact = buildReviewArtifact(prepared, feedbackStatus, comments);
-			const artifactId = await ctx.sessionManager.saveArtifact(JSON.stringify(artifact, null, 2), "code-review");
+			const artifactJson = JSON.stringify(artifact, null, 2);
+			const artifactId = await ctx.sessionManager.saveArtifact(artifactJson, "code-review");
 			if (!artifactId) throw new Error("OMP could not allocate a review artifact");
 			const artifactRef = `artifact://${artifactId}`;
+			const artifactPersistent = (await ctx.sessionManager.getArtifactPath(artifactId)) !== null;
 			const details: ReviewToolDetails = {
+				artifactPersistent,
 				artifactRef,
 				commentedCount: artifact.findings.filter((finding) => finding.feedback.comment !== null).length,
 				counts: reviewPriorityCounts(artifact.findings),
@@ -91,8 +110,11 @@ export default function registerReviewTool(pi: ExtensionAPI): void {
 				overallCorrectness: artifact.overall_correctness,
 				scope: artifact.scope,
 			};
+			const text = artifactPersistent
+				? `Read ${artifactRef} before continuing.`
+				: `This non-persistent session cannot resolve ${artifactRef}. Use this complete review JSON before continuing:\n\n${artifactJson}`;
 			return {
-				content: [{ type: "text", text: `Read ${artifactRef} before continuing.` }],
+				content: [{ type: "text", text }],
 				details,
 			};
 		},

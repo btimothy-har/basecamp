@@ -12,10 +12,10 @@ The exact-pinned OMP review prompt starts with `## Code Review Request` and disp
 
 1. Native `/review` resolves the scope and builds the review prompt.
 2. OMP dispatches its native `reviewer` tasks and returns their structured results to the primary.
-3. The primary validates and consolidates the results into the strict native-shaped `review_findings` input, including an empty findings array when none remain.
+3. The primary validates and consolidates the results into the strict native-shaped `review_findings` input, normalizing source locations to repository-relative paths and including an empty findings array when none remain.
 4. In TUI mode, `review_findings` opens a `ui.custom` navigator. Headless modes skip interaction but still record the review with feedback marked unavailable.
 5. The tool deterministically sorts findings, assigns artifact-local IDs, nests each submitted comment with its finding, and writes versioned JSON through `sessionManager.saveArtifact`.
-6. The model-visible tool result is only `Read artifact://<id> before continuing.` The full payload is recovered from that session artifact.
+6. In persistent sessions, the model-visible tool result is only `Read artifact://<id> before continuing.` In `--no-session` mode, where OMP cannot resolve its in-memory artifact IDs through `artifact://`, the tool instead returns the complete JSON inline.
 
 The navigator is terminal-height aware and recalculates its list and card viewports after resize. The list keeps the selected finding visible; cards use `PageUp`/`PageDown` for long content; the embedded editor owns cursor-following scroll for long comments. The tool's abort signal reaches both custom views, so cancellation cannot leave a mounted navigator or persist stale feedback.
 

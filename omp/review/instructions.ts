@@ -5,9 +5,10 @@ After every native OMP reviewer task has completed:
 
 1. Validate each proposed finding against the reviewed code and discard false positives.
 2. Semantically deduplicate findings that describe the same underlying defect.
-3. Form one final overall correctness judgment and explanation.
-4. Call \`review_findings\` exactly once with the reviewed scope and final consolidated findings, including an empty findings array when none remain.
-5. Read the \`artifact://\` URI returned by \`review_findings\` before continuing, then incorporate the user's submitted feedback.
+3. Convert every finding's \`file_path\` to a repository-relative path.
+4. Form one final overall correctness judgment and explanation.
+5. Call \`review_findings\` exactly once with the reviewed scope and final consolidated findings, including an empty findings array when none remain.
+6. Read the returned \`artifact://\` URI before continuing. In a non-persistent session, use the complete review JSON returned inline instead. Then incorporate the user's submitted feedback.
 
 Reviewer subagents must continue returning findings through their native structured yield. They must not call \`review_findings\`.
 </system-reminder>`;
@@ -42,7 +43,13 @@ export function addReviewPresentationInstructions(event: ContextEvent): ContextE
 
 	const alreadyPresented = event.messages
 		.slice(latestUserIndex + 1)
-		.some((message) => "role" in message && message.role === "toolResult" && message.toolName === "review_findings");
+		.some(
+			(message) =>
+				"role" in message &&
+				message.role === "toolResult" &&
+				message.toolName === "review_findings" &&
+				!message.isError,
+		);
 	if (alreadyPresented) return;
 
 	const messages = [...event.messages];

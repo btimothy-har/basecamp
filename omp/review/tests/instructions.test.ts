@@ -49,7 +49,7 @@ describe("OMP native review instructions", () => {
 			timestamp: 0,
 		});
 		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("Call `review_findings` exactly once");
-		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("Read the `artifact://` URI");
+		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("use the complete review JSON returned inline");
 	});
 
 	test("keeps instructions active after reviewer tool results", () => {
@@ -69,11 +69,23 @@ describe("OMP native review instructions", () => {
 			contextEvent([
 				{ role: "user", content: reviewPrompt, timestamp: 1 },
 				{ role: "assistant", content: [], timestamp: 2 },
-				{ role: "toolResult", toolName: "review_findings", content: [], timestamp: 3 },
+				{ role: "toolResult", toolName: "review_findings", isError: false, content: [], timestamp: 3 },
 			]),
 		);
 
 		expect(result).toBeUndefined();
+	});
+
+	test("keeps instructions active after review_findings fails", () => {
+		const result = instructionHandler()(
+			contextEvent([
+				{ role: "user", content: reviewPrompt, timestamp: 1 },
+				{ role: "assistant", content: [], timestamp: 2 },
+				{ role: "toolResult", toolName: "review_findings", isError: true, content: [], timestamp: 3 },
+			]),
+		);
+
+		expect(result?.messages?.[1]).toMatchObject({ content: REVIEW_PRESENTATION_INSTRUCTIONS });
 	});
 
 	test("does not revive instructions from a historical review", () => {
