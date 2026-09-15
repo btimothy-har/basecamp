@@ -11,11 +11,11 @@ basecamp setup
 pi
 ```
 
-Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-works/pi).
+Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-works/pi). Bun is required during installation only when `omp` is missing.
 
 ## OMP migration
 
-`bomp` is an additional migration launcher for Basecamp's independent [Oh My Pi](https://github.com/can1357/oh-my-pi) plugin; the Pi quick start above remains the default. Install Basecamp as above, then make sure the `omp` command and Bun 1.3.14+ are available:
+`bomp` is an additional migration launcher for Basecamp's independent [Oh My Pi](https://github.com/can1357/oh-my-pi) plugin; the Pi quick start above remains the default. Install Basecamp as above; later runs can use `basecamp install`. The shared installer records the source checkout and verifies a PATH-resolved `omp` with `omp --version`. It leaves an existing OMP installation untouched. Only when `omp` is missing does it require Bun and run exactly `bun install -g @oh-my-pi/pi-coding-agent`, then verify the installed command before completing:
 
 ```bash
 bomp [OMP arguments...]
@@ -35,7 +35,7 @@ When OMP finally exits, `bomp` force-removes the initial checkout, discarding st
 
 If cleanup fails, `bomp` prints the exact targeted `git -C '<source-root>' worktree remove --force '<initial-worktree>'` recovery command. Use that command; do not run the broad `omp worktree clear --all` command.
 
-The migration surface is currently limited to five portable skills (`data-analysis`, `data-warehousing`, `marimo`, `python-development`, and `sql`) and OMP-native file-length reminders. OMP retains its default prompt and context discovery: `bomp` does not apply Basecamp's Pi prompt replacement, carry over configured `context` or `working_style`, or modify OMP configuration.
+The current Basecamp OMP surface is the PATH-based `bomp` launcher plus the OMP-native file-length reminder in the source-checkout-backed `omp/` extension package. OMP retains its default prompt and context discovery: `bomp` does not apply Basecamp's Pi prompt replacement, carry over configured `context` or `working_style`, or modify OMP configuration.
 
 ## What basecamp does
 

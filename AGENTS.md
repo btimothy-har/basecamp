@@ -9,7 +9,7 @@ The repo is organized by the artifacts it ships:
 | Product | Directory | Purpose |
 |---------|-----------|---------|
 | Basecamp Pi extension | `pi/` (`pi/extension.ts` + `pi/<domain>/`) | The legacy Pi package, registered from the repo root: all session, workspace, workflow, and agent behavior, assembled from domain modules |
-| Basecamp OMP extension | `omp/` | The independently loadable Oh My Pi migration target: portable skills plus OMP-native behavior, registered from its own package root |
+| Basecamp OMP extension | `omp/` | The source-checkout-backed, independently loadable Oh My Pi migration target: an OMP-native file-length reminder registered from its own package root |
 | `basecamp` Python distribution | `src/basecamp/` | One ordinary src-layout package: CLI/installer shell plus the `basecamp.core`, `basecamp.workspace`, `basecamp.hub` (daemon + agents dashboard), and `basecamp.omp` (migration launcher) subpackages |
 
 `evals/` is deliberately outside the shipped products. It contains repository-local evaluation harness integrations and may depend on evaluator APIs that production Basecamp never imports.
@@ -18,9 +18,11 @@ The repo is organized by the artifacts it ships:
 
 The repo root is the legacy Pi package (`package.json` / `tsconfig.json` / `biome.json`); `omp/package.json` and `omp/tsconfig.json` own the OMP extension's Bun toolchain. Python tooling is `pyproject.toml` + `install.py` + `Makefile`. Two boundary lints live in `scripts/`: `check-boundaries.ts` and `check-file-length.ts` (see File Length Limits).
 
-`pi/` holds the legacy TypeScript extension — one domain per directory under `pi/<domain>/`, composed by `pi/extension.ts` in a fixed order (core first). `omp/` holds the independent OMP extension and portable skills. `src/basecamp/` holds the Python package, including the `bomp` launcher under `src/basecamp/omp/`. The per-directory layout is visible on the filesystem; domain architecture depth lives in `docs/architecture/`.
+`pi/` holds the legacy TypeScript extension — one domain per directory under `pi/<domain>/`, composed by `pi/extension.ts` in a fixed order (core first) — plus the Pi-owned skills under `pi/skills/`. `omp/` holds the independent OMP extension and its native file-length reminder. `src/basecamp/` holds the Python package, including the `bomp` launcher under `src/basecamp/omp/`. The per-directory layout is visible on the filesystem; domain architecture depth lives in `docs/architecture/`.
 
-`basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.) `bomp` is an additional OMP migration entrypoint, not the legacy Pi default. Ordinary launches load the root `omp/` plugin, prepend a matched project's existing additional directories, preserve every supplied OMP argument, use OMP's prompt and context discovery, never mutate OMP configuration, and directly exec OMP; `--detached` selects the disposable-worktree supervisor described below.
+`basecamp` is one ordinary src-layout package under `src/basecamp/` — `import basecamp.<domain>` resolves to `src/basecamp/<domain>/`. (The pre-rearchitecture PEP 420 namespace-portion layout, with per-domain `py/` roots and a `check-namespace` guard, is gone.) The shared installer (`uv run install.py` initially and `basecamp install` thereafter) validates a PATH-resolved OMP with `omp --version` without changing an existing installation. Only when `omp` is missing does it require Bun and run exactly `bun install -g @oh-my-pi/pi-coding-agent`; after verifying the installed command and completing the other components, it records the source checkout that backs the extension packages.
+
+`bomp` is an additional, PATH-based OMP migration entrypoint, not the legacy Pi default. Ordinary launches load the root `omp/` plugin from the recorded source checkout, prepend a matched project's existing additional directories, preserve every supplied OMP argument, use OMP's prompt and context discovery, never mutate OMP configuration, and directly exec OMP; `--detached` selects the disposable-worktree supervisor described below.
 
 Legacy Pi TypeScript imports use Node subpath aliases, never parent traversal: `./sibling.ts` is the only legal relative form and every `../` is spelled `#<domain>/…`. Cross-domain, `#core/*` is free (from inside core too) and other domains resolve only via `#<domain>/index.ts`; core imports no other domain. Enforced by `scripts/check-boundaries.ts` in `npm run check`. OMP code is a separate type graph and never imports executable modules from `pi/`.
 
@@ -130,7 +132,7 @@ Workstreams are durable, **repo-neutral** coordination state owned by the `works
 ## Development
 
 - **Python**: 3.12+, managed with `uv`
-- **Install (dev)**: `uv run install.py` (installs the `basecamp` and `bomp` tools, then registers the repo root as the single Pi extension, cleaning up legacy per-package registrations)
+- **Install (dev)**: `uv run install.py` (installs the `basecamp` and `bomp` tools, validates or conditionally installs OMP, registers the repo root as the single Pi extension while cleaning up legacy registrations, and records the source checkout)
 - **Iterate on the CLI**: `uv run install.py` installs a **non-editable** snapshot of `basecamp` on PATH, so for live iteration against your working tree run entrypoints via `uv run basecamp <cmd>` or `uv run bomp <args>` (the `uv sync` editable dev venv) rather than re-installing after each change
 - **Python lint**: `uv run ruff check .` / `uv run ruff format --check .`
 - **Legacy TypeScript check**: `npm run check` at the repo root (tsc whole-graph + biome + import-boundary + file-length checks)
