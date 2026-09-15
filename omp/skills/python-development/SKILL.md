@@ -17,6 +17,7 @@ description: "Python guidance for work involving .py files or dependency managem
 - **Google Python Style Guide** - Follow it for formatting, naming, and structure
 - **Type hints everywhere** - All function signatures, return types, and complex variables
 - **Context managers** - Use `with` for files, connections, locks, and any resource cleanup
+- **No mutable defaults** - Never use `[]` or `{}` as default arguments
 
 **Decision Making**
 - **Readability over cleverness** - Clear code beats clever code
