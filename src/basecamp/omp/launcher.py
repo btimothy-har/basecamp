@@ -6,7 +6,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,48 +14,9 @@ from basecamp.core.exceptions import LauncherError
 from basecamp.core.models import ProjectConfig
 from basecamp.core.projects import load_projects
 from basecamp.core.settings import settings
+from basecamp.omp.arguments import effective_cwd
 
 _GIT_TIMEOUT_SECONDS = 5
-
-# Bomp must select roots before OMP starts. These pinned 18.1.21 built-ins
-# consume any following token, even a flag-looking one such as ``--cwd``.
-_OMP_STRING_VALUE_FLAGS = frozenset(
-    {
-        "--add-dir",
-        "--alias",
-        "--append-system-prompt",
-        "--api-key",
-        "--approval-mode",
-        "--config",
-        "--cwd",
-        "--export",
-        "--extension",
-        "--fork",
-        "--hook",
-        "--max-time",
-        "--mode",
-        "--model",
-        "--models",
-        "--plan",
-        "--plan-yolo-into",
-        "--plugin-dir",
-        "--prewalk-into",
-        "--profile",
-        "--prompt-cache-key",
-        "--provider",
-        "--provider-session-id",
-        "--service-tier",
-        "--session-dir",
-        "--skills",
-        "--slow",
-        "--smol",
-        "--system-prompt",
-        "--thinking",
-        "--tools",
-        "--trusted-extension",
-        "-e",
-    }
-)
 
 
 @dataclass(frozen=True)
@@ -66,49 +26,6 @@ class LaunchPlan:
     argv: list[str]
     project_name: str | None
     warnings: tuple[str, ...]
-
-
-def effective_cwd(
-    cwd: Path,
-    args: Sequence[str],
-    *,
-    home: Path | None = None,
-) -> Path:
-    """Resolve the directory OMP will use without consuming its arguments."""
-    selected = cwd
-    has_explicit_cwd = False
-    allows_home = False
-    index = 0
-    while index < len(args):
-        argument = args[index]
-        if argument == "--":
-            break
-        if argument == "--cwd" and index + 1 < len(args):
-            value = args[index + 1]
-            selected = _resolve_cli_path(value, cwd)
-            has_explicit_cwd = bool(value)
-            index += 2
-            continue
-        if argument.startswith("--cwd="):
-            value = argument.removeprefix("--cwd=")
-            selected = _resolve_cli_path(value, cwd)
-            has_explicit_cwd = bool(value)
-            index += 1
-            continue
-        if argument == "--allow-home" or argument.startswith("--allow-home="):
-            allows_home = True
-            index += 1
-            continue
-        if argument in _OMP_STRING_VALUE_FLAGS and index + 1 < len(args):
-            index += 2
-            continue
-        index += 1
-    return _apply_omp_home_fallback(
-        selected.resolve(),
-        home=(home or Path.home()).resolve(),
-        has_explicit_cwd=has_explicit_cwd,
-        allows_home=allows_home,
-    )
 
 
 def canonical_checkout(cwd: Path) -> Path | None:
@@ -210,29 +127,6 @@ def _absolute_configured_path(value: str, home: Path) -> Path:
         return home / value[2:]
     path = Path(value)
     return path if path.is_absolute() else home / path
-
-
-def _resolve_cli_path(value: str, cwd: Path) -> Path:
-    path = Path(value)
-    return path if path.is_absolute() else cwd / path
-
-
-def _apply_omp_home_fallback(
-    selected: Path,
-    *,
-    home: Path,
-    has_explicit_cwd: bool,
-    allows_home: bool,
-) -> Path:
-    if has_explicit_cwd or allows_home or selected != home:
-        return selected
-    for candidate in (home / "tmp", Path("/tmp"), Path("/var/tmp"), Path(tempfile.gettempdir())):
-        try:
-            if candidate.is_dir() and candidate.resolve() != selected:
-                return candidate.resolve()
-        except OSError:
-            continue
-    return selected
 
 
 def _is_omp_package(path: Path) -> bool:
