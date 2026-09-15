@@ -1,7 +1,7 @@
 ---
 description: "Spell out INNER JOIN instead of a bare JOIN keyword"
 condition:
-  - "(?im)^[ \\t]*JOIN\\b"
+  - "(?im)(?<!(?:INNER|LEFT|RIGHT|FULL|CROSS|NATURAL|OUTER|SEMI|ANTI|ASOF)\\s+)\\bJOIN\\b"
 scope: "tool:edit(*.sql), tool:write(*.sql)"
 interruptMode: never
 ---

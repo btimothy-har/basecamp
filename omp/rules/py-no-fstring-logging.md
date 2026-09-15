@@ -1,6 +1,6 @@
 ---
 description: "Pass lazy %-args or structured extra to stdlib logging instead of f-strings"
-condition: "\\b(?:logging|logger|log)\\.(?:debug|info|warning|warn|error|exception|critical|fatal)\\(\\s*f[\"']"
+condition: "\\b(?:logging|logger|log)\\.(?:debug|info|warning|warn|error|exception|critical|fatal)\\(\\s*[Ff][\"']"
 scope: "tool:edit(*.py), tool:write(*.py)"
 interruptMode: never
 ---
