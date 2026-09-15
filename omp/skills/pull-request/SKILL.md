@@ -17,7 +17,7 @@ Follow the applicable sections in order.
 
 Repository instructions and PR templates take precedence over generic defaults. Never merge or close the PR. Submit an approving review only when the user explicitly requests or authorizes that approval action. Preparing or updating a PR, marking it ready, posting comments, or clearing review feedback does not authorize approval.
 
-Prefer the `github` operations for reading and mutating PRs, and `pr://`/`issue://` for reading existing PR and issue context. Use `gh` only for gaps those do not cover, such as changing ready state or replying to and resolving review threads.
+Prefer the `github` operations for reading and mutating PRs, and `pr://`/`issue://` for reading existing PR and issue context. Use `gh` only for gaps those do not cover, such as editing an existing PR's title or body with `gh pr edit`, changing ready state, or replying to and resolving review threads.
 
 ## 1. Establish context
 
@@ -125,7 +125,7 @@ For a new PR, use the `github` `pr_create` operation to:
 - use the resolved base
 - include the reviewed title and body
 
-For an existing PR:
+For an existing PR, use `gh pr edit` when its title or body needs updating:
 
 - preserve deliberate context and required template sections
 - update stale title, scope, decisions, validation, and follow-ups
