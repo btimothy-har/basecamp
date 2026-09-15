@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -111,6 +112,12 @@ def _write_fake_omp(path: Path) -> None:
                 and command[-1] == "HEAD"
             ):
                 record("worktree-add", workspace=command[4])
+                if creation_ready := os.environ.get("BOMP_CREATION_READY"):
+                    signal.signal(signal.SIGINT, signal.SIG_DFL)
+                    Path(creation_ready).write_text(command[4])
+                    release = Path(os.environ["BOMP_CREATION_RELEASE"])
+                    while not release.exists():
+                        time.sleep(0.02)
                 result = subprocess.run(["git", *command], check=False)
                 raise SystemExit(result.returncode)
 
@@ -157,6 +164,32 @@ def _write_fake_omp(path: Path) -> None:
             head = git_output("-C", str(root), "rev-parse", "HEAD")
             record("session", root=str(root), status=status, head=head)
             raise SystemExit(int(os.environ.get("BOMP_EXIT_STATUS", "0")))
+            """
+        )
+    )
+    path.chmod(0o755)
+
+
+def _write_delayed_git(path: Path, real_git: str) -> None:
+    path.write_text(
+        textwrap.dedent(
+            f"""\
+            #!{sys.executable}
+            import os
+            import signal
+            import subprocess
+            import sys
+            import time
+            from pathlib import Path
+
+            arguments = sys.argv[1:]
+            if arguments[2:5] == ["worktree", "remove", "--force"]:
+                signal.signal(signal.SIGINT, signal.SIG_DFL)
+                Path(os.environ["BOMP_CLEANUP_READY"]).write_text(arguments[-1])
+                release = Path(os.environ["BOMP_CLEANUP_RELEASE"])
+                while not release.exists():
+                    time.sleep(0.02)
+            raise SystemExit(subprocess.run([{real_git!r}, *arguments], check=False).returncode)
             """
         )
     )
@@ -342,6 +375,50 @@ def test_bomp_detached_removes_changed_workspace_and_propagates_status(tmp_path:
     assert not (harness.source / "staged.txt").exists()
     assert not (harness.source / "untracked.txt").exists()
     assert not (harness.source / "ignored.tmp").exists()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX process-group signal behavior")
+@pytest.mark.parametrize("phase", ["creation", "cleanup"])
+def test_bomp_detached_defers_interrupt_during_worktree_operation(tmp_path: Path, phase: str) -> None:
+    harness = _make_harness(tmp_path)
+    ready = tmp_path / f"{phase}-ready"
+    release = tmp_path / f"{phase}-release"
+    prefix = f"BOMP_{phase.upper()}"
+    harness.environment.update({f"{prefix}_READY": str(ready), f"{prefix}_RELEASE": str(release)})
+    if phase == "cleanup":
+        real_git = shutil.which("git")
+        assert real_git is not None
+        _write_delayed_git(harness.fake_omp.parent / "git", real_git)
+    entrypoint = Path(sys.executable).with_name("bomp")
+    process = subprocess.Popen(
+        [str(entrypoint), "--detached", "--cwd", str(harness.nested)],
+        cwd=harness.source.parent,
+        env=harness.environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+
+    try:
+        _wait_for_path(ready)
+        workspace = Path(ready.read_text())
+        os.killpg(process.pid, signal.SIGINT)
+        time.sleep(0.1)
+
+        assert process.poll() is None
+        assert workspace.is_dir()
+        release.touch()
+        _stdout, stderr = process.communicate(timeout=20)
+    finally:
+        if process.poll() is None:
+            os.killpg(process.pid, signal.SIGKILL)
+            process.wait()
+
+    assert process.returncode == 128 + signal.SIGINT, stderr
+    assert not workspace.exists()
+    assert workspace not in _worktrees(harness.source)
+    assert "could not remove detached worktree" not in stderr
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX process-group signal behavior")
