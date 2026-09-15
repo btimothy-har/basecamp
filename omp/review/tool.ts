@@ -1,7 +1,7 @@
-import { isAbsolute, relative, sep } from "node:path";
 import { type ExtensionAPI, Text, type Theme } from "@oh-my-pi/pi-coding-agent";
 import { buildReviewArtifact, prepareReview, reviewPriorityCounts } from "./artifact.ts";
 import { navigateReviewFindings } from "./navigator/index.ts";
+import { findRepositoryRoot, repositoryRelativePath } from "./paths.ts";
 import {
 	createReviewFindingsParameters,
 	type FeedbackStatus,
@@ -11,22 +11,17 @@ import {
 } from "./schema.ts";
 
 const TOOL_DESCRIPTION =
-	"Present one final code review after all native OMP reviewer tasks finish. The primary agent must validate and semantically deduplicate every finding before calling this tool exactly once. Pass OMP-native priorities and source locations, with an empty findings array when no valid findings remain. This tool collects user feedback and returns an artifact URI to read before continuing, or the complete JSON inline in a non-persistent session. Reviewer subagents must not call this tool.";
+	"Present one final code review after all native OMP reviewer tasks finish. The primary agent must validate and semantically deduplicate every finding before calling this tool exactly once. Pass OMP-native priorities and source locations, with an empty findings array when no valid findings remain. This tool collects user feedback and returns a readable artifact URI or blob path; read it before continuing. Reviewer subagents must not call this tool.";
 
 export interface ReviewToolDetails {
-	artifactPersistent: boolean;
-	artifactRef: string;
 	commentedCount: number;
 	counts: PriorityCounts;
 	feedbackStatus: FeedbackStatus;
 	findingCount: number;
 	overallCorrectness: OverallCorrectness;
+	reviewRef: string;
 	scope: string;
-}
-
-function repositoryRelativePath(filePath: string, cwd: string): string {
-	if (!isAbsolute(filePath)) return filePath;
-	return relative(cwd, filePath).split(sep).join("/");
+	storage: "artifact" | "blob";
 }
 
 function renderReviewResult(details: ReviewToolDetails, theme: Theme): string {
@@ -50,9 +45,7 @@ function renderReviewResult(details: ReviewToolDetails, theme: Theme): string {
 	const findings = `${details.findingCount} finding${details.findingCount === 1 ? "" : "s"}`;
 	const comments = `${details.commentedCount} comment${details.commentedCount === 1 ? "" : "s"}`;
 	const counts = details.counts;
-	const location = details.artifactPersistent
-		? `${theme.fg("muted", "Full review and feedback:")} ${details.artifactRef}`
-		: theme.fg("muted", "Full review and feedback returned inline for this non-persistent session.");
+	const location = `${theme.fg("muted", "Full review and feedback:")} ${details.reviewRef}`;
 	return [
 		theme.fg("toolTitle", theme.bold(title)),
 		`${theme.fg(verdictColor, verdict)} · ${findings} · ${comments}`,
@@ -74,11 +67,12 @@ export default function registerReviewTool(pi: ExtensionAPI): void {
 		loadMode: "essential",
 		async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
 			const params = rawParams as ReviewFindingsInput;
+			const repositoryRoot = await findRepositoryRoot(ctx.cwd);
 			const prepared = prepareReview({
 				...params,
 				findings: params.findings.map((finding) => ({
 					...finding,
-					file_path: repositoryRelativePath(finding.file_path, ctx.cwd),
+					file_path: repositoryRelativePath(finding.file_path, repositoryRoot),
 				})),
 			});
 			let feedbackStatus: FeedbackStatus;
@@ -96,25 +90,31 @@ export default function registerReviewTool(pi: ExtensionAPI): void {
 
 			const artifact = buildReviewArtifact(prepared, feedbackStatus, comments);
 			const artifactJson = JSON.stringify(artifact, null, 2);
-			const artifactId = await ctx.sessionManager.saveArtifact(artifactJson, "code-review");
-			if (!artifactId) throw new Error("OMP could not allocate a review artifact");
-			const artifactRef = `artifact://${artifactId}`;
-			const artifactPersistent = (await ctx.sessionManager.getArtifactPath(artifactId)) !== null;
+			let reviewRef: string;
+			let storage: ReviewToolDetails["storage"];
+			if (ctx.sessionManager.getArtifactsDir() !== null) {
+				const artifactId = await ctx.sessionManager.saveArtifact(artifactJson, "code-review");
+				if (!artifactId) throw new Error("OMP could not allocate a review artifact");
+				reviewRef = `artifact://${artifactId}`;
+				storage = "artifact";
+			} else {
+				const blob = await ctx.sessionManager.putBlob(Buffer.from(artifactJson), { extension: "json" });
+				reviewRef = blob.displayPath;
+				storage = "blob";
+			}
 			const details: ReviewToolDetails = {
-				artifactPersistent,
-				artifactRef,
 				commentedCount: artifact.findings.filter((finding) => finding.feedback.comment !== null).length,
 				counts: reviewPriorityCounts(artifact.findings),
 				feedbackStatus,
 				findingCount: artifact.findings.length,
 				overallCorrectness: artifact.overall_correctness,
+				reviewRef,
 				scope: artifact.scope,
+				storage,
 			};
-			// OMP 18.2.0 spills tool text above 50 KiB through the same unreadable
-			// in-memory artifact path. Keep the expected-small fallback to bare JSON.
-			const text = artifactPersistent ? `Read ${artifactRef} before continuing.` : artifactJson;
+			const reference = storage === "blob" ? JSON.stringify(reviewRef) : reviewRef;
 			return {
-				content: [{ type: "text", text }],
+				content: [{ type: "text", text: `Read ${reference} before continuing.` }],
 				details,
 			};
 		},

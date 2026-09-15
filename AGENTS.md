@@ -103,7 +103,7 @@ A cleanup failure prints that exact, shell-quoted targeted Git command; never su
 
 Legacy Pi keeps `/code-review [additional instructions]` as a thin primary-only prompt command over the model-invocable `code-review` skill: fixed and adaptive report-only reviewers feed a primary chair, and `report_findings` computes the deterministic verdict.
 
-OMP instead keeps native `/review` authoritative for scope selection, diff preparation, reviewer fan-out, and structured findings. The OMP extension recognizes the native review request in model-bound context, requires the primary to validate and semantically deduplicate results, then calls `review_findings` once. That tool presents the final P0–P3 findings in a keyboard navigator, collects per-finding comments, and saves the canonical review plus feedback as a session artifact. It returns the artifact reference to the agent when persistence is available and otherwise returns the complete JSON inline. See `docs/architecture/code-review.md` for both flows.
+OMP instead keeps native `/review` authoritative for scope selection, diff preparation, reviewer fan-out, and structured findings. The OMP extension recognizes the native review request in model-bound context, requires the primary to validate and semantically deduplicate results, then calls `review_findings` once. That tool presents the final P0–P3 findings in a keyboard navigator, collects per-finding comments, and saves the canonical review plus feedback as a session artifact. It returns the artifact reference to the agent when session persistence is available and otherwise stores the JSON through OMP's content-addressed blob primitive and returns its readable path. See `docs/architecture/code-review.md` for both flows.
 
 ### Bash Reviewer
 

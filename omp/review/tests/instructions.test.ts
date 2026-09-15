@@ -49,7 +49,7 @@ describe("OMP native review instructions", () => {
 			timestamp: 0,
 		});
 		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("Call `review_findings` exactly once");
-		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("use the complete review JSON returned inline");
+		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("Read the returned review URI or file path");
 	});
 
 	test("keeps instructions active after reviewer tool results", () => {

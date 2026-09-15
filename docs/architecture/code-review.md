@@ -14,8 +14,8 @@ The exact-pinned OMP review prompt starts with `## Code Review Request` and disp
 2. OMP dispatches its native `reviewer` tasks and returns their structured results to the primary.
 3. The primary validates and consolidates the results into the strict native-shaped `review_findings` input, normalizing source locations to repository-relative paths and including an empty findings array when none remain.
 4. In TUI mode, `review_findings` opens a `ui.custom` navigator. Headless modes skip interaction but still record the review with feedback marked unavailable.
-5. The tool deterministically sorts findings, assigns artifact-local IDs, nests each submitted comment with its finding, and writes versioned JSON through `sessionManager.saveArtifact`.
-6. In persistent sessions, the model-visible tool result is only `Read artifact://<id> before continuing.` In `--no-session` mode, where OMP cannot resolve its in-memory artifact IDs through `artifact://`, the tool instead returns the complete JSON inline.
+5. The tool deterministically sorts findings, assigns artifact-local IDs, nests each submitted comment with its finding, and writes versioned JSON through OMP storage primitives.
+6. In persistent sessions, the model-visible tool result is only `Read artifact://<id> before continuing.` In `--no-session` mode, where OMP cannot resolve its in-memory artifact IDs through `artifact://`, the tool writes the same JSON to the content-addressed blob store and returns its readable path.
 
 The navigator is terminal-height aware and recalculates its list and card viewports after resize. The list keeps the selected finding visible; cards use `PageUp`/`PageDown` for long content; the embedded editor owns cursor-following scroll for long comments. The tool's abort signal reaches both custom views, so cancellation cannot leave a mounted navigator or persist stale feedback.
 
@@ -25,7 +25,7 @@ The navigator is terminal-height aware and recalculates its list and card viewpo
 | Card | `←`/`→` prev/next · `PageUp`/`PageDown` scroll · `↓` or `Tab` comment · `Esc` back |
 | Comment box | `Enter` save · `Esc` save and close · `↑`/`Backspace` on empty close · `shift+Enter` newline |
 
-The artifact is session-scoped: it survives resume and rewind, moves with the session, copies on fork, and is removed when the session is dropped. Its schema contains `schema_version`, scope, final correctness/explanation/confidence, feedback status, and findings with native priority/location fields plus nested nullable comments.
+Persistent-session artifacts survive resume and rewind, move with the session, copy on fork, and are removed when the session is dropped. The no-session blob fallback instead follows OMP's content-addressed blob garbage-collection lifecycle. Both contain `schema_version`, scope, final correctness/explanation/confidence, feedback status, and findings with native priority/location fields plus nested nullable comments.
 
 ### OMP layout
 
@@ -33,6 +33,7 @@ The artifact is session-scoped: it survives resume and rewind, moves with the se
 - `omp/review/schema.ts`: strict native-shaped tool input and versioned artifact types.
 - `omp/review/artifact.ts`: deterministic ordering, IDs, counts, and artifact construction.
 - `omp/review/tool.ts`: `review_findings`, artifact save, and passive transcript renderer.
+- `omp/review/paths.ts`: repository-root discovery and finding-path normalization.
 - `omp/review/navigator/`: keyboard model, terminal rendering, and `ui.custom` list/card loop.
 
 ## Legacy Pi review
