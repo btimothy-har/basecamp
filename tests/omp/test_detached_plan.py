@@ -124,6 +124,24 @@ def test_parse_detached_arguments_ignores_swallowed_session_flag(tmp_path: Path)
     assert result.omp_args == ("--system-prompt", "--resume", "prompt")
 
 
+def test_parse_detached_arguments_preserves_absolute_session_directory(tmp_path: Path) -> None:
+    session_dir = tmp_path / "sessions"
+
+    result = detached_plan.parse_detached_arguments(
+        tmp_path,
+        ["--detached", "--session-dir", str(session_dir)],
+        home=tmp_path / "home",
+    )
+
+    assert result.omp_args == ("--session-dir", str(session_dir))
+
+
+@pytest.mark.parametrize("args", [["--session-dir", "relative"], ["--session-dir=relative"], ["--session-dir"]])
+def test_parse_detached_arguments_rejects_relative_session_directory(tmp_path: Path, args: list[str]) -> None:
+    with pytest.raises(LauncherError, match="requires --session-dir to use an absolute path"):
+        detached_plan.parse_detached_arguments(tmp_path, ["--detached", *args], home=tmp_path / "home")
+
+
 @pytest.mark.parametrize(
     "args",
     [

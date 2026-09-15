@@ -15,6 +15,8 @@ from basecamp.core.models import ProjectConfig
 from basecamp.core.projects import load_projects
 from basecamp.core.settings import settings
 from basecamp.omp.arguments import effective_cwd
+from basecamp.omp.detached_plan import is_detached_requested, plan_detached_launch
+from basecamp.omp.detached_run import create_workspace, remove_workspace, report_cleanup_failure, supervise_omp
 
 _GIT_TIMEOUT_SECONDS = 5
 
@@ -155,9 +157,11 @@ def run_launch(
     cwd: Path | None = None,
     projects: Mapping[str, ProjectConfig] | None = None,
     extension_dir: Path | None = None,
-) -> None:
-    """Validate and replace this process with the project-aware OMP launch."""
-    if shutil.which("omp") is None:
+    environ: Mapping[str, str] | None = None,
+) -> int | None:
+    """Start OMP directly or supervise one disposable detached launch."""
+    omp_executable = shutil.which("omp")
+    if omp_executable is None:
         message = "OMP executable not found on PATH; install Oh My Pi before using bomp."
         raise LauncherError(message)
 
@@ -166,22 +170,75 @@ def run_launch(
         message = f"Basecamp OMP extension not found at {package}; run basecamp install."
         raise LauncherError(message)
 
+    active_cwd = cwd or Path.cwd()
     configured_projects = projects if projects is not None else load_projects()
-    plan = build_launch(cwd or Path.cwd(), args, configured_projects, package)
-    for warning in plan.warnings:
-        print(f"bomp: warning: {warning}", file=sys.stderr)
+    if is_detached_requested(args):
+        return _run_detached_launch(
+            args,
+            cwd=active_cwd,
+            projects=configured_projects,
+            package=package,
+            omp_executable=omp_executable,
+            environ=os.environ if environ is None else environ,
+        )
 
+    plan = build_launch(active_cwd, args, configured_projects, package)
+    _print_warnings(plan.warnings)
     try:
         os.execvp("omp", plan.argv)
     except OSError as exc:
         message = f"Could not start OMP: {exc}"
         raise LauncherError(message) from exc
+    return None
+
+
+def _run_detached_launch(
+    args: Sequence[str],
+    *,
+    cwd: Path,
+    projects: Mapping[str, ProjectConfig],
+    package: Path,
+    omp_executable: str,
+    environ: Mapping[str, str],
+) -> int:
+    detached = plan_detached_launch(
+        cwd,
+        args,
+        omp_executable=omp_executable,
+        environ=environ,
+    )
+    workspace = create_workspace(detached, omp_executable=omp_executable, environ=environ)
+    try:
+        print(
+            f"bomp: detached worktree {workspace.path}; use /wt <branch> before exit to retain code.",
+            file=sys.stderr,
+        )
+        _print_warnings(workspace.warnings)
+        launch = build_launch(
+            workspace.launch_cwd,
+            detached.arguments.omp_args,
+            projects,
+            package,
+        )
+        _print_warnings(launch.warnings)
+        return supervise_omp(launch.argv, cwd=workspace.launch_cwd, environ=environ)
+    finally:
+        failure = remove_workspace(detached.source.root, workspace.path)
+        if failure is not None:
+            report_cleanup_failure(failure, workspace_path=workspace.path, stream=sys.stderr)
+
+
+def _print_warnings(warnings: Sequence[str]) -> None:
+    for warning in warnings:
+        print(f"bomp: warning: {warning}", file=sys.stderr)
 
 
 def main() -> None:
     """Console entry point for ``bomp``."""
     try:
-        run_launch(sys.argv[1:])
+        status = run_launch(sys.argv[1:])
     except LauncherError as exc:
         print(f"bomp: error: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc
+    if status is not None:
+        raise SystemExit(status)

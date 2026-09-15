@@ -10,6 +10,8 @@ import pytest
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.models import ProjectConfig
 from basecamp.omp import launcher
+from basecamp.omp.detached_plan import DetachedArguments, DetachedPlan, GitSource
+from basecamp.omp.detached_run import CleanupFailure, DetachedWorkspace
 
 
 def _init_repo(path: Path) -> None:
@@ -341,3 +343,105 @@ def test_run_launch_wraps_exec_failure(
 
     with pytest.raises(LauncherError, match="Could not start OMP: exec failed"):
         launcher.run_launch([], cwd=tmp_path, projects={}, extension_dir=extension)
+
+
+def test_run_launch_supervises_and_cleans_detached_session(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    extension = _make_extension(tmp_path / "omp")
+    source = tmp_path / "source"
+    workspace_path = tmp_path / "worktrees" / "detached"
+    workspace = DetachedWorkspace(path=workspace_path, launch_cwd=workspace_path / "nested", warnings=())
+    detached = DetachedPlan(
+        arguments=DetachedArguments(
+            source_cwd=source / "nested",
+            omp_args=("--mode=rpc", "unchanged prompt"),
+            profile=None,
+        ),
+        source=GitSource(root=source, relative_cwd=Path("nested"), head="abc1234"),
+        worktree_base=tmp_path / "worktrees",
+    )
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(launcher.shutil, "which", lambda _command: "/tools/omp")
+    monkeypatch.setattr(launcher, "plan_detached_launch", lambda *_args, **_kwargs: detached)
+    monkeypatch.setattr(launcher, "create_workspace", lambda *_args, **_kwargs: workspace)
+
+    def fake_build_launch(
+        cwd: Path,
+        args: list[str] | tuple[str, ...],
+        projects: dict[str, ProjectConfig],
+        package: Path,
+    ) -> launcher.LaunchPlan:
+        captured.update(cwd=cwd, args=args, projects=projects, package=package)
+        return launcher.LaunchPlan(argv=["omp", "--extension", str(package), *args], project_name=None, warnings=())
+
+    def fake_supervise(argv: list[str], **kwargs: object) -> int:
+        captured["argv"] = argv
+        captured.update(kwargs)
+        return 37
+
+    monkeypatch.setattr(launcher, "build_launch", fake_build_launch)
+    monkeypatch.setattr(launcher, "supervise_omp", fake_supervise)
+    monkeypatch.setattr(
+        launcher,
+        "remove_workspace",
+        lambda source_root, path: captured.update(cleanup=(source_root, path)),
+    )
+
+    status = launcher.run_launch(
+        ["--detached", "--cwd", str(source / "nested"), "--mode=rpc", "unchanged prompt"],
+        cwd=tmp_path,
+        projects={},
+        extension_dir=extension,
+        environ={"HOME": str(tmp_path)},
+    )
+
+    assert status == 37
+    assert captured["cwd"] == workspace.launch_cwd
+    assert captured["args"] == ("--mode=rpc", "unchanged prompt")
+    assert captured["argv"] == ["omp", "--extension", str(extension), "--mode=rpc", "unchanged prompt"]
+    assert captured["cleanup"] == (source, workspace_path)
+    assert "use /wt <branch> before exit to retain code" in capsys.readouterr().err
+
+
+def test_run_launch_reports_cleanup_failure_without_overriding_child_status(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    extension = _make_extension(tmp_path / "omp")
+    source = tmp_path / "source"
+    workspace_path = tmp_path / "worktree"
+    detached = DetachedPlan(
+        arguments=DetachedArguments(source_cwd=source, omp_args=(), profile=None),
+        source=GitSource(root=source, relative_cwd=Path("."), head="abc1234"),
+        worktree_base=tmp_path,
+    )
+    workspace = DetachedWorkspace(path=workspace_path, launch_cwd=workspace_path, warnings=())
+    monkeypatch.setattr(launcher.shutil, "which", lambda _command: "/tools/omp")
+    monkeypatch.setattr(launcher, "plan_detached_launch", lambda *_args, **_kwargs: detached)
+    monkeypatch.setattr(launcher, "create_workspace", lambda *_args, **_kwargs: workspace)
+    monkeypatch.setattr(
+        launcher,
+        "build_launch",
+        lambda *_args, **_kwargs: launcher.LaunchPlan(argv=["omp"], project_name=None, warnings=()),
+    )
+    monkeypatch.setattr(launcher, "supervise_omp", lambda *_args, **_kwargs: 19)
+    monkeypatch.setattr(
+        launcher,
+        "remove_workspace",
+        lambda *_args: CleanupFailure(detail="locked", recovery_command="git targeted cleanup"),
+    )
+
+    status = launcher.run_launch(
+        ["--detached"],
+        cwd=tmp_path,
+        projects={},
+        extension_dir=extension,
+        environ={},
+    )
+
+    assert status == 19
+    assert "could not remove detached worktree" in capsys.readouterr().err

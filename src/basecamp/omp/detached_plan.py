@@ -150,6 +150,8 @@ def parse_detached_arguments(
         if argument.startswith("--cwd="):
             index += 1
             continue
+        if flag == "--session-dir":
+            _validate_session_dir(argument, args, index)
         if argument == "--profile":
             profile = _profile_value(args, index)
         elif argument.startswith("--profile="):
@@ -297,6 +299,17 @@ def _absolute_omp_path(value: str | None, home: Path) -> Path | None:
 
 def _flag_name(argument: str) -> str:
     return argument.partition("=")[0] if argument.startswith("--") else argument
+
+
+def _validate_session_dir(argument: str, args: Sequence[str], index: int) -> None:
+    if argument.startswith("--session-dir="):
+        value = argument.removeprefix("--session-dir=")
+    else:
+        value = args[index + 1] if index + 1 < len(args) else ""
+    if value and Path(value).is_absolute():
+        return
+    message = "Detached mode requires --session-dir to use an absolute path outside the disposable checkout."
+    raise LauncherError(message)
 
 
 def _profile_value(args: Sequence[str], index: int) -> str:
