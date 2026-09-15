@@ -110,9 +110,9 @@ export default function registerReviewTool(pi: ExtensionAPI): void {
 				overallCorrectness: artifact.overall_correctness,
 				scope: artifact.scope,
 			};
-			const text = artifactPersistent
-				? `Read ${artifactRef} before continuing.`
-				: `This non-persistent session cannot resolve ${artifactRef}. Use this complete review JSON before continuing:\n\n${artifactJson}`;
+			// OMP 18.2.0 spills tool text above 50 KiB through the same unreadable
+			// in-memory artifact path. Keep the expected-small fallback to bare JSON.
+			const text = artifactPersistent ? `Read ${artifactRef} before continuing.` : artifactJson;
 			return {
 				content: [{ type: "text", text }],
 				details,

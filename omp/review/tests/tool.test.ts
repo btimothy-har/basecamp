@@ -150,9 +150,8 @@ describe("review_findings", () => {
 		const text = result.content[0]?.type === "text" ? result.content[0].text : "";
 
 		expect(result.details).toMatchObject({ artifactPersistent: false, artifactRef: "artifact://42" });
-		expect(text).toContain("This non-persistent session cannot resolve artifact://42");
 		expect(text).toContain('"schema_version": 1');
-		expect(JSON.parse(text.slice(text.indexOf("{"))) as ReviewArtifactV1).toMatchObject({
+		expect(JSON.parse(text) as ReviewArtifactV1).toMatchObject({
 			findings: [{ file_path: "src/app.ts" }],
 		});
 	});
