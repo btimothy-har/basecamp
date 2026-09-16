@@ -196,6 +196,15 @@ def _resolve_omp_agent_dir(omp: str, *, profile: str | None = None) -> Path:
     return Path(location).expanduser().resolve()
 
 
+def _is_live_basecamp_rule_source(source: Path, name: str) -> bool:
+    try:
+        checkout = source.parents[2]
+    except IndexError:
+        return False
+    expected = checkout / "omp" / "user-rules" / name
+    return source == expected and _is_basecamp_checkout(checkout)
+
+
 def _install_omp_user_rules(omp: str, repo_dir: Path, *, profile: str | None = None) -> None:
     source_dir = repo_dir / "omp" / "user-rules"
     sources = {name: (source_dir / name).resolve() for name in OMP_USER_RULES}
@@ -219,7 +228,7 @@ def _install_omp_user_rules(omp: str, repo_dir: Path, *, profile: str | None = N
 
         if destination.is_symlink():
             link_target = (destination.parent / destination.readlink()).resolve()
-            if link_target not in managed_sources:
+            if link_target not in managed_sources and not _is_live_basecamp_rule_source(link_target, name):
                 console.print(f"\n[red]Refusing to replace user-managed OMP rule:[/red] {destination}")
                 raise SystemExit(1)
             if link_target != source:
