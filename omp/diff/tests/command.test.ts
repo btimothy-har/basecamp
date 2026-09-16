@@ -21,6 +21,7 @@ describe("/diff", () => {
 			[h.calls[0]?.command, "session", "comment"],
 			["herdr", "pane", "close"],
 		]);
+		expect(h.calls.every((call) => call.options?.cwd === h.root)).toBe(true);
 		const launch = h.calls[4];
 		expect(launch?.args).toContain("'patch'");
 		expect(launch?.args).toContain("'/tmp/review.patch'");
@@ -140,10 +141,11 @@ describe("/diff", () => {
 		const h = createCommandHarness({ sessionPid: 999 });
 		await h.invoke();
 
+		expect(h.cleanupCount()).toBe(0);
 		expect(h.calls.some((call) => call.args[1] === "close")).toBe(false);
 		expect(h.saved).toHaveLength(0);
 		expect(h.appended).toHaveLength(0);
-		expect(h.notifications.at(-1)?.message).toContain("pane remains open");
+		expect(h.notifications.at(-1)?.message).toContain("private launch inputs remain available");
 	});
 
 	test("reports omitted diff entries without aborting the review", async () => {

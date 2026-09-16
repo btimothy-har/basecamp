@@ -28,7 +28,7 @@ Annotations belong to the OMP session. They survive `/reload` and resume through
 
 Anchoring is intentionally best-effort. Basecamp hashes the exact annotated lines when the annotation is recorded and checks that same numeric range against the frozen review immediately before opening Hunk. If the file, range, diff membership, or text changed, the annotation is discarded for that review instead of being remapped onto potentially unrelated code. `/diff` reports the discarded IDs.
 
-A successfully captured review consumes annotations only through the session-journal position captured before Hunk opened. Any annotation recorded while the review is open remains available for the next `/diff`. A launch, session-discovery, note-read, or review-save failure consumes nothing and leaves the Hunk pane open.
+A successfully captured review consumes annotations only through the session-journal position captured before Hunk opened. Any annotation recorded while the review is open remains available for the next `/diff`. A launch, session-discovery, note-read, or review-save failure consumes nothing and leaves the Hunk pane open. Indeterminate launch or discovery also retains the private frozen patch and agent context because Hunk may still start.
 
 ### Requirements
 

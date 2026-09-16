@@ -79,8 +79,9 @@ async function readHunkPanePids(
 	pi: ExtensionAPI,
 	paneId: string,
 	frozenPatchPath: string,
+	cwd: string,
 ): Promise<ReadonlySet<number>> {
-	const processes = await readHerdrPaneProcesses(pi, paneId);
+	const processes = await readHerdrPaneProcesses(pi, paneId, cwd);
 	if (processes.status === "failed") {
 		throw new Error(processes.error ?? processes.stderr ?? processes.message);
 	}
@@ -150,7 +151,7 @@ export default function registerDiffCommand(pi: ExtensionAPI, deps: DiffCommandD
 				return;
 			}
 			const binary = availability.binary;
-			const baseline = await listHunkSessions(pi, binary);
+			const baseline = await listHunkSessions(pi, binary, undefined, snapshot.repositoryRoot);
 			if (!baseline.ok) {
 				ctx.ui.notify(`/diff could not discover Hunk sessions: ${baseline.reason}`, "error");
 				return;
@@ -198,7 +199,7 @@ export default function registerDiffCommand(pi: ExtensionAPI, deps: DiffCommandD
 			}
 			const argv = [binary.executable, "patch", reviewPatch.path];
 			if (agentContext) argv.push("--agent-context", agentContext.path, "--agent-notes");
-			const launched = await runInHerdrPane(pi, pane.value.paneId, argv);
+			const launched = await runInHerdrPane(pi, pane.value.paneId, argv, snapshot.repositoryRoot);
 			if (launched.status === "failed") {
 				ctx.ui.notify(
 					`/diff could not confirm that Hunk started: ${launched.message} The pane and its private launch inputs remain available because Hunk may still start.`,
@@ -208,15 +209,25 @@ export default function registerDiffCommand(pi: ExtensionAPI, deps: DiffCommandD
 			}
 
 			const before = new Set(baseline.sessions.map((session) => session.sessionId));
-			const discovery = await awaitLaunchedSession(pi, binary, undefined, before, poll, undefined, () =>
-				readHunkPanePids(pi, pane.value.paneId, reviewPatch.path),
+			const discovery = await awaitLaunchedSession(
+				pi,
+				binary,
+				undefined,
+				before,
+				poll,
+				undefined,
+				() => readHunkPanePids(pi, pane.value.paneId, reviewPatch.path, snapshot.repositoryRoot),
+				snapshot.repositoryRoot,
 			);
-			cleanupTemporaryFiles(ctx, reviewPatch, agentContext);
 			if (!discovery.ok || !discovery.session) {
 				const reason = discovery.ok ? "Hunk never registered a review session" : discovery.reason;
-				ctx.ui.notify(`/diff could not identify the Hunk review: ${reason}. The pane remains open.`, "error");
+				ctx.ui.notify(
+					`/diff could not identify the Hunk review: ${reason}. The pane and its private launch inputs remain available because Hunk may still start.`,
+					"error",
+				);
 				return;
 			}
+			cleanupTemporaryFiles(ctx, reviewPatch, agentContext);
 
 			const confirmed = await withHerdrBlocked(pi, "Reviewing in Hunk", () =>
 				ctx.ui.confirm(
@@ -224,7 +235,7 @@ export default function registerDiffCommand(pi: ExtensionAPI, deps: DiffCommandD
 					"Annotate the diff with `c`, then return here. Confirm submits the review; cancelling still captures notes already written.",
 				),
 			);
-			const read = await readUserNotes(pi, binary, discovery.session.sessionId);
+			const read = await readUserNotes(pi, binary, discovery.session.sessionId, snapshot.repositoryRoot);
 			if (!read.ok) {
 				ctx.ui.notify(
 					`/diff could not read your annotations (${read.reason}). The Hunk pane is still open so they are not lost.`,
@@ -262,7 +273,7 @@ export default function registerDiffCommand(pi: ExtensionAPI, deps: DiffCommandD
 				return;
 			}
 
-			const closed = await closeHerdrPane(pi, pane.value.paneId);
+			const closed = await closeHerdrPane(pi, pane.value.paneId, snapshot.repositoryRoot);
 			if (closed.status === "failed") {
 				ctx.ui.notify(`${closed.message} Your captured review is safe at ${persisted.reviewRef}.`, "warning");
 			}

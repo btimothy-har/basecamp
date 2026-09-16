@@ -64,7 +64,7 @@ append diff-completed through the captured journal cutoff
 deliver nonempty notes as a user message
 ```
 
-The temporary patch freezes the exact bytes returned by the shared loader, so later working-tree movement cannot make Hunk display a different diff from the one Basecamp validated. The optional agent-context JSON contains only annotations that passed that validation, and `--agent-notes` makes Hunk show them. Both files are private (`0700` directory, `0600` files), removed once Hunk has registered the session, and never treated as state. If pane-run delivery is indeterminate, Basecamp retains both because a delayed Hunk launch may still need them.
+The temporary patch freezes the exact bytes returned by the shared loader, so later working-tree movement cannot make Hunk display a different diff from the one Basecamp validated. The optional agent-context JSON contains only annotations that passed that validation, and `--agent-notes` makes Hunk show them. Both files are private (`0700` directory, `0600` files), removed once Hunk has registered the session, and never treated as state. If pane-run delivery or session discovery is indeterminate, Basecamp retains both because a delayed Hunk launch may still need them.
 
 The `diff-review` artifact records the repository, base and head revisions, hash of the frozen patch, submitted/cancelled status, user notes, displayed agent annotation IDs, and discarded agent annotation IDs. With no session artifact directory, OMP's content-addressed blob store provides the readable fallback.
 

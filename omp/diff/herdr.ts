@@ -103,10 +103,15 @@ export async function runHerdr<T>(
 	args: string[],
 	what: string,
 	parse: (stdout: string) => T,
+	cwd?: string,
 ): Promise<HerdrCommandResult<T>> {
 	let result: ExecResult;
 	try {
-		result = await pi.exec("herdr", args, { timeout: HERDR_COMMAND_TIMEOUT_MS });
+		result = await pi.exec(
+			"herdr",
+			args,
+			cwd ? { cwd, timeout: HERDR_COMMAND_TIMEOUT_MS } : { timeout: HERDR_COMMAND_TIMEOUT_MS },
+		);
 	} catch (err) {
 		return { status: "failed", message: `Herdr ${what} failed.`, args, error: errorMessage(err) };
 	}
@@ -192,26 +197,32 @@ export async function splitHerdrPane(
 	for (const [key, value] of Object.entries(input.env ?? {})) {
 		args.push("--env", `${key}=${value}`);
 	}
-	return await runHerdr(pi, args, "pane split", parsePaneTarget);
+	return await runHerdr(pi, args, "pane split", parsePaneTarget, input.cwd);
 }
 
 /** Every argv element is shell-quoted; see the module docblock. */
-export async function runInHerdrPane(pi: HerdrExec, paneId: string, argv: string[]): Promise<HerdrCommandResult<null>> {
+export async function runInHerdrPane(
+	pi: HerdrExec,
+	paneId: string,
+	argv: string[],
+	cwd?: string,
+): Promise<HerdrCommandResult<null>> {
 	const args = ["pane", "run", paneId, ...argv.map(shellQuote)];
-	return await runHerdr(pi, args, "pane run", () => null);
+	return await runHerdr(pi, args, "pane run", () => null, cwd);
 }
 
 /** `pane close` on an already-gone pane returns `pane_not_found` (exit 1). */
-export async function closeHerdrPane(pi: HerdrExec, paneId: string): Promise<HerdrCommandResult<null>> {
-	return await runHerdr(pi, ["pane", "close", paneId], "pane close", () => null);
+export async function closeHerdrPane(pi: HerdrExec, paneId: string, cwd?: string): Promise<HerdrCommandResult<null>> {
+	return await runHerdr(pi, ["pane", "close", paneId], "pane close", () => null, cwd);
 }
 
 /** Read the exact processes in one pane so Hunk discovery can bind to its PID. */
 export async function readHerdrPaneProcesses(
 	pi: HerdrExec,
 	paneId: string,
+	cwd?: string,
 ): Promise<HerdrCommandResult<HerdrPaneProcess[]>> {
-	return await runHerdr(pi, ["pane", "process-info", "--pane", paneId], "pane process info", parsePaneProcesses);
+	return await runHerdr(pi, ["pane", "process-info", "--pane", paneId], "pane process info", parsePaneProcesses, cwd);
 }
 
 /**

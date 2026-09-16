@@ -6,7 +6,7 @@
  */
 
 import { lstat } from "node:fs/promises";
-import { basename, posix, resolve, win32 } from "node:path";
+import { posix, resolve, win32 } from "node:path";
 import { requireGit } from "@oh-my-pi/pi-natives/vcs";
 import { parseUntrackedPorcelain, relabelNoIndexPatch } from "./untracked.ts";
 
@@ -63,12 +63,17 @@ export interface DiffLoaderDeps {
 	env?: { BASECAMP_REPO?: string | undefined };
 }
 
+function isCancellation(error: unknown, signal?: AbortSignal): boolean {
+	if (signal?.aborted) return true;
+	return typeof error === "object" && error !== null && "code" in error && error.code === "Canceled";
+}
+
 function nativesRepository(cwd: string): DiffRepository {
 	const repo = requireGit(cwd);
 	const repositoryRoot = repo.info().repoRoot;
 	return {
 		repositoryRoot: () => repositoryRoot,
-		repositoryIdentity: () => basename(repo.primaryRoot()),
+		repositoryIdentity: () => repo.primaryRoot(),
 		defaultBranch: (signal) => repo.defaultBranch(signal),
 		refExists: (name, signal) => repo.refExists(name, signal),
 		headSha: (signal) => repo.headSha(signal),
@@ -286,6 +291,7 @@ export function createDiffLoader(deps: DiffLoaderDeps): LoadDiff {
 			try {
 				untrackedPatch = await repo.untrackedDiff(path, signal);
 			} catch (error) {
+				if (isCancellation(error, signal)) throw error;
 				const reason = error instanceof Error ? error.message : String(error);
 				warnings.push(`Untracked path ${JSON.stringify(path)} was omitted because it could not be read: ${reason}`);
 				continue;

@@ -69,6 +69,12 @@ describe("untracked diff loading", () => {
 		expect(snapshot.warnings).toEqual(['Untracked path "gone.ts" was omitted because it could not be read: ENOENT']);
 	});
 
+	test("propagates cancellation instead of degrading it to an omission warning", async () => {
+		const cancelled = Object.assign(new Error("cancelled"), { code: "Canceled" });
+		const { repo } = fakeRepo({ patch: "", untracked: { "new.ts": cancelled } });
+
+		await expect(loaderFor(repo)("/repo")).rejects.toThrow("cancelled");
+	});
 	test("coalesces a tracked deletion and same-path untracked file into the working-tree addition", async () => {
 		const { repo } = fakeRepo({ patch: DELETION, untracked: { "new.ts": ADDITION } });
 		const snapshot = await loaderFor(repo)("/repo");

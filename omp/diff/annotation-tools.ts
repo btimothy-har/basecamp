@@ -185,6 +185,7 @@ export default function registerAnnotationTools(pi: ExtensionAPI, deps: Annotati
 				seen.add(annotation.id);
 				recorded.push(annotation);
 			}
+			signal?.throwIfAborted();
 			recordAnnotations(appendEntry, recorded);
 			const skipped = valid.length - recorded.length;
 			return {
@@ -208,7 +209,7 @@ export default function registerAnnotationTools(pi: ExtensionAPI, deps: Annotati
 		approval: "write",
 		strict: true,
 		loadMode: "essential",
-		async execute(_toolCallId, rawParams, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, rawParams, signal, _onUpdate, ctx) {
 			assertInteractive(ctx, "remove_annotation");
 			const params = rawParams as unknown as RemoveAnnotationInput;
 			const requested = [...new Set(params.ids)];
@@ -219,6 +220,7 @@ export default function registerAnnotationTools(pi: ExtensionAPI, deps: Annotati
 					`No active annotation with id ${unknown.map((id) => JSON.stringify(id)).join(", ")} — already withdrawn or consumed by a completed /diff.`,
 				);
 			}
+			signal?.throwIfAborted();
 			withdrawAnnotations(appendEntry, requested);
 			const count = requested.length;
 			return {

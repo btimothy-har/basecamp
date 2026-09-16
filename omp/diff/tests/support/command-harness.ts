@@ -246,6 +246,7 @@ export function createCommandHarness(options: HarnessOptions = {}) {
 		idleCount: () => idleCount,
 		notifications,
 		projected,
+		root,
 		cleanupCount: () => cleanupCount,
 		saved,
 		sent,

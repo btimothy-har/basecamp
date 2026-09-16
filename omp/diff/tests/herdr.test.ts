@@ -91,7 +91,7 @@ describe("splitHerdrPane", () => {
 					"--env",
 					"HUNK_DISABLE_UPDATE_NOTICE=1",
 				],
-				options: { timeout: 5000 },
+				options: { cwd: "/repo", timeout: 5000 },
 			},
 		]);
 		expect(result.status).toBe("ok");

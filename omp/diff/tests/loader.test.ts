@@ -85,14 +85,23 @@ describe("loadDiff repository identity", () => {
 		expect(snapshot.repository).toBe("acme/widgets");
 	});
 
-	test("falls back to the repository adapter's worktree-invariant identity", async () => {
+	test("falls back to the adapter's unique primary repository root", async () => {
 		const { repo } = fakeRepo({
 			root: "/worktrees/widgets/review-branch",
-			repositoryIdentity: "widgets",
+			repositoryIdentity: "/checkouts/acme/widgets",
 		});
 		const snapshot = await loaderFor(repo)("/worktrees/widgets/review-branch");
 
-		expect(snapshot.repository).toBe("widgets");
+		expect(snapshot.repository).toBe("/checkouts/acme/widgets");
+	});
+
+	test("distinguishes repositories with the same basename", async () => {
+		const first = fakeRepo({ repositoryIdentity: "/checkouts/acme/widgets" });
+		const second = fakeRepo({ repositoryIdentity: "/checkouts/other/widgets" });
+
+		expect((await loaderFor(first.repo)("/worktrees/first")).repository).not.toBe(
+			(await loaderFor(second.repo)("/worktrees/second")).repository,
+		);
 	});
 });
 

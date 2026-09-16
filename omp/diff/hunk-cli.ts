@@ -91,6 +91,10 @@ function execFailure(result: ExecResult): string | null {
 	return stderr ? `${status}: ${stderr}` : status;
 }
 
+function execOptions(cwd?: string): { cwd?: string; timeout: number } {
+	return cwd ? { cwd, timeout: HUNK_TIMEOUT_MS } : { timeout: HUNK_TIMEOUT_MS };
+}
+
 export async function detectHunk(pi: HunkExec, cwd: string): Promise<HunkAvailability> {
 	const executable = await resolveHunkExecutable(process.env.PATH, cwd);
 	if (!executable) return { available: false, message: `hunk is not on PATH. ${HUNK_INSTALL_HINT}` };
@@ -172,10 +176,11 @@ export async function listHunkSessions(
 	pi: HunkExec,
 	binary: HunkBinary,
 	worktreePath?: string,
+	cwd?: string,
 ): Promise<HunkSessionRead> {
 	let result: ExecResult;
 	try {
-		result = await pi.exec(binary.executable, ["session", "list", "--json"], { timeout: HUNK_TIMEOUT_MS });
+		result = await pi.exec(binary.executable, ["session", "list", "--json"], execOptions(cwd));
 	} catch (err) {
 		return { ok: false, reason: errorMessage(err) };
 	}
@@ -217,13 +222,20 @@ function toUserNote(raw: unknown): UserNote | "ignore" | null {
  *
  * `--type user` filters server-side; the `source` check guards shape drift.
  */
-export async function readUserNotes(pi: HunkExec, binary: HunkBinary, sessionId: string): Promise<UserNoteRead> {
+export async function readUserNotes(
+	pi: HunkExec,
+	binary: HunkBinary,
+	sessionId: string,
+	cwd?: string,
+): Promise<UserNoteRead> {
 	const context = `${binary.executable} (${binary.version}) session comment list`;
 	let result: ExecResult;
 	try {
-		result = await pi.exec(binary.executable, ["session", "comment", "list", sessionId, "--type", "user", "--json"], {
-			timeout: HUNK_TIMEOUT_MS,
-		});
+		result = await pi.exec(
+			binary.executable,
+			["session", "comment", "list", sessionId, "--type", "user", "--json"],
+			execOptions(cwd),
+		);
 	} catch (err) {
 		return { ok: false, reason: `${context} failed: ${errorMessage(err)}` };
 	}
@@ -286,6 +298,7 @@ export async function awaitLaunchedSession(
 		return promise;
 	},
 	expectedPids?: HunkPidSource,
+	cwd?: string,
 ): Promise<SessionDiscovery> {
 	let lastAttempt: SessionDiscovery = { ok: true, session: null };
 	for (let attempt = 0; attempt < poll.attempts; attempt++) {
@@ -297,7 +310,7 @@ export async function awaitLaunchedSession(
 			lastAttempt = { ok: false, reason: errorMessage(error) };
 			continue;
 		}
-		const read = await listHunkSessions(pi, binary, worktreePath);
+		const read = await listHunkSessions(pi, binary, worktreePath, cwd);
 		if (!read.ok) {
 			lastAttempt = read;
 			continue;
