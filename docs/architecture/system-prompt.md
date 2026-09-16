@@ -4,6 +4,16 @@ The context/prompt layer: assembles the replacement system prompt on every agent
 
 Basecamp fully *replaces* pi's default system prompt rather than appending to it, so this domain must provide everything: environment, working style, project context, and the skill/agent index. Tools are the one capability the prompt never lists; their contracts (description + parameter schema) reach the model through the API tools array on every request, so a prompt listing would be a second copy of the same text in the same cached prefix. It binds `before_agent_start`, builds the prompt, and returns it.
 
+## OMP user rules
+
+The OMP migration path does not use this compiler or replace OMP's default prompt. Basecamp keeps only behavior missing from that prompt as native user-level rules:
+
+- `ownership` applies only to OMP's top-level `main` agent and restores Basecamp's decision ownership, ordinary recovery, and escalation boundaries without replacing OMP's prompt.
+- `commit-checkpoints` applies only to `main`. It requires verified, task-isolated staging followed by a non-PTY `omp commit --no-changelog`; OMP's isolated task runtime owns subagent patch or branch integration instead.
+- `code-comments` applies to every agent and carries Basecamp's comment and docstring discipline.
+
+Canonical sources live under `omp/user-rules/`, outside the extension package's auto-discovered `omp/rules/` directory. `basecamp install` asks plain `omp config path` for OMP's user agent directory, then installs managed links under its `rules/` child. OMP's native path resolution honors `OMP_PROFILE` and `PI_PROFILE`, so environment-selected profiles work without Basecamp carrying profile logic. Existing ordinary files and unrelated links are never replaced. OMP discovers the links through its native rule provider and renders their full bodies in the default prompt's `<generic-rules>` block.
+
 ## `/system-prompt` preview
 
 The primary-only `/system-prompt` command freshly compiles Basecamp's prompt through the same compiler helper used by `before_agent_start`. Because it does not depend on a previous hook result, it works before the first agent turn.

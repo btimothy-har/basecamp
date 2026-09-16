@@ -63,6 +63,95 @@ def test_repo_dir_is_the_pi_extension_root() -> None:
     assert (Path(installer.REPO_DIR) / "package.json").exists()
 
 
+def test_install_omp_user_rules_links_managed_sources(mocker, tmp_path: Path) -> None:
+    checkout = _make_checkout(tmp_path / "checkout")
+    agent_dir = tmp_path / "agent"
+    run = mocker.patch.object(
+        installer.subprocess,
+        "run",
+        return_value=_completed(stdout=f"{agent_dir}\n"),
+    )
+    mocker.patch.object(installer, "settings", MagicMock(install_dir=None))
+
+    installer._install_omp_user_rules("/usr/bin/omp", checkout)
+
+    run.assert_called_once_with(
+        ["/usr/bin/omp", "config", "path"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    for name in installer.OMP_USER_RULES:
+        link = agent_dir / "rules" / name
+        assert link.is_symlink()
+        assert link.resolve() == (checkout / "omp" / "user-rules" / name).resolve()
+
+
+def test_install_omp_user_rules_retargets_previous_checkout(mocker, tmp_path: Path) -> None:
+    previous = _make_checkout(tmp_path / "previous")
+    current = _make_checkout(tmp_path / "current")
+    agent_dir = tmp_path / "agent"
+    rules_dir = agent_dir / "rules"
+    rules_dir.mkdir(parents=True)
+    for name in installer.OMP_USER_RULES:
+        (rules_dir / name).symlink_to(previous / "omp" / "user-rules" / name)
+    mocker.patch.object(
+        installer.subprocess,
+        "run",
+        return_value=_completed(stdout=f"{agent_dir}\n"),
+    )
+    mocker.patch.object(installer, "settings", MagicMock(install_dir=str(previous)))
+
+    installer._install_omp_user_rules("/usr/bin/omp", current)
+
+    for name in installer.OMP_USER_RULES:
+        assert (rules_dir / name).resolve() == (current / "omp" / "user-rules" / name).resolve()
+
+
+def test_install_omp_user_rules_preserves_unrelated_symlink(mocker, tmp_path: Path) -> None:
+    checkout = _make_checkout(tmp_path / "checkout")
+    agent_dir = tmp_path / "agent"
+    rules_dir = agent_dir / "rules"
+    rules_dir.mkdir(parents=True)
+    name = installer.OMP_USER_RULES[0]
+    unrelated = tmp_path / "unrelated" / "omp" / "user-rules" / name
+    unrelated.parent.mkdir(parents=True)
+    unrelated.write_text("user-owned\n")
+    destination = rules_dir / name
+    destination.symlink_to(unrelated)
+    mocker.patch.object(
+        installer.subprocess,
+        "run",
+        return_value=_completed(stdout=f"{agent_dir}\n"),
+    )
+    mocker.patch.object(installer, "settings", MagicMock(install_dir=str(checkout)))
+
+    with pytest.raises(SystemExit):
+        installer._install_omp_user_rules("/usr/bin/omp", checkout)
+
+    assert destination.resolve() == unrelated.resolve()
+
+
+def test_install_omp_user_rules_preserves_user_file(mocker, tmp_path: Path) -> None:
+    checkout = _make_checkout(tmp_path / "checkout")
+    agent_dir = tmp_path / "agent"
+    rules_dir = agent_dir / "rules"
+    rules_dir.mkdir(parents=True)
+    destination = rules_dir / installer.OMP_USER_RULES[0]
+    destination.write_text("user-owned\n")
+    mocker.patch.object(
+        installer.subprocess,
+        "run",
+        return_value=_completed(stdout=f"{agent_dir}\n"),
+    )
+    mocker.patch.object(installer, "settings", MagicMock(install_dir=None))
+
+    with pytest.raises(SystemExit):
+        installer._install_omp_user_rules("/usr/bin/omp", checkout)
+
+    assert destination.read_text() == "user-owned\n"
+
+
 def test_resolve_install_root_prefers_explicit_checkout(tmp_path: Path) -> None:
     checkout = _make_checkout(tmp_path / "checkout")
 
@@ -103,7 +192,7 @@ def test_ensure_omp_preserves_runnable_existing_install(mocker) -> None:
         return_value=_completed(stdout="omp/18.1.21\n"),
     )
 
-    installer._ensure_omp()
+    assert installer._ensure_omp() == "/usr/bin/omp"
 
     which.assert_called_once_with("omp")
     run.assert_called_once_with(
@@ -141,7 +230,7 @@ def test_ensure_omp_installs_missing_runtime_with_bun(mocker) -> None:
         ),
     )
 
-    installer._ensure_omp()
+    assert installer._ensure_omp() == "/home/test/.bun/bin/omp"
 
     assert [call.args[0] for call in run.call_args_list] == [
         ["/usr/bin/bun", "install", "-g", installer.OMP_PACKAGE],
@@ -200,7 +289,16 @@ def test_install_records_source_only_after_every_component_succeeds(mocker, tmp_
     checkout = _make_checkout(tmp_path / "checkout")
     events: list[object] = []
     mocker.patch.object(installer.subprocess, "run", return_value=_completed())
-    mocker.patch.object(installer, "_ensure_omp", side_effect=lambda: events.append("omp"))
+    mocker.patch.object(
+        installer,
+        "_ensure_omp",
+        side_effect=lambda: events.append("omp") or "/usr/bin/omp",
+    )
+    mocker.patch.object(
+        installer,
+        "_install_omp_user_rules",
+        side_effect=lambda omp, root: events.append(("rules", omp, root)),
+    )
     mocker.patch.object(installer, "_install_pi_extension", side_effect=lambda root: events.append(("pi", root)))
     fake_settings = MagicMock()
     fake_settings.set_install_metadata.side_effect = lambda **values: events.append(("metadata", values))
@@ -218,6 +316,7 @@ def test_install_records_source_only_after_every_component_succeeds(mocker, tmp_
     ]
     assert events == [
         "omp",
+        ("rules", "/usr/bin/omp", checkout.resolve()),
         ("pi", checkout.resolve()),
         ("metadata", {"install_dir": str(checkout.resolve())}),
     ]
@@ -242,7 +341,8 @@ def test_install_does_not_record_metadata_after_omp_failure(mocker, tmp_path: Pa
 def test_install_does_not_record_metadata_after_pi_failure(mocker, tmp_path: Path) -> None:
     checkout = _make_checkout(tmp_path / "checkout")
     mocker.patch.object(installer.subprocess, "run", return_value=_completed())
-    mocker.patch.object(installer, "_ensure_omp")
+    mocker.patch.object(installer, "_ensure_omp", return_value="/usr/bin/omp")
+    mocker.patch.object(installer, "_install_omp_user_rules")
     mocker.patch.object(installer, "_install_pi_extension", side_effect=SystemExit(1))
     fake_settings = MagicMock()
     mocker.patch.object(installer, "settings", fake_settings)
@@ -262,6 +362,7 @@ def _make_checkout(path: Path) -> Path:
         "pi/extension.ts",
         "omp/package.json",
         "omp/extension.ts",
+        *(f"omp/user-rules/{name}" for name in installer.OMP_USER_RULES),
     )
     for relative in required:
         target = path / relative
