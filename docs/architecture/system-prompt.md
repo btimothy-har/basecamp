@@ -9,7 +9,6 @@ Basecamp fully *replaces* pi's default system prompt rather than appending to it
 The OMP migration path does not use this compiler or replace OMP's default prompt. Basecamp keeps only behavior missing from that prompt as native user-level rules:
 
 - `ownership` applies only to OMP's top-level `main` agent and restores Basecamp's decision ownership, ordinary recovery, and escalation boundaries without replacing OMP's prompt.
-- `communication` applies only to `main` and requires material progress, decision, risk, failure, and blocker reporting without duplicating OMP's personality guidance.
 - `commit-checkpoints` applies only to `main`. It requires verified, task-isolated staging followed by a non-PTY `omp commit --no-changelog`; OMP's isolated task runtime owns subagent patch or branch integration instead.
 - `code-comments` applies to every agent and carries Basecamp's comment and docstring discipline.
 
