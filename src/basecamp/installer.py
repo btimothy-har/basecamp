@@ -169,6 +169,9 @@ def _verify_omp(omp: str, *, existing: bool) -> None:
 
 
 def _resolve_omp_agent_dir(omp: str, *, profile: str | None = None) -> Path:
+    if profile is not None and not profile.strip():
+        console.print("\n[red]OMP profile name cannot be empty.[/red]")
+        raise SystemExit(1)
     command = [omp]
     if profile is not None:
         command.extend(("--profile", profile))

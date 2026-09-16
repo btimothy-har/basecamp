@@ -110,6 +110,16 @@ def test_install_omp_user_rules_resolves_named_profile(mocker, tmp_path: Path) -
     assert all((agent_dir / "rules" / name).is_symlink() for name in installer.OMP_USER_RULES)
 
 
+def test_resolve_omp_agent_dir_rejects_blank_profile(mocker, capsys) -> None:
+    run = mocker.patch.object(installer.subprocess, "run")
+
+    with pytest.raises(SystemExit):
+        installer._resolve_omp_agent_dir("/usr/bin/omp", profile=" ")
+
+    assert "OMP profile name cannot be empty" in capsys.readouterr().out
+    run.assert_not_called()
+
+
 def test_install_omp_user_rules_reports_config_path_timeout(mocker, tmp_path: Path, capsys) -> None:
     checkout = _make_checkout(tmp_path / "checkout")
     mocker.patch.object(
