@@ -157,10 +157,13 @@ export async function revalidateAnnotations(
 	snapshot: DiffSnapshot,
 	annotations: readonly DiffAnnotation[],
 ): Promise<RevalidationResult> {
-	const sameRepository = annotations.filter((annotation) => annotation.repository === snapshot.repository);
-	const stale = annotations.filter((annotation) => annotation.repository !== snapshot.repository);
+	const stale: DiffAnnotation[] = [];
 	const current: DiffAnnotation[] = [];
-	for (const annotation of sameRepository) {
+	for (const annotation of annotations) {
+		if (annotation.repository !== snapshot.repository) {
+			stale.push(annotation);
+			continue;
+		}
 		const file = snapshot.files.find((candidate) => candidate.path === annotation.path);
 		if (
 			!file ||

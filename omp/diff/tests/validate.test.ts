@@ -283,6 +283,16 @@ describe("revalidateAnnotations", () => {
 		expect(result.stale).toEqual([inDiff, leftDiff]);
 	});
 
+	test("preserves the recorded order across different stale reasons", async () => {
+		const root = repository({ "src/a.ts": CONTENT });
+		const snap = snapshot(root, [{ path: "src/a.ts", newRanges: [{ start: 1, end: 5 }] }]);
+		const changed = { ...activeAnnotation(root, "src/a.ts", { start: 2, end: 4 }), anchorHash: "changed" };
+		const foreign = { ...activeAnnotation(root, "src/a.ts", { start: 1, end: 2 }), repository: "other" };
+
+		const result = await revalidateAnnotations(snap, [changed, foreign]);
+
+		expect(result).toEqual({ current: [], stale: [changed, foreign] });
+	});
 	test("discards annotations from another repository without reading the file", async () => {
 		const root = repository({ "src/a.ts": CONTENT });
 		const snap = snapshot(root, [{ path: "src/a.ts", newRanges: [{ start: 1, end: 5 }] }]);
