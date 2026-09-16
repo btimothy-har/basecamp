@@ -35,7 +35,7 @@ When OMP finally exits, `bomp` force-removes the initial checkout, discarding st
 
 If cleanup fails, `bomp` prints the exact targeted `git -C '<source-root>' worktree remove --force '<initial-worktree>'` recovery command. Use that command; do not run the broad `omp worktree clear --all` command.
 
-The current Basecamp OMP surface is the PATH-based `bomp` launcher plus the OMP-native file-length reminder in the source-checkout-backed `omp/` extension package. OMP retains its default prompt and context discovery: `bomp` does not apply Basecamp's Pi prompt replacement, carry over configured `context` or `working_style`, or modify OMP configuration.
+The current Basecamp OMP surface is the PATH-based `bomp` launcher, the OMP-native file-length reminder and review presentation in the source-checkout-backed `omp/` extension package, and Basecamp's user-level commit-checkpoint and code-comment rules. `basecamp install` links those rule sources into the active directory reported by `omp config path`; OMP remains responsible for rule discovery and prompt placement. OMP retains its default prompt and context discovery: `bomp` does not apply Basecamp's Pi prompt replacement, carry over configured `context` or `working_style`, or otherwise replace OMP's prompt.
 
 ## What basecamp does
 

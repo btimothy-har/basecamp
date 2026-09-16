@@ -23,6 +23,10 @@ from basecamp.core.settings import settings
 
 REPO_DIR: Final = Path(__file__).resolve().parents[2]
 OMP_PACKAGE: Final = "@oh-my-pi/pi-coding-agent"
+OMP_USER_RULES: Final = (
+    "basecamp-commit-checkpoints.md",
+    "basecamp-code-comments.md",
+)
 
 # Pre-consolidation Pi package registrations to clean up — each was its own
 # `pi install` target before the single-extension layout.
@@ -105,6 +109,7 @@ def resolve_install_root(repo_dir: Path | None = None) -> Path:
 
 
 def _is_basecamp_checkout(path: Path) -> bool:
+    user_rules = path / "omp" / "user-rules"
     return (
         (path / "install.py").is_file()
         and (path / "package.json").is_file()
@@ -113,14 +118,15 @@ def _is_basecamp_checkout(path: Path) -> bool:
         and (path / "pi" / "extension.ts").is_file()
         and (path / "omp" / "package.json").is_file()
         and (path / "omp" / "extension.ts").is_file()
+        and all((user_rules / name).is_file() for name in OMP_USER_RULES)
     )
 
 
-def _ensure_omp() -> None:
+def _ensure_omp() -> str:
     omp = shutil.which("omp")
     if omp is not None:
         _verify_omp(omp, existing=True)
-        return
+        return omp
 
     bun = shutil.which("bun")
     if bun is None:
@@ -146,6 +152,7 @@ def _ensure_omp() -> None:
         console.print("Add Bun's global bin directory to PATH, then rerun basecamp install.")
         raise SystemExit(1)
     _verify_omp(installed, existing=False)
+    return installed
 
 
 def _verify_omp(omp: str, *, existing: bool) -> None:
@@ -157,6 +164,63 @@ def _verify_omp(omp: str, *, existing: bool) -> None:
         raise SystemExit(1)
     version = result.stdout.strip() or result.stderr.strip() or "version unknown"
     console.print(f"  Using OMP: {version}")
+
+
+def _resolve_omp_agent_dir(omp: str) -> Path:
+    result = subprocess.run(
+        [omp, "config", "path"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    location = result.stdout.strip()
+    if result.returncode != 0 or not location:
+        console.print("\n[red]Could not resolve OMP's user agent directory:[/red]")
+        console.print(result.stderr.strip() or f"exit status {result.returncode}")
+        raise SystemExit(1)
+    return Path(location).expanduser().resolve()
+
+
+def _install_omp_user_rules(omp: str, repo_dir: Path) -> None:
+    source_dir = repo_dir / "omp" / "user-rules"
+    sources = {name: (source_dir / name).resolve() for name in OMP_USER_RULES}
+    missing = [source for source in sources.values() if not source.is_file()]
+    if missing:
+        console.print("\n[red]Basecamp user rule sources are missing:[/red]")
+        for source in missing:
+            console.print(f"  {source}")
+        raise SystemExit(1)
+
+    rules_dir = _resolve_omp_agent_dir(omp) / "rules"
+    rules_dir.mkdir(parents=True, exist_ok=True)
+
+    previous_root = settings.install_dir
+    changes: list[tuple[Path, Path, bool]] = []
+    for name, source in sources.items():
+        destination = rules_dir / name
+        managed_sources = {source}
+        if isinstance(previous_root, str) and previous_root:
+            managed_sources.add((Path(previous_root).expanduser() / "omp" / "user-rules" / name).resolve())
+
+        if destination.is_symlink():
+            link_target = (destination.parent / destination.readlink()).resolve()
+            if link_target not in managed_sources:
+                console.print(f"\n[red]Refusing to replace user-managed OMP rule:[/red] {destination}")
+                raise SystemExit(1)
+            if link_target != source:
+                changes.append((destination, source, True))
+        elif destination.exists():
+            console.print(f"\n[red]Refusing to replace user-managed OMP rule:[/red] {destination}")
+            raise SystemExit(1)
+        else:
+            changes.append((destination, source, False))
+
+    for destination, source, replace in changes:
+        if replace:
+            destination.unlink()
+        destination.symlink_to(source)
+
+    console.print(f"  Linked {len(sources)} Basecamp rule(s) into {rules_dir}.")
 
 
 def run_interactive_install(repo_dir: Path | None = None) -> None:
@@ -179,7 +243,12 @@ def run_interactive_install(repo_dir: Path | None = None) -> None:
     console.print()
     console.print("[bold]OMP runtime[/bold]")
     console.print()
-    _ensure_omp()
+    omp = _ensure_omp()
+
+    console.print()
+    console.print("[bold]OMP user rules[/bold]")
+    console.print()
+    _install_omp_user_rules(omp, source_root)
 
     console.print()
     console.print("[bold]Pi extension[/bold]")
