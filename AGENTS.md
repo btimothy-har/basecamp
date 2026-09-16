@@ -97,7 +97,7 @@ A cleanup failure prints that exact, shell-quoted targeted Git command; never su
 
 ### Diff Surface
 
-`/diff` is Basecamp's diff/review surface: it opens hunk in a split Herdr pane beside the session, and is primary-only, hard-dependent on both Herdr and an installed `hunk`, scoped to `merge-base(defaultBranch, HEAD)` as a single `git diff` target so committed and uncommitted work show together. It blocks the session while you review, then returns your inline notes as line-anchored feedback; `annotate_changeset` lets the working agent seed its own rationale onto the same diff. The constraints that shape it — why the block is load-bearing, why sidecars are launch-only, and why every `herdr pane run` argument is quoted — are in `docs/architecture/diff-surface.md`.
+`omp/diff` owns Basecamp's OMP-native diff/review surface: `read_diff` gives primary sessions and subagents the same merge-base-to-working-tree patch locally, while interactive-primary `annotate_diff` and `remove_annotation` keep a branch-aware journal in OMP CustomEntries. OMP `/diff` freezes that patch in a private temporary file, projects exact-range-hash-valid annotations, opens a disposable Hunk pane, binds the Hunk session to that pane's process, reads notes before close, and saves a `diff-review`; it has no `/diff last`, source snapshots, or line remapping. A completed review consumes journal entries only through its prelaunch cutoff. Legacy Pi's separate `pi/diff` surface still provides `/diff [last]`, `annotate_changeset`, per-worktree checkpoints and sidecars, and process-scoped pane recovery. See `docs/architecture/diff-surface.md`.
 
 ### Code Review
 

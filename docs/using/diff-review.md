@@ -1,37 +1,69 @@
 # Reviewing a Diff
 
-`/diff` opens [hunk](https://github.com/modem-dev/hunk) beside your session and shows everything this branch has changed since it left the default branch: committed and uncommitted work, in one view. You annotate lines as you read; when you return to pi, your notes become line-anchored feedback the agent acts on.
+## OMP `/diff`
 
-## The review loop
+`/diff` opens [Hunk](https://github.com/modem-dev/hunk) beside your OMP session. It freezes everything the current branch has changed since it left the default branch, including committed and uncommitted work, and reviews those exact bytes in one view.
 
-1. Run `/diff`. hunk opens in a split pane beside your session.
-2. Read the diff, and press `c` on any line to leave a note.
-3. Return to pi and confirm. Your notes are sent to the agent, and the pane closes.
+Ordinary untracked files and symlinks are included. Untracked directories such as embedded repositories are reported and omitted while the rest of the diff remains reviewable; a path that disappears or becomes unreadable during capture is handled the same way. A tracked deletion followed by an untracked replacement at the same path appears once as the current working-tree addition.
 
-Your session pauses while you review. That is deliberate: hunk keeps notes in memory only, so they must be captured before its window closes. If a capture ever fails, `/diff` tells you and leaves the pane open rather than reporting an empty review.
+### The review loop
 
-## Reviewing what changed: `/diff last`
+1. Run `/diff`. Hunk opens in a split Herdr pane.
+2. Read the diff and press `c` on any line to leave a note.
+3. Return to OMP and confirm or cancel. Either choice captures notes already written before closing Hunk and saves a `diff-review` record; nonempty feedback is sent to the agent.
 
-Each `/diff` marks a checkpoint at your current HEAD, and `/diff last` shows only what has moved since then. Review in passes instead of re-reading the whole branch each time.
+The OMP session pauses while you review because Hunk keeps live notes in memory. A failed note read is never treated as an empty review: the pane stays open and the agent annotation journal remains available for a later review. OMP does not reconnect to that Hunk session, so manually copy any user notes from the pane before closing it.
 
-- `/diff last` never advances the checkpoint, so running it twice shows the same span.
-- With no checkpoint yet, or one a rebase has orphaned, it falls back to the full diff and says so.
-- A checkpoint is a commit, so uncommitted work you already reviewed still appears in the next `/diff last`.
+`/diff` takes no arguments. Each invocation is a fresh transaction over the full branch diff.
 
-## Agent annotations
+### Agent annotations
 
-Agents annotate the same diff as they work, recording the reasoning behind their changes. Those notes appear in the diff at your next review, then clear once you have seen them.
+Agents can inspect and explain the same diff without Hunk:
 
-## Requirements
+- `read_diff` reads the full branch diff or selected repository-relative paths. It is available in primary sessions and subagents and reads each agent's own worktree.
+- `annotate_diff` records rationale on a 1-based inclusive new-side line range for the next `/diff`.
+- `remove_annotation` withdraws a recorded annotation by the ID returned from `annotate_diff`.
 
-`/diff` is primary-only and needs both Herdr and `hunk`. If either is missing, it reports what is and changes nothing.
+Annotations belong to the OMP session. They survive `/reload` and resume through OMP's transcript, while abandoned time-travel branches do not leak into the active one.
 
-## After a hunk upgrade
+Anchoring is intentionally best-effort. Basecamp hashes the exact annotated lines when the annotation is recorded and checks that same numeric range against the frozen review immediately before opening Hunk. If the file, range, diff membership, or text changed, the annotation is discarded for that review instead of being remapped onto potentially unrelated code. `/diff` reports the discarded IDs.
 
-`/diff` uses the hunk installation on Pi's inherited `PATH` for both the pane and its session commands. If session discovery fails, the error names that executable and its version. A fresh shell may find a newer installation than an already-running Pi process.
+A successfully captured review consumes annotations only through the session-journal position captured before Hunk opened. Any annotation recorded while the review is open remains available for the next `/diff`. A launch, session-discovery, note-read, or review-save failure consumes nothing and leaves the Hunk pane open. Indeterminate launch or discovery also retains the private frozen patch and agent context because Hunk may still start.
 
-Check `command -v hunk` and `hunk --version` in a fresh terminal, then restart Pi from that shell if it selects the intended installation. `/reload` does not refresh the process's inherited `PATH`. Save any existing review notes before restarting Pi: ownership tracking survives `/reload`, not a process restart.
+### Requirements
 
-For a transient discovery failure in the same Pi session, keep the review pane open and retry `/diff` once hunk reconnects. If that retry recovers notes, it sends them immediately and finishes without opening another diff. Run `/diff` again after the agent handles those notes. If the previous review cannot reconnect and you want to abandon it, explicitly close that pane before retrying.
+`/diff` is available only to the interactive session that owns the TUI and requires both Herdr and an installed `hunk`. `read_diff` does not require either program.
 
-For the internals behind checkpoints, annotation anchoring, and the sidecar model, see [Diff Surface Internals](../architecture/diff-surface.md).
+Basecamp resolves one absolute Hunk executable from OMP's inherited `PATH` and uses it for the version/capability probe, pane launch, process-bound session discovery, and note read. If you upgrade Hunk, restart OMP from a shell whose `PATH` selects the intended installation; `/reload` does not refresh the process environment.
+
+For implementation details, see [Diff Surface Internals](../architecture/diff-surface.md).
+
+## Legacy Pi `/diff`
+
+Legacy Pi ships its own `/diff` implementation. It opens Hunk beside the Pi session and returns line-anchored feedback, but its state model and command surface differ from OMP.
+
+### The review loop
+
+1. Run `/diff`. Hunk opens in a split pane beside Pi.
+2. Read the diff and press `c` on any line to leave a note.
+3. Return to Pi and confirm. Your notes are sent to the agent and the pane closes.
+
+Pi pauses while you review because Hunk keeps notes in memory. If capture fails, the pane stays open rather than reporting an empty review.
+
+### Reviewing what changed: `/diff last`
+
+Each full `/diff` marks a checkpoint at the current `HEAD`; `/diff last` shows only what moved since that checkpoint.
+
+- `/diff last` never advances the checkpoint, so repeated calls show the same span.
+- With no checkpoint, or one orphaned by a rebase, it falls back to the full diff and reports that fallback.
+- A checkpoint is a commit, so previously reviewed uncommitted work still appears in the next `/diff last`.
+
+### Agent annotations
+
+Pi agents use `annotate_changeset` to accumulate rationale in a per-worktree sidecar. Those notes appear at the next review and clear only after a review that actually attached them completes. `remove_annotation` withdraws an entry by key.
+
+### Requirements and recovery
+
+Pi's `/diff` is primary-only and needs both Herdr and Hunk. It pins the Hunk installation found on Pi's inherited `PATH`; restart Pi from a fresh shell after upgrading Hunk because `/reload` does not refresh `PATH`.
+
+Pi keeps checkpoint and pane ownership in process-scoped state, so both survive `/reload` but not process restart. For a transient discovery failure, leave the pane open and retry `/diff`: Pi attempts to reconnect, drain its notes, and close it before opening another review. If that review cannot reconnect and should be abandoned, close its pane explicitly.
