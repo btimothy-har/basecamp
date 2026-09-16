@@ -37,6 +37,12 @@ If cleanup fails, `bomp` prints the exact targeted `git -C '<source-root>' workt
 
 The current Basecamp OMP surface is the PATH-based `bomp` launcher, the OMP-native file-length reminder and review presentation in the source-checkout-backed `omp/` extension package, and Basecamp's user-level ownership, commit-checkpoint, and code-comment rules. `basecamp install` links those rule sources into the active directory reported by `omp config path`; OMP remains responsible for rule discovery and prompt placement. OMP retains its default prompt and context discovery: `bomp` does not apply Basecamp's Pi prompt replacement, carry over configured `context` or `working_style`, or otherwise replace OMP's prompt.
 
+For a named OMP profile selected at launch with `--profile`, install the rules into that profile explicitly:
+
+```bash
+basecamp install --profile <name>
+```
+
 ## What basecamp does
 
 - **Replaces the default system prompt**: full control over agent behavior, consistent across sessions

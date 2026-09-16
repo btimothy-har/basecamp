@@ -87,6 +87,27 @@ def test_install_omp_user_rules_links_managed_sources(mocker, tmp_path: Path) ->
         assert link.resolve() == (checkout / "omp" / "user-rules" / name).resolve()
 
 
+def test_install_omp_user_rules_resolves_named_profile(mocker, tmp_path: Path) -> None:
+    checkout = _make_checkout(tmp_path / "checkout")
+    agent_dir = tmp_path / "profile-agent"
+    run = mocker.patch.object(
+        installer.subprocess,
+        "run",
+        return_value=_completed(stdout=f"{agent_dir}\n"),
+    )
+    mocker.patch.object(installer, "settings", MagicMock(install_dir=None))
+
+    installer._install_omp_user_rules("/usr/bin/omp", checkout, profile="work")
+
+    run.assert_called_once_with(
+        ["/usr/bin/omp", "--profile", "work", "config", "path"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert all((agent_dir / "rules" / name).is_symlink() for name in installer.OMP_USER_RULES)
+
+
 def test_install_omp_user_rules_retargets_previous_checkout(mocker, tmp_path: Path) -> None:
     previous = _make_checkout(tmp_path / "previous")
     current = _make_checkout(tmp_path / "current")
@@ -273,7 +294,7 @@ def test_install_records_source_only_after_every_component_succeeds(mocker, tmp_
     mocker.patch.object(
         installer,
         "_install_omp_user_rules",
-        side_effect=lambda omp, root: events.append(("rules", omp, root)),
+        side_effect=lambda omp, root, profile: events.append(("rules", omp, root, profile)),
     )
     mocker.patch.object(installer, "_install_pi_extension", side_effect=lambda root: events.append(("pi", root)))
     fake_settings = MagicMock()
@@ -292,7 +313,7 @@ def test_install_records_source_only_after_every_component_succeeds(mocker, tmp_
     ]
     assert events == [
         "omp",
-        ("rules", "/usr/bin/omp", checkout.resolve()),
+        ("rules", "/usr/bin/omp", checkout.resolve(), None),
         ("pi", checkout.resolve()),
         ("metadata", {"install_dir": str(checkout.resolve())}),
     ]
