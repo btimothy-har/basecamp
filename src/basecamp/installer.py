@@ -24,6 +24,8 @@ from basecamp.core.settings import settings
 REPO_DIR: Final = Path(__file__).resolve().parents[2]
 OMP_PACKAGE: Final = "@oh-my-pi/pi-coding-agent"
 OMP_USER_RULES: Final = (
+    "ownership.md",
+    "communication.md",
     "commit-checkpoints.md",
     "code-comments.md",
 )
