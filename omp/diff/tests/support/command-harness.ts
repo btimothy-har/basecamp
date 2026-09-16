@@ -21,7 +21,6 @@ const originalEnv = {
 	HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
 	HERDR_PANE_ID: process.env.HERDR_PANE_ID,
 	HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID,
-	BASECAMP_AGENT_DEPTH: process.env.BASECAMP_AGENT_DEPTH,
 };
 const tempRoots: string[] = [];
 
@@ -81,7 +80,6 @@ export function createCommandHarness(options: HarnessOptions = {}) {
 	process.env.HERDR_SOCKET_PATH = join(root, "herdr.sock");
 	process.env.HERDR_PANE_ID = "w1:p1";
 	process.env.HERDR_WORKSPACE_ID = "w1";
-	delete process.env.BASECAMP_AGENT_DEPTH;
 
 	const hash = anchorHash("src/a.ts", { start: 2, end: 2 }, SOURCE);
 	if (hash === null) throw new Error("expected a valid fixture hash");

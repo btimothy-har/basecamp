@@ -1,13 +1,15 @@
+import { basename } from "node:path";
 import { createDiffLoader, type DiffLoaderDeps, type DiffRepository } from "../../loader.ts";
 
 interface FakeRepoOptions {
 	root?: string;
+	repositoryIdentity?: string;
 	defaultBranch?: string | null;
 	refs?: readonly string[];
 	headSha?: string | null;
 	mergeBase?: string | null;
 	patch?: string;
-	untracked?: Record<string, string | null>;
+	untracked?: Record<string, string | null | Error>;
 }
 
 interface DiffCall {
@@ -44,6 +46,7 @@ export function fakeRepo(options: FakeRepoOptions = {}) {
 	};
 	const repo: DiffRepository = {
 		repositoryRoot: () => options.root ?? "/repo",
+		repositoryIdentity: () => options.repositoryIdentity ?? basename(options.root ?? "/repo"),
 		defaultBranch: async () => (options.defaultBranch === undefined ? "main" : options.defaultBranch),
 		refExists: async (name) => (options.refs ?? []).includes(name),
 		headSha: async () => (options.headSha === undefined ? "head-sha" : options.headSha),
@@ -61,7 +64,10 @@ export function fakeRepo(options: FakeRepoOptions = {}) {
 		},
 		untrackedDiff: async (path) => {
 			calls.untrackedDiff.push(path);
-			return Object.hasOwn(options.untracked ?? {}, path) ? (options.untracked?.[path] ?? null) : "";
+			if (!Object.hasOwn(options.untracked ?? {}, path)) return "";
+			const result = options.untracked?.[path];
+			if (result instanceof Error) throw result;
+			return result ?? null;
 		},
 	};
 	return { repo, calls };

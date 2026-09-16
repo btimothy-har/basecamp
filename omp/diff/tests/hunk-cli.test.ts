@@ -159,6 +159,18 @@ describe("listHunkSessions", () => {
 		});
 	});
 
+	test("keeps pid-less sessions in an unfiltered baseline without treating them as invalid", async () => {
+		const payload = {
+			sessions: [{ sessionId: "legacy-session", launchedAt: "2026-09-10T06:00:00Z" }],
+		};
+		const { pi } = mockPi(() => ok(JSON.stringify(payload)));
+
+		expect(await listHunkSessions(pi, BINARY)).toEqual({
+			ok: true,
+			sessions: [{ sessionId: "legacy-session", launchedAt: "2026-09-10T06:00:00Z" }],
+		});
+	});
+
 	test("ignores non-VCS sessions whose registration legitimately omits repoRoot", async () => {
 		const payload = JSON.parse(SESSION_LIST_JSON) as { sessions: unknown[] };
 		payload.sessions.push({

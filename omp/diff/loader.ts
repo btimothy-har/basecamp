@@ -8,7 +8,7 @@
 import { lstat } from "node:fs/promises";
 import { basename, posix, resolve, win32 } from "node:path";
 import { requireGit } from "@oh-my-pi/pi-natives/vcs";
-import { parseUntrackedPorcelain, relabelNoIndexPatch } from "./untracked";
+import { parseUntrackedPorcelain, relabelNoIndexPatch } from "./untracked.ts";
 
 /** A 1-based inclusive line range on the NEW side of the diff. */
 export interface DiffRange {
@@ -47,6 +47,7 @@ export type LoadDiff = (cwd: string, options?: LoadDiffOptions) => Promise<DiffS
 /** The slice of the VCS layer the loader needs. Tests substitute a fake. */
 export interface DiffRepository {
 	repositoryRoot(): string;
+	repositoryIdentity(): string;
 	defaultBranch(signal?: AbortSignal): Promise<string | null | undefined>;
 	refExists(name: string, signal?: AbortSignal): Promise<boolean>;
 	headSha(signal?: AbortSignal): Promise<string | null | undefined>;
@@ -58,7 +59,7 @@ export interface DiffRepository {
 
 export interface DiffLoaderDeps {
 	openRepository(cwd: string): DiffRepository;
-	/** Source of BASECAMP_REPO; defaults to process.env at call time. */
+	/** Canonical repository identity stamped by Basecamp when available. */
 	env?: { BASECAMP_REPO?: string | undefined };
 }
 
@@ -67,6 +68,7 @@ function nativesRepository(cwd: string): DiffRepository {
 	const repositoryRoot = repo.info().repoRoot;
 	return {
 		repositoryRoot: () => repositoryRoot,
+		repositoryIdentity: () => basename(repo.primaryRoot()),
 		defaultBranch: (signal) => repo.defaultBranch(signal),
 		refExists: (name, signal) => repo.refExists(name, signal),
 		headSha: (signal) => repo.headSha(signal),
@@ -280,7 +282,14 @@ export function createDiffLoader(deps: DiffLoaderDeps): LoadDiff {
 		const untrackedPatches: Array<{ path: string; patch: string }> = [];
 		const untrackedPaths = await repo.untrackedPaths(paths, signal);
 		for (const path of untrackedPaths.sort()) {
-			const untrackedPatch = await repo.untrackedDiff(path, signal);
+			let untrackedPatch: string | null;
+			try {
+				untrackedPatch = await repo.untrackedDiff(path, signal);
+			} catch (error) {
+				const reason = error instanceof Error ? error.message : String(error);
+				warnings.push(`Untracked path ${JSON.stringify(path)} was omitted because it could not be read: ${reason}`);
+				continue;
+			}
 			if (untrackedPatch === null) {
 				warnings.push(
 					`Untracked directory ${JSON.stringify(path)} was omitted; embedded repositories are not expanded.`,
@@ -291,12 +300,10 @@ export function createDiffLoader(deps: DiffLoaderDeps): LoadDiff {
 		}
 		patch = omitPatchPaths(patch, new Set(untrackedPatches.map((entry) => entry.path)));
 		for (const untracked of untrackedPatches) patch = appendPatch(patch, untracked.patch);
-		// BASECAMP_REPO is the canonical <org>/<name> identity; the basename is
-		// only a fallback for sessions launched outside a basecamp workspace.
 		const configuredName = (deps.env ?? process.env).BASECAMP_REPO?.trim();
 		return {
 			repositoryRoot,
-			repository: configuredName ? configuredName : basename(repositoryRoot),
+			repository: configuredName || repo.repositoryIdentity(),
 			defaultBranch,
 			baseRevision,
 			headRevision,

@@ -122,10 +122,8 @@ export default function registerDiffCommand(pi: ExtensionAPI, deps: DiffCommandD
 					HERDR_SOCKET_PATH: process.env.HERDR_SOCKET_PATH,
 					HERDR_PANE_ID: process.env.HERDR_PANE_ID,
 					HERDR_WORKSPACE_ID: process.env.HERDR_WORKSPACE_ID,
-					BASECAMP_AGENT_DEPTH: process.env.BASECAMP_AGENT_DEPTH,
 				},
 				hasUI: ctx.hasUI,
-				subject: "diffs",
 			});
 			if (ineligible) {
 				ctx.ui.notify(`/diff is unavailable: ${ineligible.detail}`, "error");
@@ -202,8 +200,10 @@ export default function registerDiffCommand(pi: ExtensionAPI, deps: DiffCommandD
 			if (agentContext) argv.push("--agent-context", agentContext.path, "--agent-notes");
 			const launched = await runInHerdrPane(pi, pane.value.paneId, argv);
 			if (launched.status === "failed") {
-				cleanupTemporaryFiles(ctx, reviewPatch, agentContext);
-				ctx.ui.notify(`/diff could not confirm that Hunk started: ${launched.message} The pane remains open.`, "error");
+				ctx.ui.notify(
+					`/diff could not confirm that Hunk started: ${launched.message} The pane and its private launch inputs remain available because Hunk may still start.`,
+					"error",
+				);
 				return;
 			}
 
@@ -219,7 +219,10 @@ export default function registerDiffCommand(pi: ExtensionAPI, deps: DiffCommandD
 			}
 
 			const confirmed = await withHerdrBlocked(pi, "Reviewing in Hunk", () =>
-				ctx.ui.confirm("Reviewing in Hunk", "Annotate the diff with `c`, then confirm here to send your notes back."),
+				ctx.ui.confirm(
+					"Reviewing in Hunk",
+					"Annotate the diff with `c`, then return here. Confirm submits the review; cancelling still captures notes already written.",
+				),
 			);
 			const read = await readUserNotes(pi, binary, discovery.session.sessionId);
 			if (!read.ok) {

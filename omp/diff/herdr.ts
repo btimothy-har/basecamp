@@ -30,15 +30,9 @@ export interface HerdrEnv {
 	HERDR_SOCKET_PATH?: string;
 	HERDR_PANE_ID?: string;
 	HERDR_WORKSPACE_ID?: string;
-	BASECAMP_AGENT_DEPTH?: string;
 }
 
-export type HerdrSkipReason =
-	| "missing-herdr-env"
-	| "missing-herdr-socket-path"
-	| "missing-herdr-pane-id"
-	| "subagent"
-	| "headless";
+export type HerdrSkipReason = "missing-herdr-env" | "missing-herdr-socket-path" | "missing-herdr-pane-id" | "headless";
 
 export interface HerdrIneligible {
 	reason: HerdrSkipReason;
@@ -49,16 +43,6 @@ export interface HerdrIneligible {
 export interface HerdrEligibilityInput {
 	env: HerdrEnv;
 	hasUI?: boolean;
-	/** What is being opened, e.g. "diffs" — only used to phrase the subagent refusal. */
-	subject: string;
-}
-
-function agentDepth(env: HerdrEnv): number {
-	const raw = env.BASECAMP_AGENT_DEPTH;
-	if (raw === undefined || raw.trim() === "") return 0;
-	const parsed = Number(raw);
-	// A malformed value is treated as a subagent: refusing a pane is safer than opening one blind.
-	return Number.isFinite(parsed) ? parsed : 1;
 }
 
 export function checkHerdrEligibility(input: HerdrEligibilityInput): HerdrIneligible | null {
@@ -70,9 +54,6 @@ export function checkHerdrEligibility(input: HerdrEligibilityInput): HerdrInelig
 	}
 	if (!input.env.HERDR_PANE_ID) {
 		return { reason: "missing-herdr-pane-id", detail: "missing Herdr pane id." };
-	}
-	if (agentDepth(input.env) !== 0) {
-		return { reason: "subagent", detail: `only primary sessions can open ${input.subject} in Herdr.` };
 	}
 	if (input.hasUI === false) {
 		return { reason: "headless", detail: "session has no UI." };

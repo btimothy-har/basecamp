@@ -24,7 +24,6 @@ export function relabelNoIndexPatch(patch: string, path: string): string {
 			if (line.startsWith("@@ ")) inHunk = true;
 			if (inHunk) return line;
 			if (line.startsWith("diff --git ")) return `diff --git ${oldPath} ${newPath}`;
-			if (line.startsWith("--- ")) return `--- ${oldPath}`;
 			if (line.startsWith("+++ ")) return `+++ ${newPath}`;
 			return line;
 		})

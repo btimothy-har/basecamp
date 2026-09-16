@@ -16,7 +16,7 @@ The command and `read_diff` share one loader:
 4. call OMP's native `diffText({ base, files? })` for committed, staged, and unstaged changes;
 5. enumerate nonignored untracked paths in the same optional scope, append a native no-index patch for each ordinary file or symlink in stable path order, and report untracked directories that cannot be represented as one file.
 
-The merge-base is passed as one target, so tracked changes include both branch commits and the current index/working tree. On the default branch it naturally becomes a working-tree diff. Appending untracked file patches completes the review surface without staging files or shelling out. An embedded repository or other untracked directory is reported and omitted rather than aborting the remaining diff. If Git reports both a tracked deletion and an untracked file at the same path, the loader coalesces them into the current working-tree addition instead of displaying two contradictory file sections. `read_diff` may restrict all sources to validated repository-relative paths; `/diff` always reviews the whole frozen snapshot.
+The merge-base is passed as one target, so tracked changes include both branch commits and the current index/working tree. On the default branch it naturally becomes a working-tree diff. Appending untracked file patches completes the review surface without staging files or shelling out. An embedded repository, another untracked directory, or a path that changes during capture is reported and omitted rather than aborting the remaining diff. If Git reports both a tracked deletion and an untracked file at the same path, the loader coalesces them into the current working-tree addition instead of displaying two contradictory file sections. `read_diff` may restrict all sources to validated repository-relative paths; `/diff` always reviews the whole frozen snapshot.
 
 Agents read this snapshot locally. Hunk is not an agent API, and no MCP or persistent companion process participates.
 
@@ -64,7 +64,7 @@ append diff-completed through the captured journal cutoff
 deliver nonempty notes as a user message
 ```
 
-The temporary patch freezes the exact bytes returned by the shared loader, so later working-tree movement cannot make Hunk display a different diff from the one Basecamp validated. The optional agent-context JSON contains only annotations that passed that validation, and `--agent-notes` makes Hunk show them. Both files are private (`0700` directory, `0600` files), removed once Hunk has registered the session, and never treated as state.
+The temporary patch freezes the exact bytes returned by the shared loader, so later working-tree movement cannot make Hunk display a different diff from the one Basecamp validated. The optional agent-context JSON contains only annotations that passed that validation, and `--agent-notes` makes Hunk show them. Both files are private (`0700` directory, `0600` files), removed once Hunk has registered the session, and never treated as state. If pane-run delivery is indeterminate, Basecamp retains both because a delayed Hunk launch may still need them.
 
 The `diff-review` artifact records the repository, base and head revisions, hash of the frozen patch, submitted/cancelled status, user notes, displayed agent annotation IDs, and discarded agent annotation IDs. With no session artifact directory, OMP's content-addressed blob store provides the readable fallback.
 
@@ -78,6 +78,7 @@ Hunk notes live in the running session, so ordering is load-bearing:
 - notes are read while Hunk is still alive;
 - process binding, session discovery, note-read, or artifact-save failure leaves the pane open and appends no completion boundary;
 - failed reads are never represented as zero notes;
+- OMP keeps no pane/session registry, so notes left open after a failed read must be recovered manually from that pane before it is closed;
 - only a persisted review in the same originating OMP session appends `diff-completed`;
 - empty successful reviews notify but do not manufacture a user turn.
 

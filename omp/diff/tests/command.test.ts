@@ -67,10 +67,10 @@ describe("/diff", () => {
 		const h = createCommandHarness({ paneRunFails: true });
 		await h.invoke();
 
-		expect(h.cleanupCount()).toBe(2);
+		expect(h.cleanupCount()).toBe(0);
 		expect(h.calls.some((call) => call.args[1] === "close")).toBe(false);
 		expect(h.saved).toHaveLength(0);
-		expect(h.notifications.at(-1)?.message).toContain("pane remains open");
+		expect(h.notifications.at(-1)?.message).toContain("private launch inputs remain available");
 	});
 
 	test("reads and archives an empty review even when the confirmation is cancelled", async () => {
@@ -83,6 +83,16 @@ describe("/diff", () => {
 		expect(h.appended).toHaveLength(1);
 		expect(h.sent).toHaveLength(0);
 		expect(h.notifications.at(-1)?.message).toContain("No annotations were left");
+	});
+
+	test("captures and returns notes already written when confirmation is cancelled", async () => {
+		const h = createCommandHarness({ confirmed: false, withAnnotations: false });
+		await h.invoke();
+
+		expect(savedReview(h.saved).status).toBe("cancelled");
+		expect(h.calls.some((call) => call.args[1] === "close")).toBe(true);
+		expect(h.appended).toHaveLength(1);
+		expect(h.sent[0]?.content).toContain("new-side note");
 	});
 
 	test("cleans the frozen patch when agent-context projection fails", async () => {

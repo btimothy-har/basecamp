@@ -40,6 +40,7 @@ describe("untracked diff loading", () => {
 
 		expect(patch).toContain("diff --git a/NUL b/NUL");
 		expect(patch).toContain("+++ b/NUL");
+		expect(patch).toContain("--- /dev/null");
 		expect(patch).toContain("+--- payload text");
 		expect(patch).not.toContain("/Users/example/repo");
 	});
@@ -55,6 +56,17 @@ describe("untracked diff loading", () => {
 		expect(snapshot.warnings).toEqual([
 			'Untracked directory "vendor/nested/" was omitted; embedded repositories are not expanded.',
 		]);
+	});
+
+	test("reports a disappearing untracked file while retaining the remaining diff", async () => {
+		const { repo } = fakeRepo({
+			patch: "",
+			untracked: { "gone.ts": new Error("ENOENT"), "new.ts": ADDITION },
+		});
+		const snapshot = await loaderFor(repo)("/repo");
+
+		expect(snapshot.files.map((file) => file.path)).toEqual(["new.ts"]);
+		expect(snapshot.warnings).toEqual(['Untracked path "gone.ts" was omitted because it could not be read: ENOENT']);
 	});
 
 	test("coalesces a tracked deletion and same-path untracked file into the working-tree addition", async () => {

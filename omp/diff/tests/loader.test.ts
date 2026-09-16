@@ -78,18 +78,21 @@ describe("loadDiff untracked files", () => {
 });
 
 describe("loadDiff repository identity", () => {
-	test("prefers BASECAMP_REPO for the repository name", async () => {
-		const { repo } = fakeRepo();
+	test("prefers Basecamp's canonical repository identity", async () => {
+		const { repo } = fakeRepo({ repositoryIdentity: "widgets" });
 		const snapshot = await loaderFor(repo, { BASECAMP_REPO: "acme/widgets" })("/repo");
+
 		expect(snapshot.repository).toBe("acme/widgets");
 	});
 
-	test("falls back to the repository basename when BASECAMP_REPO is unset or blank", async () => {
-		const unset = fakeRepo({ root: "/checkouts/widgets" });
-		expect((await loaderFor(unset.repo)("/checkouts/widgets")).repository).toBe("widgets");
+	test("falls back to the repository adapter's worktree-invariant identity", async () => {
+		const { repo } = fakeRepo({
+			root: "/worktrees/widgets/review-branch",
+			repositoryIdentity: "widgets",
+		});
+		const snapshot = await loaderFor(repo)("/worktrees/widgets/review-branch");
 
-		const blank = fakeRepo({ root: "/checkouts/widgets" });
-		expect((await loaderFor(blank.repo, { BASECAMP_REPO: "  " })("/checkouts/widgets")).repository).toBe("widgets");
+		expect(snapshot.repository).toBe("widgets");
 	});
 });
 

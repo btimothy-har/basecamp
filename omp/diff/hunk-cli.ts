@@ -35,7 +35,7 @@ export type HunkAvailability = { available: true; binary: HunkBinary } | { avail
 /** A live hunk session, reduced to what selecting and reporting one needs. */
 export interface HunkSession {
 	sessionId: string;
-	pid: number;
+	pid?: number;
 	/** Non-VCS inputs such as patch files have no repository root. */
 	repoRoot?: string;
 	launchedAt: string;
@@ -147,17 +147,17 @@ function toSession(raw: unknown): HunkSession | null {
 	if (
 		typeof sessionId !== "string" ||
 		!sessionId.trim() ||
-		!Number.isInteger(pid) ||
-		(pid as number) < 1 ||
+		(pid !== undefined && (!Number.isInteger(pid) || (pid as number) < 1)) ||
 		(repoRoot !== undefined && (typeof repoRoot !== "string" || !repoRoot.trim())) ||
 		typeof launchedAt !== "string" ||
 		!launchedAt.trim()
 	) {
 		return null;
 	}
-	return repoRoot === undefined
-		? { sessionId, pid: pid as number, launchedAt }
-		: { sessionId, pid: pid as number, repoRoot, launchedAt };
+	const session: HunkSession = { sessionId, launchedAt };
+	if (pid !== undefined) session.pid = pid as number;
+	if (repoRoot !== undefined) session.repoRoot = repoRoot;
+	return session;
 }
 
 /**
@@ -165,8 +165,8 @@ function toSession(raw: unknown): HunkSession | null {
  *
  * Omitting `worktreePath` is required for frozen patch sessions, which carry
  * no repoRoot. Callers then bind the fresh session to the launched Herdr pane
- * by PID. One malformed session fails the whole list rather than being
- * silently dropped: it could be the review whose notes would be abandoned.
+ * by PID. A missing PID remains readable for baseline accounting but cannot
+ * satisfy that binding; other malformed session shapes fail the whole list.
  */
 export async function listHunkSessions(
 	pi: HunkExec,
@@ -255,7 +255,9 @@ export function discoverNewSession(
 	expectedPids?: ReadonlySet<number>,
 ): SessionDiscovery {
 	const fresh = live.filter(
-		(session) => !before.has(session.sessionId) && (expectedPids === undefined || expectedPids.has(session.pid)),
+		(session) =>
+			!before.has(session.sessionId) &&
+			(expectedPids === undefined || (session.pid !== undefined && expectedPids.has(session.pid))),
 	);
 	if (fresh.length > 1) {
 		return {

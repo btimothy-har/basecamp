@@ -47,7 +47,7 @@ const eligibleEnv: HerdrEnv = {
 
 describe("checkHerdrEligibility", () => {
 	test("accepts a primary Herdr session with a UI", () => {
-		expect(checkHerdrEligibility({ env: eligibleEnv, hasUI: true, subject: "diffs" })).toBeNull();
+		expect(checkHerdrEligibility({ env: eligibleEnv, hasUI: true })).toBeNull();
 	});
 
 	const cases: [HerdrEnv, HerdrSkipReason][] = [
@@ -57,24 +57,12 @@ describe("checkHerdrEligibility", () => {
 	];
 	for (const [env, reason] of cases) {
 		test(`refuses with ${reason}`, () => {
-			expect(checkHerdrEligibility({ env, subject: "diffs" })?.reason).toBe(reason);
+			expect(checkHerdrEligibility({ env })?.reason).toBe(reason);
 		});
 	}
 
-	test("refuses subagent sessions", () => {
-		expect(
-			checkHerdrEligibility({ env: { ...eligibleEnv, BASECAMP_AGENT_DEPTH: "1" }, subject: "diffs" })?.reason,
-		).toBe("subagent");
-	});
-
-	test("treats a malformed agent depth as a subagent rather than opening blind", () => {
-		expect(
-			checkHerdrEligibility({ env: { ...eligibleEnv, BASECAMP_AGENT_DEPTH: "deep" }, subject: "diffs" })?.reason,
-		).toBe("subagent");
-	});
-
 	test("refuses headless sessions", () => {
-		expect(checkHerdrEligibility({ env: eligibleEnv, hasUI: false, subject: "diffs" })?.reason).toBe("headless");
+		expect(checkHerdrEligibility({ env: eligibleEnv, hasUI: false })?.reason).toBe("headless");
 	});
 });
 

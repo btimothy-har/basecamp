@@ -4,15 +4,15 @@
 
 `/diff` opens [Hunk](https://github.com/modem-dev/hunk) beside your OMP session. It freezes everything the current branch has changed since it left the default branch, including committed and uncommitted work, and reviews those exact bytes in one view.
 
-Ordinary untracked files and symlinks are included. Untracked directories such as embedded repositories are reported and omitted while the rest of the diff remains reviewable. A tracked deletion followed by an untracked replacement at the same path appears once as the current working-tree addition.
+Ordinary untracked files and symlinks are included. Untracked directories such as embedded repositories are reported and omitted while the rest of the diff remains reviewable; a path that disappears or becomes unreadable during capture is handled the same way. A tracked deletion followed by an untracked replacement at the same path appears once as the current working-tree addition.
 
 ### The review loop
 
 1. Run `/diff`. Hunk opens in a split Herdr pane.
 2. Read the diff and press `c` on any line to leave a note.
-3. Return to OMP and confirm. Basecamp captures your notes before closing Hunk, saves a `diff-review` record, and sends nonempty feedback to the agent.
+3. Return to OMP and confirm or cancel. Either choice captures notes already written before closing Hunk and saves a `diff-review` record; nonempty feedback is sent to the agent.
 
-The OMP session pauses while you review because Hunk keeps live notes in memory. Cancelling the confirmation still captures notes you already wrote. A failed note read is never treated as an empty review: the pane stays open and the agent annotation journal remains available for a later review.
+The OMP session pauses while you review because Hunk keeps live notes in memory. A failed note read is never treated as an empty review: the pane stays open and the agent annotation journal remains available for a later review. OMP does not reconnect to that Hunk session, so manually copy any user notes from the pane before closing it.
 
 `/diff` takes no arguments. Each invocation is a fresh transaction over the full branch diff.
 
