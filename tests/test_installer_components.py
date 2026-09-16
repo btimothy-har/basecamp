@@ -80,6 +80,7 @@ def test_install_omp_user_rules_links_managed_sources(mocker, tmp_path: Path) ->
         check=False,
         capture_output=True,
         text=True,
+        timeout=installer._COMMAND_TIMEOUT_SECONDS,
     )
     for name in installer.OMP_USER_RULES:
         link = agent_dir / "rules" / name
@@ -104,8 +105,28 @@ def test_install_omp_user_rules_resolves_named_profile(mocker, tmp_path: Path) -
         check=False,
         capture_output=True,
         text=True,
+        timeout=installer._COMMAND_TIMEOUT_SECONDS,
     )
     assert all((agent_dir / "rules" / name).is_symlink() for name in installer.OMP_USER_RULES)
+
+
+def test_install_omp_user_rules_reports_config_path_timeout(mocker, tmp_path: Path, capsys) -> None:
+    checkout = _make_checkout(tmp_path / "checkout")
+    mocker.patch.object(
+        installer.subprocess,
+        "run",
+        side_effect=installer.subprocess.TimeoutExpired(
+            cmd=["/usr/bin/omp", "config", "path"],
+            timeout=installer._COMMAND_TIMEOUT_SECONDS,
+        ),
+    )
+
+    with pytest.raises(SystemExit):
+        installer._install_omp_user_rules("/usr/bin/omp", checkout)
+
+    output = capsys.readouterr().out
+    assert "Could not resolve OMP's user agent directory" in output
+    assert "timed out" in output
 
 
 def test_install_omp_user_rules_retargets_previous_checkout(mocker, tmp_path: Path) -> None:

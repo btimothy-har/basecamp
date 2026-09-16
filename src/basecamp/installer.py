@@ -28,6 +28,7 @@ OMP_USER_RULES: Final = (
     "commit-checkpoints.md",
     "code-comments.md",
 )
+_COMMAND_TIMEOUT_SECONDS: Final = 10
 
 # Pre-consolidation Pi package registrations to clean up — each was its own
 # `pi install` target before the single-extension layout.
@@ -172,12 +173,18 @@ def _resolve_omp_agent_dir(omp: str, *, profile: str | None = None) -> Path:
     if profile is not None:
         command.extend(("--profile", profile))
     command.extend(("config", "path"))
-    result = subprocess.run(
-        command,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_COMMAND_TIMEOUT_SECONDS,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        console.print("\n[red]Could not resolve OMP's user agent directory:[/red]")
+        console.print(str(exc))
+        raise SystemExit(1) from exc
     location = result.stdout.strip()
     if result.returncode != 0 or not location:
         console.print("\n[red]Could not resolve OMP's user agent directory:[/red]")
