@@ -8,8 +8,8 @@ Basecamp fully *replaces* pi's default system prompt rather than appending to it
 
 The OMP migration path does not use this compiler or replace OMP's default prompt. Basecamp keeps only behavior missing from that prompt as native user-level rules:
 
-- `basecamp-commit-checkpoints` applies only to OMP's top-level `main` agent. It requires verified, task-isolated staging followed by a non-PTY `omp commit --no-changelog`; OMP's isolated task runtime owns subagent patch or branch integration instead.
-- `basecamp-code-comments` applies to every agent and carries Basecamp's comment and docstring discipline.
+- `commit-checkpoints` applies only to OMP's top-level `main` agent. It requires verified, task-isolated staging followed by a non-PTY `omp commit --no-changelog`; OMP's isolated task runtime owns subagent patch or branch integration instead.
+- `code-comments` applies to every agent and carries Basecamp's comment and docstring discipline.
 
 Canonical sources live under `omp/user-rules/`, outside the extension package's auto-discovered `omp/rules/` directory. `basecamp install` asks `omp config path` for the active profile's agent directory, then installs managed links under its `rules/` child. Existing ordinary files and unrelated links are never replaced. OMP discovers the links through its native rule provider and renders their full bodies in the default prompt's `<generic-rules>` block.
 

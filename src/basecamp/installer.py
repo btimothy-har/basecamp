@@ -24,8 +24,8 @@ from basecamp.core.settings import settings
 REPO_DIR: Final = Path(__file__).resolve().parents[2]
 OMP_PACKAGE: Final = "@oh-my-pi/pi-coding-agent"
 OMP_USER_RULES: Final = (
-    "basecamp-commit-checkpoints.md",
-    "basecamp-code-comments.md",
+    "commit-checkpoints.md",
+    "code-comments.md",
 )
 
 # Pre-consolidation Pi package registrations to clean up — each was its own

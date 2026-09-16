@@ -87,6 +87,27 @@ def test_install_omp_user_rules_links_managed_sources(mocker, tmp_path: Path) ->
         assert link.resolve() == (checkout / "omp" / "user-rules" / name).resolve()
 
 
+def test_install_omp_user_rules_retargets_previous_checkout(mocker, tmp_path: Path) -> None:
+    previous = _make_checkout(tmp_path / "previous")
+    current = _make_checkout(tmp_path / "current")
+    agent_dir = tmp_path / "agent"
+    rules_dir = agent_dir / "rules"
+    rules_dir.mkdir(parents=True)
+    for name in installer.OMP_USER_RULES:
+        (rules_dir / name).symlink_to(previous / "omp" / "user-rules" / name)
+    mocker.patch.object(
+        installer.subprocess,
+        "run",
+        return_value=_completed(stdout=f"{agent_dir}\n"),
+    )
+    mocker.patch.object(installer, "settings", MagicMock(install_dir=str(previous)))
+
+    installer._install_omp_user_rules("/usr/bin/omp", current)
+
+    for name in installer.OMP_USER_RULES:
+        assert (rules_dir / name).resolve() == (current / "omp" / "user-rules" / name).resolve()
+
+
 def test_install_omp_user_rules_preserves_user_file(mocker, tmp_path: Path) -> None:
     checkout = _make_checkout(tmp_path / "checkout")
     agent_dir = tmp_path / "agent"
@@ -295,6 +316,7 @@ def test_install_does_not_record_metadata_after_omp_failure(mocker, tmp_path: Pa
 
 def test_install_does_not_record_metadata_after_pi_failure(mocker, tmp_path: Path) -> None:
     checkout = _make_checkout(tmp_path / "checkout")
+    mocker.patch.object(installer.subprocess, "run", return_value=_completed())
     mocker.patch.object(installer, "_ensure_omp", return_value="/usr/bin/omp")
     mocker.patch.object(installer, "_install_omp_user_rules")
     mocker.patch.object(installer, "_install_pi_extension", side_effect=SystemExit(1))
