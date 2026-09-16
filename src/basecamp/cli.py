@@ -89,10 +89,9 @@ def hub(uds_path: Path, db_path: Path | None, pidfile_path: Path | None) -> None
 
 
 @basecamp.command()
-@click.option("--profile", default=None, help="Install OMP user rules for this named profile.")
-def install(profile: str | None) -> None:
+def install() -> None:
     """Install or reconfigure basecamp components."""
-    run_interactive_install(profile=profile)
+    run_interactive_install()
 
 
 basecamp.add_command(config)

@@ -28,7 +28,6 @@ OMP_USER_RULES: Final = (
     "commit-checkpoints.md",
     "code-comments.md",
 )
-_COMMAND_TIMEOUT_SECONDS: Final = 10
 
 # Pre-consolidation Pi package registrations to clean up — each was its own
 # `pi install` target before the single-extension layout.
@@ -168,26 +167,13 @@ def _verify_omp(omp: str, *, existing: bool) -> None:
     console.print(f"  Using OMP: {version}")
 
 
-def _resolve_omp_agent_dir(omp: str, *, profile: str | None = None) -> Path:
-    if profile is not None and not profile.strip():
-        console.print("\n[red]OMP profile name cannot be empty.[/red]")
-        raise SystemExit(1)
-    command = [omp]
-    if profile is not None:
-        command.extend(("--profile", profile))
-    command.extend(("config", "path"))
-    try:
-        result = subprocess.run(
-            command,
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=_COMMAND_TIMEOUT_SECONDS,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        console.print("\n[red]Could not resolve OMP's user agent directory:[/red]")
-        console.print(str(exc))
-        raise SystemExit(1) from exc
+def _resolve_omp_agent_dir(omp: str) -> Path:
+    result = subprocess.run(
+        [omp, "config", "path"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
     location = result.stdout.strip()
     if result.returncode != 0 or not location:
         console.print("\n[red]Could not resolve OMP's user agent directory:[/red]")
@@ -196,16 +182,7 @@ def _resolve_omp_agent_dir(omp: str, *, profile: str | None = None) -> Path:
     return Path(location).expanduser().resolve()
 
 
-def _is_live_basecamp_rule_source(source: Path, name: str) -> bool:
-    try:
-        checkout = source.parents[2]
-    except IndexError:
-        return False
-    expected = checkout / "omp" / "user-rules" / name
-    return source == expected and _is_basecamp_checkout(checkout)
-
-
-def _install_omp_user_rules(omp: str, repo_dir: Path, *, profile: str | None = None) -> None:
+def _install_omp_user_rules(omp: str, repo_dir: Path) -> None:
     source_dir = repo_dir / "omp" / "user-rules"
     sources = {name: (source_dir / name).resolve() for name in OMP_USER_RULES}
     missing = [source for source in sources.values() if not source.is_file()]
@@ -215,7 +192,7 @@ def _install_omp_user_rules(omp: str, repo_dir: Path, *, profile: str | None = N
             console.print(f"  {source}")
         raise SystemExit(1)
 
-    rules_dir = _resolve_omp_agent_dir(omp, profile=profile) / "rules"
+    rules_dir = _resolve_omp_agent_dir(omp) / "rules"
     rules_dir.mkdir(parents=True, exist_ok=True)
 
     previous_root = settings.install_dir
@@ -228,7 +205,7 @@ def _install_omp_user_rules(omp: str, repo_dir: Path, *, profile: str | None = N
 
         if destination.is_symlink():
             link_target = (destination.parent / destination.readlink()).resolve()
-            if link_target not in managed_sources and not _is_live_basecamp_rule_source(link_target, name):
+            if link_target not in managed_sources:
                 console.print(f"\n[red]Refusing to replace user-managed OMP rule:[/red] {destination}")
                 raise SystemExit(1)
             if link_target != source:
@@ -247,7 +224,7 @@ def _install_omp_user_rules(omp: str, repo_dir: Path, *, profile: str | None = N
     console.print(f"  Linked {len(sources)} Basecamp rule(s) into {rules_dir}.")
 
 
-def run_interactive_install(repo_dir: Path | None = None, *, profile: str | None = None) -> None:
+def run_interactive_install(repo_dir: Path | None = None) -> None:
     """Install Basecamp and its runtime prerequisites from one source checkout."""
     source_root = resolve_install_root(repo_dir)
     console.print()
@@ -272,7 +249,7 @@ def run_interactive_install(repo_dir: Path | None = None, *, profile: str | None
     console.print()
     console.print("[bold]OMP user rules[/bold]")
     console.print()
-    _install_omp_user_rules(omp, source_root, profile=profile)
+    _install_omp_user_rules(omp, source_root)
 
     console.print()
     console.print("[bold]Pi extension[/bold]")

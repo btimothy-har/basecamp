@@ -11,7 +11,7 @@ The OMP migration path does not use this compiler or replace OMP's default promp
 - `ownership` applies only to OMP's top-level `main` agent and restores Basecamp's decision ownership, ordinary recovery, and escalation boundaries without replacing OMP's prompt.
 - `commit-checkpoints` applies only to `main`. It requires verified, task-isolated staging followed by a non-PTY `omp commit --no-changelog`; OMP's isolated task runtime owns subagent patch or branch integration instead.
 - `code-comments` applies to every agent and carries Basecamp's comment and docstring discipline.
-Canonical sources live under `omp/user-rules/`, outside the extension package's auto-discovered `omp/rules/` directory. `basecamp install` asks `omp config path` for the default or environment-selected agent directory; `basecamp install --profile <name>` instead asks `omp --profile <name> config path`. It then installs managed links under that directory's `rules/` child. Existing ordinary files and unrelated links are never replaced. OMP discovers the links through its native rule provider and renders their full bodies in the default prompt's `<generic-rules>` block.
+Canonical sources live under `omp/user-rules/`, outside the extension package's auto-discovered `omp/rules/` directory. `basecamp install` asks plain `omp config path` for OMP's user agent directory, then installs managed links under its `rules/` child. Existing ordinary files and unrelated links are never replaced. OMP discovers the links through its native rule provider and renders their full bodies in the default prompt's `<generic-rules>` block.
 
 ## `/system-prompt` preview
 

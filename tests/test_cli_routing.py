@@ -9,16 +9,6 @@ def test_top_level_commands_match_new_shape() -> None:
     assert set(cli.basecamp.commands) == {"agents", "config", "doctor", "hub", "install", "setup"}
 
 
-def test_install_forwards_named_omp_profile(monkeypatch) -> None:
-    calls: list[str | None] = []
-    monkeypatch.setattr(cli, "run_interactive_install", lambda *, profile: calls.append(profile))
-
-    result = CliRunner().invoke(cli.basecamp, ["install", "--profile", "work"])
-
-    assert result.exit_code == 0
-    assert calls == ["work"]
-
-
 def test_config_subcommands_match_new_shape() -> None:
     commands = config.commands
 

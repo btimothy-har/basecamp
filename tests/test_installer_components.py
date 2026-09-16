@@ -80,63 +80,11 @@ def test_install_omp_user_rules_links_managed_sources(mocker, tmp_path: Path) ->
         check=False,
         capture_output=True,
         text=True,
-        timeout=installer._COMMAND_TIMEOUT_SECONDS,
     )
     for name in installer.OMP_USER_RULES:
         link = agent_dir / "rules" / name
         assert link.is_symlink()
         assert link.resolve() == (checkout / "omp" / "user-rules" / name).resolve()
-
-
-def test_install_omp_user_rules_resolves_named_profile(mocker, tmp_path: Path) -> None:
-    checkout = _make_checkout(tmp_path / "checkout")
-    agent_dir = tmp_path / "profile-agent"
-    run = mocker.patch.object(
-        installer.subprocess,
-        "run",
-        return_value=_completed(stdout=f"{agent_dir}\n"),
-    )
-    mocker.patch.object(installer, "settings", MagicMock(install_dir=None))
-
-    installer._install_omp_user_rules("/usr/bin/omp", checkout, profile="work")
-
-    run.assert_called_once_with(
-        ["/usr/bin/omp", "--profile", "work", "config", "path"],
-        check=False,
-        capture_output=True,
-        text=True,
-        timeout=installer._COMMAND_TIMEOUT_SECONDS,
-    )
-    assert all((agent_dir / "rules" / name).is_symlink() for name in installer.OMP_USER_RULES)
-
-
-def test_resolve_omp_agent_dir_rejects_blank_profile(mocker, capsys) -> None:
-    run = mocker.patch.object(installer.subprocess, "run")
-
-    with pytest.raises(SystemExit):
-        installer._resolve_omp_agent_dir("/usr/bin/omp", profile=" ")
-
-    assert "OMP profile name cannot be empty" in capsys.readouterr().out
-    run.assert_not_called()
-
-
-def test_install_omp_user_rules_reports_config_path_timeout(mocker, tmp_path: Path, capsys) -> None:
-    checkout = _make_checkout(tmp_path / "checkout")
-    mocker.patch.object(
-        installer.subprocess,
-        "run",
-        side_effect=installer.subprocess.TimeoutExpired(
-            cmd=["/usr/bin/omp", "config", "path"],
-            timeout=installer._COMMAND_TIMEOUT_SECONDS,
-        ),
-    )
-
-    with pytest.raises(SystemExit):
-        installer._install_omp_user_rules("/usr/bin/omp", checkout)
-
-    output = capsys.readouterr().out
-    assert "Could not resolve OMP's user agent directory" in output
-    assert "timed out" in output
 
 
 def test_install_omp_user_rules_retargets_previous_checkout(mocker, tmp_path: Path) -> None:
@@ -153,27 +101,6 @@ def test_install_omp_user_rules_retargets_previous_checkout(mocker, tmp_path: Pa
         return_value=_completed(stdout=f"{agent_dir}\n"),
     )
     mocker.patch.object(installer, "settings", MagicMock(install_dir=str(previous)))
-
-    installer._install_omp_user_rules("/usr/bin/omp", current)
-
-    for name in installer.OMP_USER_RULES:
-        assert (rules_dir / name).resolve() == (current / "omp" / "user-rules" / name).resolve()
-
-
-def test_install_omp_user_rules_retargets_other_live_checkout(mocker, tmp_path: Path) -> None:
-    previous = _make_checkout(tmp_path / "previous")
-    current = _make_checkout(tmp_path / "current")
-    agent_dir = tmp_path / "agent"
-    rules_dir = agent_dir / "rules"
-    rules_dir.mkdir(parents=True)
-    for name in installer.OMP_USER_RULES:
-        (rules_dir / name).symlink_to(previous / "omp" / "user-rules" / name)
-    mocker.patch.object(
-        installer.subprocess,
-        "run",
-        return_value=_completed(stdout=f"{agent_dir}\n"),
-    )
-    mocker.patch.object(installer, "settings", MagicMock(install_dir=str(current)))
 
     installer._install_omp_user_rules("/usr/bin/omp", current)
 
@@ -370,7 +297,7 @@ def test_install_records_source_only_after_every_component_succeeds(mocker, tmp_
     mocker.patch.object(
         installer,
         "_install_omp_user_rules",
-        side_effect=lambda omp, root, profile: events.append(("rules", omp, root, profile)),
+        side_effect=lambda omp, root: events.append(("rules", omp, root)),
     )
     mocker.patch.object(installer, "_install_pi_extension", side_effect=lambda root: events.append(("pi", root)))
     fake_settings = MagicMock()
@@ -389,7 +316,7 @@ def test_install_records_source_only_after_every_component_succeeds(mocker, tmp_
     ]
     assert events == [
         "omp",
-        ("rules", "/usr/bin/omp", checkout.resolve(), None),
+        ("rules", "/usr/bin/omp", checkout.resolve()),
         ("pi", checkout.resolve()),
         ("metadata", {"install_dir": str(checkout.resolve())}),
     ]
