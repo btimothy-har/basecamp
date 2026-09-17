@@ -15,7 +15,7 @@
 	"omp": {
 		"extensions": [
 			"./extension.ts",
-			"./workspace/extension.ts"
+			"./workspace/workspace.ts"
 		]
 	},
 	"devDependencies": {

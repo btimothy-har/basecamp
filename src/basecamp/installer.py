@@ -31,7 +31,7 @@ OMP_USER_RULES: Final = (
     "code-comments.md",
 )
 WORKSPACE_REGISTRATION: Final = "basecamp-workspace"
-WORKSPACE_EXTENSION_ENTRY: Final = Path("omp") / "workspace" / "extension.ts"
+WORKSPACE_EXTENSION_ENTRY: Final = Path("omp") / "workspace" / "workspace.ts"
 
 # Pre-consolidation Pi package registrations to clean up — each was its own
 # `pi install` target before the single-extension layout.
