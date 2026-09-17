@@ -56,9 +56,8 @@ export function renderHeader(review: PreparedReview, commented: number, theme: T
 		`${theme.fg("accent", theme.bold("Code Review"))}  ${theme.fg("dim", singleLine(review.scope))}`,
 		`${theme.fg(review.overall_correctness === "correct" ? "success" : "error", verdict)}  ·  ${confidence}  ·  ${findingCount}  ·  ${commented} commented`,
 		`${theme.fg("accent", theme.bold("Overall recommendation"))}  ${review.recommendation.trim()}`,
-		theme.fg("dim", `P0 ${counts[0]}   P1 ${counts[1]}   P2 ${counts[2]}   P3 ${counts[3]}`),
-		"",
 		`${theme.fg("muted", "Why")}  ${review.explanation.trim()}`,
+		theme.fg("dim", `P0 ${counts[0]}   P1 ${counts[1]}   P2 ${counts[2]}   P3 ${counts[3]}`),
 	].join("\n");
 }
 

@@ -30,6 +30,16 @@ type NavigatorUI = Pick<ExtensionUIContext, "custom">;
 
 type ListOutcome = { kind: "open"; index: number } | { kind: "submit" } | { kind: "cancel" };
 
+function clipRows(rows: readonly string[], maxRows: number, maxWidth: number): readonly string[] {
+	const height = Math.max(1, Math.floor(maxRows));
+	if (rows.length <= height) return rows;
+
+	const visible = rows.slice(0, height);
+	const last = height - 1;
+	visible[last] = truncateToWidth(`${visible[last]?.trimEnd()} …`, maxWidth);
+	return visible;
+}
+
 function showFindingList(
 	ui: NavigatorUI,
 	review: PreparedReview,
@@ -71,7 +81,7 @@ function showFindingList(
 					const contentWidth = Math.max(width - 2, 1);
 					header.setText(renderHeader(review, store.count, theme));
 					const maxHeaderRows = Math.max(3, Math.min(9, tui.terminal.rows - 10));
-					visibleHeaderRows = windowRows(header.render(width), 0, maxHeaderRows, theme).lines;
+					visibleHeaderRows = clipRows(header.render(width), maxHeaderRows, width);
 					const maxListRows = Math.max(3, tui.terminal.rows - visibleHeaderRows.length - 7);
 					list.setText(
 						renderFindingList(listItems(findings, store), selected, theme, maxListRows)

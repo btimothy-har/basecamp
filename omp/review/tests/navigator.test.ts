@@ -110,7 +110,25 @@ describe("navigateReviewFindings", () => {
 		expect(listView).toContain("[commented]");
 	});
 
-	test("bounds long review guidance while keeping findings visible after resize", async () => {
+	test("keeps the overall recommendation visible in a short terminal", async () => {
+		let listView = "";
+		const ui = harness([
+			(send, render, _paste, resize) => {
+				resize?.(14);
+				listView = render();
+				send("s");
+			},
+		]);
+
+		await navigateReviewFindings(ui, review());
+
+		expect(listView.split("\n").length).toBeLessThanOrEqual(14);
+		expect(listView).toContain("Overall recommendation");
+		expect(listView).toContain("Fix the validated findings before merging.");
+		expect(listView).toContain("Finding title");
+	});
+
+	test("clips long review guidance while keeping findings visible after resize", async () => {
 		let listView = "";
 		const guidance = Array.from({ length: 120 }, (_unused, index) => `recommendation-${index}`).join(" ");
 		const ui = harness([
@@ -127,7 +145,8 @@ describe("navigateReviewFindings", () => {
 		expect(listView.split("\n").length).toBeLessThanOrEqual(20);
 		expect(listView).toContain("Overall recommendation");
 		expect(listView).toContain("Finding title");
-		expect(listView).toContain("more line");
+		expect(listView).toContain("…");
+		expect(listView).not.toContain("more line");
 	});
 
 	test("does not open the comment box on Enter from the card", async () => {
