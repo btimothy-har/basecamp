@@ -3,8 +3,15 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { CustomCommandAPI, HookCommandContext } from "@oh-my-pi/pi-coding-agent";
-import createReviewCommand from "../command.ts";
+import { type as arktype } from "@oh-my-pi/omptype";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+	ExtensionContext,
+	RegisteredCommand,
+	ToolDefinition,
+} from "@oh-my-pi/pi-coding-agent";
+import registerReview from "../index.ts";
 
 const REVIEW_MODES = ["Against a base branch", "Specific commit", "Custom instructions"];
 const tempRoots: string[] = [];
@@ -92,11 +99,33 @@ function createHarness() {
 	const sent: string[] = [];
 	const notifications: Array<{ message: string; level: string | undefined }> = [];
 	const menus: Array<{ title: string; options: string[] }> = [];
+	const commands: Record<string, RegisteredCommand> = {};
+	const hooks: Partial<Record<string, Array<(event: unknown, ctx: ExtensionContext) => unknown>>> = {};
+	const api = {
+		arktype,
+		on(event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown): void {
+			const handlers = hooks[event] ?? [];
+			handlers.push(handler);
+			hooks[event] = handlers;
+		},
+		registerCommand(name: string, command: Omit<RegisteredCommand, "name">): void {
+			commands[name] = { name, ...command };
+		},
+		registerTool(_tool: ToolDefinition): void {},
+		sendUserMessage(content: string | unknown[]): void {
+			if (typeof content !== "string") throw new Error("review command sent non-text content");
+			sent.push(content);
+		},
+	} as unknown as ExtensionAPI;
+	registerReview(api);
+	const command = commands.review;
+	if (!command) throw new Error("review command was not registered");
 
 	return {
 		sent,
 		notifications,
 		menus,
+		hooks,
 		invoke: async (cwd: string, args = "", options: InvokeOptions = {}) => {
 			let liveCwd = cwd;
 			let liveSessionId = "session-1";
@@ -123,11 +152,10 @@ function createHarness() {
 					getCwd: () => liveCwd,
 					getSessionId: () => liveSessionId,
 				},
-			} as unknown as HookCommandContext;
-			const command = createReviewCommand({ cwd } as CustomCommandAPI);
-			const prompt = await command.execute(args === "" ? [] : [args], ctx);
-			if (prompt) sent.push(prompt);
-			return prompt;
+			} as unknown as ExtensionCommandContext;
+			const sentBefore = sent.length;
+			await command.handler(args, ctx);
+			return sent.length > sentBefore ? sent.at(-1) : undefined;
 		},
 	};
 }
