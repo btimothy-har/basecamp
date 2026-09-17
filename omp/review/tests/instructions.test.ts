@@ -5,6 +5,7 @@ import registerReviewInstructions, {
 	isNativeReviewRequest,
 	REVIEW_PRESENTATION_INSTRUCTIONS,
 } from "../instructions.ts";
+import { buildReviewRequest } from "../request.ts";
 
 type Handler = (event: ContextEvent) => ContextEventResult | undefined;
 
@@ -27,8 +28,8 @@ function instructionHandler(): Handler {
 	return handler;
 }
 
-describe("OMP native review instructions", () => {
-	test("recognizes native review prompts without shadowing the command", () => {
+describe("Basecamp review instructions", () => {
+	test("recognizes the review request protocol marker", () => {
 		expect(isNativeReviewRequest(reviewPrompt)).toBe(true);
 		expect(isNativeReviewRequest('Review this change with agent: "reviewer" and task.')).toBe(false);
 	});
@@ -48,9 +49,32 @@ describe("OMP native review instructions", () => {
 			synthetic: true,
 			timestamp: 0,
 		});
-		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("Call `review_findings` exactly once");
-		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("Read the returned review URI or file path");
 	});
+	test("keeps the chair contract active for generated requests until presentation succeeds", () => {
+		const prompt = buildReviewRequest({
+			kind: "custom",
+			cwd: "/worktrees/widgets",
+			instructions: "Review main against this branch.",
+		});
+		const handler = instructionHandler();
+
+		const active = handler(
+			contextEvent([
+				{ role: "user", content: prompt, timestamp: 1 },
+				{ role: "assistant", content: [], timestamp: 2 },
+			]),
+		);
+		expect(active?.messages?.[1]).toMatchObject({ content: REVIEW_PRESENTATION_INSTRUCTIONS });
+
+		const complete = handler(
+			contextEvent([
+				{ role: "user", content: prompt, timestamp: 1 },
+				{ role: "toolResult", toolName: "review_findings", isError: false, content: [], timestamp: 2 },
+			]),
+		);
+		expect(complete).toBeUndefined();
+	});
+
 
 	test("keeps instructions active after reviewer tool results", () => {
 		const result = instructionHandler()(

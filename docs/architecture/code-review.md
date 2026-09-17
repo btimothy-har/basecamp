@@ -1,17 +1,17 @@
 # Code Review Flows
 
-Basecamp has separate review integrations for legacy Pi and OMP. Pi owns an independent review workflow behind `/code-review`; OMP keeps its native `/review` mechanics and adds only final presentation, feedback, and artifact capture.
+Basecamp has separate review integrations for legacy Pi and OMP. Pi owns an independent review workflow behind `/code-review`; Basecamp owns OMP's `/review` command, native reviewer orchestration, and final presentation, feedback, and artifact capture.
 
-## OMP native review presentation
+## OMP review workflow
 
-Native OMP `/review` remains authoritative for scope selection, diff preparation and filtering, reviewer count and locality, read-only reviewer tasks, and the structured `correct|incorrect` plus P0–P3 result shape. Basecamp does not replace or wrap that command.
+Basecamp's OMP extension registers `/review` with three scopes: a committed comparison against a selected base branch, one specific commit, or custom instructions. Branch comparisons resolve the live invocation worktree, pin the merge base and current head to full revisions, and exclude the current branch from the base picker. Commit reviews pin the selected commit and use `git show`. Custom reviews preserve the submitted instructions for model-resolved inspection. There is intentionally no uncommitted mode: the committed scopes prohibit widening to index or working-tree changes.
 
-The exact-pinned OMP review prompt starts with `## Code Review Request` and dispatches the `reviewer` agent. A `context` extension hook recognizes the latest active native review request at the model boundary and inserts a hidden final-chair contract. This covers idle, headless, and queued review prompts without resending the command or reviving instructions from a historical review. The primary must validate findings against the code, discard false positives, semantically deduplicate shared root causes, call `review_findings` exactly once, and read the returned artifact before continuing. Reviewer subagents continue using native structured yields and never call the presentation tool.
+Each Basecamp-generated review prompt starts with `## Code Review Request` and carries the authoritative repository, revisions, and inspection command when the scope is committed. A `context` extension hook recognizes the latest active request at the model boundary and inserts a hidden final-chair contract. This covers idle, headless, and queued review prompts without resending the command or reviving instructions from a historical review. The primary inspects the scope, dispatches OMP's native `reviewer` agents when there are reviewable changes, validates their structured findings against the code, discards false positives, semantically deduplicates shared root causes, calls `review_findings` exactly once, and reads the returned artifact before continuing. Reviewer subagents never call the presentation tool.
 
 ### OMP flow
 
-1. Native `/review` resolves the scope and builds the review prompt.
-2. OMP dispatches its native `reviewer` tasks and returns their structured results to the primary.
+1. Basecamp `/review` captures the live invocation directory, resolves the selected scope, and builds the review request.
+2. The primary inspects that scope and dispatches OMP's native `reviewer` tasks, or reports an empty comparison without dispatching or widening the scope.
 3. The primary validates and consolidates the results into the strict native-shaped `review_findings` input, normalizing source locations to repository-relative paths and including an empty findings array when none remain.
 4. In TUI mode, `review_findings` opens a `ui.custom` navigator. Headless modes skip interaction but still record the review with feedback marked unavailable.
 5. The tool deterministically sorts findings, assigns artifact-local IDs, nests each submitted comment with its finding, and writes versioned JSON through OMP storage primitives.
@@ -29,7 +29,9 @@ Persistent-session artifacts survive resume and rewind, move with the session, c
 
 ### OMP layout
 
-- `omp/review/instructions.ts`: native-review recognition and model-context chair contract.
+- `omp/review/command.ts`: Basecamp-owned `/review` scope UI and live-worktree Git resolution.
+- `omp/review/request.ts`: authoritative review prompt construction and pinned committed-scope commands.
+- `omp/review/instructions.ts`: active-request recognition and model-context chair contract.
 - `omp/review/schema.ts`: strict native-shaped tool input and versioned artifact types.
 - `omp/review/artifact.ts`: deterministic ordering, IDs, counts, and artifact construction.
 - `omp/review/tool.ts`: `review_findings`, artifact save, and passive transcript renderer.
