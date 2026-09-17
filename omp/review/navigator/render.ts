@@ -13,12 +13,12 @@ const PRIORITY_COLOR: Record<ReviewPriority, "error" | "warning" | "muted" | "di
 };
 
 export interface RowWindow {
-	lines: string[];
+	lines: readonly string[];
 	maxStart: number;
 	start: number;
 }
 
-export function windowRows(rows: string[], requestedStart: number, maxRows: number, theme: Theme): RowWindow {
+export function windowRows(rows: readonly string[], requestedStart: number, maxRows: number, theme: Theme): RowWindow {
 	const height = Math.max(1, Math.floor(maxRows));
 	if (rows.length <= height) return { lines: rows, maxStart: 0, start: 0 };
 
@@ -50,11 +50,15 @@ export function renderHeader(review: PreparedReview, commented: number, theme: T
 	const total = review.findings.length;
 	const findingCount = `${total} finding${total === 1 ? "" : "s"}`;
 	const verdict = review.overall_correctness === "correct" ? "Correct" : "Incorrect";
+	const confidence = `${Math.round(review.confidence * 100)}% confidence`;
 	const counts = reviewPriorityCounts(review.findings);
 	return [
 		`${theme.fg("accent", theme.bold("Code Review"))}  ${theme.fg("dim", singleLine(review.scope))}`,
-		`${theme.fg(review.overall_correctness === "correct" ? "success" : "error", verdict)}  ·  ${findingCount}  ·  ${commented} commented`,
+		`${theme.fg(review.overall_correctness === "correct" ? "success" : "error", verdict)}  ·  ${confidence}  ·  ${findingCount}  ·  ${commented} commented`,
+		`${theme.fg("accent", theme.bold("Overall recommendation"))}  ${review.recommendation.trim()}`,
 		theme.fg("dim", `P0 ${counts[0]}   P1 ${counts[1]}   P2 ${counts[2]}   P3 ${counts[3]}`),
+		"",
+		`${theme.fg("muted", "Why")}  ${review.explanation.trim()}`,
 	].join("\n");
 }
 
@@ -97,6 +101,9 @@ export function renderFindingCard(
 		theme.fg("accent", theme.bold(finding.title)),
 		"",
 		finding.body,
+		"",
+		theme.fg("accent", theme.bold("Recommendation")),
+		finding.recommendation,
 	];
 }
 

@@ -6,6 +6,7 @@ function finding(overrides: Partial<ReviewFindingInput> = {}): ReviewFindingInpu
 	return {
 		title: "title",
 		body: "body",
+		recommendation: "Apply the focused fix.",
 		priority: 1,
 		confidence: 0.5,
 		file_path: "a.ts",
@@ -20,6 +21,7 @@ function input(findings: ReviewFindingInput[]): ReviewFindingsInput {
 		scope: "main...HEAD",
 		overall_correctness: "incorrect",
 		explanation: "The change has problems.",
+		recommendation: "Fix the validated findings before merging.",
 		confidence: 0.9,
 		findings,
 	};
@@ -71,6 +73,7 @@ describe("prepareReview", () => {
 		expect(prepared.scope).toBe("main...HEAD");
 		expect(prepared.overall_correctness).toBe("incorrect");
 		expect(prepared.explanation).toBe("The change has problems.");
+		expect(prepared.recommendation).toBe("Fix the validated findings before merging.");
 		expect(prepared.confidence).toBe(0.9);
 	});
 });
@@ -123,14 +126,15 @@ describe("buildReviewArtifact", () => {
 		}
 	});
 
-	test("produces the canonical schema_version 1 shape without timestamps", () => {
+	test("produces the canonical schema_version 2 shape without timestamps", () => {
 		const prepared = prepareReview(input([finding({ priority: 2 })]));
 		const artifact = buildReviewArtifact(prepared, "cancelled");
 		expect(artifact).toEqual({
-			schema_version: 1,
+			schema_version: 2,
 			scope: "main...HEAD",
 			overall_correctness: "incorrect",
 			explanation: "The change has problems.",
+			recommendation: "Fix the validated findings before merging.",
 			confidence: 0.9,
 			feedback_status: "cancelled",
 			findings: [
@@ -138,6 +142,7 @@ describe("buildReviewArtifact", () => {
 					id: "finding-1",
 					title: "title",
 					body: "body",
+					recommendation: "Apply the focused fix.",
 					priority: 2,
 					confidence: 0.5,
 					file_path: "a.ts",

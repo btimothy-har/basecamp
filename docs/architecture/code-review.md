@@ -6,18 +6,18 @@ Basecamp has separate review integrations for legacy Pi and OMP. Pi owns an inde
 
 Native OMP `/review` remains authoritative for scope selection, diff preparation and filtering, reviewer count and locality, read-only reviewer tasks, and the structured `correct|incorrect` plus P0–P3 result shape. Basecamp does not replace or wrap that command.
 
-The exact-pinned OMP review prompt starts with `## Code Review Request` and dispatches the `reviewer` agent. A `context` extension hook recognizes the latest active native review request at the model boundary and inserts a hidden final-chair contract. This covers idle, headless, and queued review prompts without resending the command or reviving instructions from a historical review. The primary must validate findings against the code, discard false positives, semantically deduplicate shared root causes, call `review_findings` exactly once, and read the returned artifact before continuing. Reviewer subagents continue using native structured yields and never call the presentation tool.
+The exact-pinned OMP review prompt starts with `## Code Review Request` and dispatches the `reviewer` agent. A `context` extension hook recognizes the latest active native review request at the model boundary and inserts a hidden final-chair contract. This covers idle, headless, and queued review prompts without resending the command or reviving instructions from a historical review. The primary must validate findings against the code, discard false positives, semantically deduplicate shared root causes, author an overall recommendation plus one recommendation for every surviving finding, call `review_findings` exactly once, and read the returned artifact before continuing. Reviewer subagents continue using native structured yields and never call the presentation tool.
 
 ### OMP flow
 
 1. Native `/review` resolves the scope and builds the review prompt.
 2. OMP dispatches its native `reviewer` tasks and returns their structured results to the primary.
-3. The primary validates and consolidates the results into the strict native-shaped `review_findings` input, normalizing source locations to repository-relative paths and including an empty findings array when none remain.
-4. In TUI mode, `review_findings` opens a `ui.custom` navigator. Headless modes skip interaction but still record the review with feedback marked unavailable.
-5. The tool deterministically sorts findings, assigns artifact-local IDs, nests each submitted comment with its finding, and writes versioned JSON through OMP storage primitives.
-6. In persistent sessions, the model-visible tool result is only `Read artifact://<id> before continuing.` In `--no-session` mode, where OMP cannot resolve its in-memory artifact IDs through `artifact://`, the tool writes the same JSON to the content-addressed blob store and returns its readable path.
+3. The primary validates and consolidates the results into `review_findings`: native verdict, confidence, priority, and location fields plus Basecamp-owned overall and per-finding recommendations. Finding bodies own evidence and impact; recommendations own what the user should do. Paths are normalized to repository-relative form, and an empty findings array is included when none remain.
+4. In TUI mode, `review_findings` opens a `ui.custom` navigator. Its height-aware header prioritizes a preview of the overall recommendation and shows the explanation when space permits, while each scrollable finding card carries its own recommendation. Headless modes skip interaction but still record the review with feedback marked unavailable.
+5. The tool deterministically sorts findings, assigns artifact-local IDs, nests each submitted comment with its finding, and writes schema-versioned JSON through OMP storage primitives.
+6. In persistent sessions, the model-visible tool result is only `Read artifact://<id> before continuing.` In `--no-session` mode, where OMP cannot resolve its in-memory artifact IDs through `artifact://`, the tool writes the same JSON to the content-addressed blob store and returns its readable path. The passive transcript renderer shows the full explanation and overall recommendation in both modes, including clean reviews that do not open the navigator.
 
-The navigator is terminal-height aware and recalculates its list and card viewports after resize. The list keeps the selected finding visible; cards use `PageUp`/`PageDown` for long content; the embedded editor owns cursor-following scroll for long comments. The tool's abort signal reaches both custom views, so cancellation cannot leave a mounted navigator or persist stale feedback.
+The navigator recalculates its layout after every resize. The header is wrapped to terminal width, capped by available height, and its actual rendered height determines the finding-list budget. Cards use `PageUp`/`PageDown` for long bodies and recommendations; the embedded editor owns cursor-following scroll for long comments. The tool's abort signal reaches both custom views, so cancellation cannot leave a mounted navigator or persist stale feedback.
 
 | View | Keys |
 |------|------|
@@ -25,12 +25,12 @@ The navigator is terminal-height aware and recalculates its list and card viewpo
 | Card | `←`/`→` prev/next · `PageUp`/`PageDown` scroll · `↓` or `Tab` comment · `Esc` back |
 | Comment box | `Enter` save · `Esc` save and close · `↑`/`Backspace` on empty close · `shift+Enter` newline |
 
-Persistent-session artifacts survive resume and rewind, move with the session, copy on fork, and are removed when the session is dropped. The no-session blob fallback instead follows OMP's content-addressed blob garbage-collection lifecycle. Both contain `schema_version`, scope, final correctness/explanation/confidence, feedback status, and findings with native priority/location fields plus nested nullable comments.
+Persistent-session artifacts survive resume and rewind, move with the session, copy on fork, and are removed when the session is dropped. The no-session blob fallback instead follows OMP's content-addressed blob garbage-collection lifecycle. Schema version 2 contains scope, final correctness/explanation/recommendation/confidence, feedback status, and findings with native priority/location fields, a required recommendation, and nested nullable comments. Recommendation text is presentation guidance; priority counts and the overall verdict remain determined solely by their native fields.
 
 ### OMP layout
 
 - `omp/review/instructions.ts`: native-review recognition and model-context chair contract.
-- `omp/review/schema.ts`: strict native-shaped tool input and versioned artifact types.
+- `omp/review/schema.ts`: strict native-fields-plus-recommendations tool input and versioned artifact types.
 - `omp/review/artifact.ts`: deterministic ordering, IDs, counts, and artifact construction.
 - `omp/review/tool.ts`: `review_findings`, artifact save, and passive transcript renderer.
 - `omp/review/paths.ts`: in-repository finding-path normalization; OMP's `findRepoRoot` owns root discovery.

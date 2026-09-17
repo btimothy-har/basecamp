@@ -49,6 +49,8 @@ describe("OMP native review instructions", () => {
 			timestamp: 0,
 		});
 		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("Call `review_findings` exactly once");
+		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("write a concise `recommendation`");
+		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("even when no findings remain");
 		expect(REVIEW_PRESENTATION_INSTRUCTIONS).toContain("Read the returned review URI or file path");
 	});
 

@@ -6,9 +6,10 @@ After every native OMP reviewer task has completed:
 1. Validate each proposed finding against the reviewed code and discard false positives.
 2. Semantically deduplicate findings that describe the same underlying defect.
 3. Convert every finding's \`file_path\` to a repository-relative path.
-4. Form one final overall correctness judgment and explanation.
-5. Call \`review_findings\` exactly once with the reviewed scope and final consolidated findings, including an empty findings array when none remain.
-6. Read the returned review URI or file path before continuing, then incorporate the user's submitted feedback.
+4. For every surviving finding, keep its \`body\` to evidence and impact, then write a concise \`recommendation\` for the action the user should take.
+5. Form one final overall correctness judgment, explain why it applies, and recommend what the user should do next. Give actionable guidance even when no findings remain.
+6. Call \`review_findings\` exactly once with the reviewed scope and final consolidated findings, including an empty findings array when none remain.
+7. Read the returned review URI or file path before continuing, then incorporate the user's submitted feedback.
 
 Reviewer subagents must continue returning findings through their native structured yield. They must not call \`review_findings\`.
 </system-reminder>`;

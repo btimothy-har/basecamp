@@ -12,6 +12,7 @@ function validFinding(overrides: Partial<ReviewFindingInput> = {}): ReviewFindin
 	return {
 		title: "Unchecked redirect",
 		body: "The redirect target is not validated, allowing open redirects.",
+		recommendation: "Reject redirect targets outside the configured allowlist.",
 		priority: 1,
 		confidence: 0.8,
 		file_path: "src/auth.ts",
@@ -26,6 +27,7 @@ function validInput(overrides: Partial<ReviewFindingsInput> = {}): ReviewFinding
 		scope: "main...HEAD",
 		overall_correctness: "incorrect",
 		explanation: "The change introduces an open redirect.",
+		recommendation: "Fix the redirect validation before merging.",
 		confidence: 0.9,
 		findings: [validFinding()],
 		...overrides,
@@ -35,6 +37,16 @@ function validInput(overrides: Partial<ReviewFindingsInput> = {}): ReviewFinding
 describe("createReviewFindingsParameters", () => {
 	test("accepts a valid payload", () => {
 		expect(schemaAccepts(validInput())).toBe(true);
+	});
+
+	test("requires overall and finding recommendations", () => {
+		const withoutOverall = { ...validInput() } as Record<string, unknown>;
+		delete withoutOverall.recommendation;
+		expect(schemaAccepts(withoutOverall)).toBe(false);
+
+		const finding = { ...validFinding() } as Record<string, unknown>;
+		delete finding.recommendation;
+		expect(schemaAccepts(validInput({ findings: [finding as unknown as ReviewFindingInput] }))).toBe(false);
 	});
 
 	test("rejects unknown top-level fields", () => {
@@ -92,12 +104,24 @@ describe("createReviewFindingsParameters", () => {
 	test("emits additionalProperties false and descriptions at every object level", () => {
 		const json = parameters.toJsonSchema() as {
 			additionalProperties?: unknown;
-			properties?: Record<string, { description?: string; items?: { additionalProperties?: unknown } }>;
+			properties?: Record<
+				string,
+				{
+					description?: string;
+					items?: {
+						additionalProperties?: unknown;
+						properties?: Record<string, { description?: string }>;
+					};
+				}
+			>;
 		};
 		expect(json.additionalProperties).toBe(false);
 		expect(json.properties?.findings?.items?.additionalProperties).toBe(false);
-		for (const name of ["scope", "overall_correctness", "explanation", "confidence", "findings"]) {
+		for (const name of ["scope", "overall_correctness", "explanation", "recommendation", "confidence", "findings"]) {
 			expect(typeof json.properties?.[name]?.description).toBe("string");
 		}
+		const findingProperties = json.properties?.findings?.items?.properties;
+		expect(findingProperties?.body?.description).not.toContain("how to fix");
+		expect(findingProperties?.recommendation?.description).toContain("recommended action");
 	});
 });
