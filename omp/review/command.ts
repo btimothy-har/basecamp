@@ -1,15 +1,18 @@
-import type { CustomCommand, CustomCommandAPI, HookCommandContext } from "@oh-my-pi/pi-coding-agent";
+import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import { requireGit } from "@oh-my-pi/pi-natives/vcs";
+import createReviewAutocompleteProvider from "./autocomplete.ts";
 import { buildReviewRequest, type ReviewScope } from "./request.ts";
+
+const REVIEW_DESCRIPTION = "Review a branch, commit, or custom scope (Basecamp)";
 
 const REVIEW_MODES = ["Against a base branch", "Specific commit", "Custom instructions"] as const;
 
-function warn(ctx: HookCommandContext, message: string): void {
+function warn(ctx: ExtensionCommandContext, message: string): void {
 	ctx.ui.notify(message, "warning");
 }
 
 async function selectBranchScope(
-	ctx: HookCommandContext,
+	ctx: ExtensionCommandContext,
 	cwd: string,
 	instructions: string | undefined,
 ): Promise<ReviewScope | undefined> {
@@ -45,7 +48,7 @@ async function selectBranchScope(
 }
 
 async function selectCommitScope(
-	ctx: HookCommandContext,
+	ctx: ExtensionCommandContext,
 	cwd: string,
 	instructions: string | undefined,
 ): Promise<ReviewScope | undefined> {
@@ -77,7 +80,7 @@ async function selectCommitScope(
 }
 
 async function selectInteractiveScope(
-	ctx: HookCommandContext,
+	ctx: ExtensionCommandContext,
 	cwd: string,
 	initialInstructions: string,
 ): Promise<ReviewScope | undefined> {
@@ -103,11 +106,17 @@ async function selectInteractiveScope(
 	}
 }
 
-export default function createReviewCommand(_api: CustomCommandAPI): CustomCommand {
-	return {
-		name: "review",
-		description: "Review a branch, commit, or custom scope (Basecamp)",
-		execute: async (args, ctx) => {
+export default function registerReviewCommand(pi: ExtensionAPI): void {
+	const autocompleteUis = new WeakSet<object>();
+	pi.on("session_start", (_event, ctx) => {
+		if (ctx.mode !== "tui" || autocompleteUis.has(ctx.ui)) return;
+		ctx.ui.addAutocompleteProvider((current) => createReviewAutocompleteProvider(current, REVIEW_DESCRIPTION));
+		autocompleteUis.add(ctx.ui);
+	});
+
+	pi.registerCommand("review", {
+		description: REVIEW_DESCRIPTION,
+		handler: async (args, ctx) => {
 			const cwd = ctx.cwd;
 			const sessionId = ctx.sessionManager.getSessionId();
 			if (!ctx.isIdle()) {
@@ -115,7 +124,7 @@ export default function createReviewCommand(_api: CustomCommandAPI): CustomComma
 				return;
 			}
 
-			const initialInstructions = args.join(" ").trim();
+			const initialInstructions = args.trim();
 			let scope: ReviewScope | undefined;
 			if (ctx.hasUI) {
 				scope = await selectInteractiveScope(ctx, cwd, initialInstructions);
@@ -131,7 +140,7 @@ export default function createReviewCommand(_api: CustomCommandAPI): CustomComma
 				warn(ctx, "/review stopped because the active session or workspace changed.");
 				return;
 			}
-			return buildReviewRequest(scope);
+			pi.sendUserMessage(buildReviewRequest(scope));
 		},
-	};
+	});
 }

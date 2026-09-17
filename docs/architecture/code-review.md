@@ -4,13 +4,13 @@ Basecamp has separate review integrations for legacy Pi and OMP. Pi owns an inde
 
 ## OMP review workflow
 
-Basecamp's OMP package overrides the bundled `/review` through a package-discovered custom TypeScript command with three scopes: a committed comparison against a selected base branch, one specific commit, or custom instructions. Branch comparisons resolve the live invocation worktree, pin the merge base and current head to full revisions, and exclude the current branch from the base picker. Commit reviews pin the selected commit. Custom reviews preserve the submitted instructions for model-resolved inspection. There is intentionally no uncommitted mode.
+Basecamp's loaded OMP extension registers `/review` with three scopes: a committed comparison against a selected base branch, one specific commit, or custom instructions. The extension handler wins dispatch precedence over OMP's bundled command, while a public autocomplete-provider wrapper keeps only Basecamp's duplicate-name choice visible in the TUI. Branch comparisons resolve the live invocation worktree, pin the merge base and current head to full revisions, and exclude the current branch from the base picker. Commit reviews pin the selected commit. Custom reviews preserve the submitted instructions for model-resolved inspection. There is intentionally no uncommitted mode.
 
-The command returns a thin prompt containing the authoritative scope and an explicit `skill://code-review` reference; returning it keeps the generated review inside OMP's awaited prompt lifecycle in both interactive and headless modes. The skill owns scope fidelity, risk-based native reviewer selection, synthesis, overall and per-finding recommendations, and the single `review_findings` presentation call. OMP's native `reviewer` agent remains authoritative for finding method, evidence, priorities, and structured output. Committed scopes exclude index and working-tree changes; an empty scope stops without meaningless reviewer dispatch.
+The command sends a thin prompt containing the authoritative scope and an explicit `skill://code-review` reference through `pi.sendUserMessage`. This enters OMP's normal prompt lifecycle without re-entering slash-command expansion. The skill owns scope fidelity, risk-based native reviewer selection, synthesis, overall and per-finding recommendations, and the single `review_findings` presentation call. OMP's native `reviewer` agent remains authoritative for finding method, evidence, priorities, and structured output. Committed scopes exclude index and working-tree changes; an empty scope stops without meaningless reviewer dispatch.
 
 ### OMP flow
 
-1. Basecamp `/review` captures the live invocation directory, resolves the selected scope, and returns the skill-directed context.
+1. Basecamp `/review` captures the live invocation directory, resolves the selected scope, and sends the skill-directed context.
 2. The primary loads the review skill, inspects the exact scope, and chooses independent reviewer coverage proportionate to its material risks.
 3. OMP's native `reviewer` tasks return structured results; the primary validates and consolidates them into `review_findings`: native verdict, confidence, priority, and location fields plus Basecamp-owned overall and per-finding recommendations. Finding bodies own evidence and impact; recommendations own what the user should do. Paths are normalized to repository-relative form, and an empty findings array is included when none remain.
 4. In TUI mode, `review_findings` opens a `ui.custom` navigator. Its height-aware header prioritizes a preview of the overall recommendation and shows the explanation when space permits, while each scrollable finding card carries its own recommendation. Headless modes skip interaction but still record the review with feedback marked unavailable.
@@ -29,8 +29,8 @@ Persistent-session artifacts survive resume and rewind, move with the session, c
 
 ### OMP layout
 
-- `omp/commands/review/index.ts`: package-discovered override for OMP's bundled `/review`.
-- `omp/review/command.ts`: prompt-returning scope UI and live-worktree Git resolution.
+- `omp/review/command.ts`: extension command registration, scope UI, and live-worktree Git resolution.
+- `omp/review/autocomplete.ts`: duplicate-name TUI filtering over OMP's public provider-composition API.
 - `omp/review/request.ts`: thin skill trigger and authoritative scope context.
 - `omp/skills/code-review/SKILL.md`: OMP review-chair orchestration, synthesis, recommendations, and presentation guidance.
 - `omp/review/schema.ts`: strict native-fields-plus-recommendations tool input and versioned artifact types.
