@@ -18,11 +18,11 @@ export interface ReviewToolDetails {
 	commentedCount: number;
 	counts: PriorityCounts;
 	feedbackStatus: FeedbackStatus;
-	explanation: string;
+	explanation?: string;
 	findingCount: number;
 	overallCorrectness: OverallCorrectness;
-	overallConfidence: number;
-	recommendation: string;
+	overallConfidence?: number;
+	recommendation?: string;
 	reviewRef: string;
 	scope: string;
 	storage: "artifact" | "blob";
@@ -46,9 +46,10 @@ function renderReviewResult(details: ReviewToolDetails, theme: Theme): string {
 	}
 	const verdictColor = details.overallCorrectness === "correct" ? "success" : "error";
 	const verdict = details.overallCorrectness === "correct" ? "Correct" : "Incorrect";
-	const confidence = Number.isFinite(details.overallConfidence)
-		? ` · ${Math.round(details.overallConfidence * 100)}% confidence`
-		: "";
+	const confidence =
+		typeof details.overallConfidence === "number" && Number.isFinite(details.overallConfidence)
+			? ` · ${Math.round(details.overallConfidence * 100)}% confidence`
+			: "";
 	const findings = `${details.findingCount} finding${details.findingCount === 1 ? "" : "s"}`;
 	const comments = `${details.commentedCount} comment${details.commentedCount === 1 ? "" : "s"}`;
 	const counts = details.counts;

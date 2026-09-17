@@ -214,12 +214,12 @@ describe("review_findings", () => {
 		expect(rendered?.render(100).join("\n")).toContain("Validated findings remain.");
 		expect(rendered?.render(100).join("\n")).toContain("Fix the validated findings before merging.");
 		expect(rendered?.render(100).join("\n")).toContain("artifact://42");
-		const legacyDetails = { ...(result.details as ReviewToolDetails) } as Partial<ReviewToolDetails>;
+		const legacyDetails = { ...(result.details as ReviewToolDetails) };
 		delete legacyDetails.explanation;
 		delete legacyDetails.overallConfidence;
 		delete legacyDetails.recommendation;
 		const replayed = harness.definition.renderResult?.(
-			{ content: result.content, details: legacyDetails as ReviewToolDetails },
+			{ content: result.content, details: legacyDetails },
 			{ expanded: false, isPartial: false },
 			theme,
 		);
