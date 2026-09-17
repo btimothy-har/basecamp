@@ -102,6 +102,11 @@ def _write_fake_omp(path: Path) -> None:
                 print(json.dumps({{"key": "worktree.base", "value": os.environ["BOMP_WORKTREE_BASE"]}}))
                 raise SystemExit(0)
 
+            if command == ["config", "get", "autoResume", "--json"]:
+                record("auto-resume-config")
+                print(json.dumps({{"key": "autoResume", "value": False}}))
+                raise SystemExit(0)
+
             if len(command) == 6 and command[:4] == ["worktree", "add", "--detach", "--quiet"]:
                 record("worktree-add", workspace=command[4])
                 if creation_ready := os.environ.get("BOMP_CREATION_READY"):

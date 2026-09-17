@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -17,21 +17,14 @@ from basecamp.omp.arguments import (
 )
 
 type LaunchDisposition = Literal["auto", "direct", "discard"]
-type SessionSource = Literal["continue", "resume", "fork", "session"]
 
 _BASECAMP_FLAGS = frozenset({"--detached", "--direct"})
-_SESSION_SOURCE_NAMES: dict[str, SessionSource] = {
-    "--continue": "continue",
-    "-c": "continue",
-    "--resume": "resume",
-    "-r": "resume",
-    "--fork": "fork",
-    "--session": "session",
-}
+_SESSION_SOURCE_FLAGS = frozenset({"--continue", "-c", "--resume", "-r", "--fork", "--session"})
 _FOREIGN_IMPORT_FLAGS = frozenset({"--from-claude", "--from-codex"})
 _DIRECT_FLAGS = frozenset(
     {
         "--help",
+        "-h",
         "--mode",
         "--no-session",
         "--plan-yolo",
@@ -39,7 +32,9 @@ _DIRECT_FLAGS = frozenset(
         "--prewalk",
         "--prewalk-into",
         "--print",
+        "-p",
         "--version",
+        "-v",
     }
 )
 _NON_LAUNCH_COMMANDS = frozenset(
@@ -91,17 +86,26 @@ _NON_LAUNCH_COMMANDS = frozenset(
     }
 )
 
+_RELOCATED_PATH_FLAGS = frozenset(
+    {
+        "--add-dir",
+        "--extension",
+        "-e",
+        "--hook",
+        "--plugin-dir",
+        "--trusted-extension",
+    }
+)
+_FILE_OR_LITERAL_FLAGS = frozenset({"--append-system-prompt", "--system-prompt"})
+
 
 @dataclass(frozen=True)
 class LaunchArguments:
-    """Placement and session-source information derived from OMP arguments."""
+    """Placement and forwarded arguments for one OMP invocation."""
 
     disposition: LaunchDisposition
     omp_args: tuple[str, ...]
     profile: str | None
-    session_source: SessionSource | None
-    session_value: str | None
-    session_dir: str | None
 
 
 @dataclass(frozen=True)
@@ -135,9 +139,6 @@ def inspect_launch_arguments(args: Sequence[str]) -> LaunchArguments:
 
     removed_indices: set[int] = set()
     basecamp_flags: set[str] = set()
-    session_source: SessionSource | None = None
-    session_value: str | None = None
-    session_dir: str | None = None
     requires_direct = bootstrap.alias_name is not None
     can_dispatch_command = True
     index = 0
@@ -157,14 +158,10 @@ def inspect_launch_arguments(args: Sequence[str]) -> LaunchArguments:
         following_value = following.value if following is not None else None
         flag = _flag_name(argument)
         consumes_next = _consumes_next(argument, following_value)
-        if flag in _SESSION_SOURCE_NAMES and session_source is None:
-            session_source = _SESSION_SOURCE_NAMES[flag]
-            session_value = _option_value(argument, following_value, consumes_next=consumes_next)
+        if flag in _SESSION_SOURCE_FLAGS:
             requires_direct = True
         if flag in _FOREIGN_IMPORT_FLAGS or flag in _DIRECT_FLAGS:
             requires_direct = True
-        if flag == "--session-dir":
-            session_dir = _option_value(argument, following_value, consumes_next=consumes_next)
         if can_dispatch_command and not argument.startswith("-"):
             requires_direct = requires_direct or argument in _NON_LAUNCH_COMMANDS
             can_dispatch_command = False
@@ -184,9 +181,6 @@ def inspect_launch_arguments(args: Sequence[str]) -> LaunchArguments:
         disposition=disposition,
         omp_args=omp_args,
         profile=bootstrap.profile,
-        session_source=session_source,
-        session_value=session_value,
-        session_dir=session_dir,
     )
 
 
@@ -222,7 +216,7 @@ def parse_detached_arguments(
         following = bootstrap.arguments[index + 1] if index + 1 < len(bootstrap.arguments) else None
         following_value = following.value if following is not None else None
         flag = _flag_name(argument)
-        if flag in _SESSION_SOURCE_NAMES or flag in _FOREIGN_IMPORT_FLAGS:
+        if flag in _SESSION_SOURCE_FLAGS or flag in _FOREIGN_IMPORT_FLAGS:
             message = f"Detached mode starts a new session and cannot be combined with {flag}."
             raise LauncherError(message)
         if argument == "--cwd":
@@ -370,6 +364,60 @@ def resolve_session_dir_argument(
     return tuple(tokens), resolved
 
 
+def resolve_relocated_path_arguments(args: Sequence[str], source_cwd: Path) -> tuple[str, ...]:
+    """Anchor path-valued launch arguments before moving the child into a scratch."""
+    tokens = list(args)
+    index = 0
+    while index < len(tokens):
+        argument = tokens[index]
+        if argument == "--":
+            break
+        flag = _flag_name(argument)
+        if flag in _RELOCATED_PATH_FLAGS or flag in _FILE_OR_LITERAL_FLAGS:
+            inline = argument.partition("=")[2] if argument.startswith("--") and "=" in argument else None
+            value_index = index if inline is not None else index + 1
+            value = inline if inline is not None else (tokens[value_index] if value_index < len(tokens) else "")
+            if value and (flag in _RELOCATED_PATH_FLAGS or _source_file_exists(value, source_cwd)):
+                absolute = _absolute_launch_path(value, source_cwd)
+                tokens[value_index] = f"{flag}={absolute}" if inline is not None else absolute
+            index += 1 if inline is not None else 2
+            continue
+        if argument.startswith("@") and len(argument) > 1:
+            value = argument[1:]
+            if len(value) > 1 and value[0] == value[-1] and value[0] in {'"', "'"}:
+                value = value[1:-1]
+            tokens[index] = f"@{_absolute_launch_path(value, source_cwd)}"
+            index += 1
+            continue
+        following = tokens[index + 1] if index + 1 < len(tokens) else None
+        index += 2 if _consumes_next(argument, following) else 1
+    return tuple(tokens)
+
+
+def _absolute_launch_path(value: str, source_cwd: Path) -> str:
+    path = Path(value)
+    return str((path if path.is_absolute() else source_cwd / path).resolve())
+
+
+def _source_file_exists(value: str, source_cwd: Path) -> bool:
+    path = Path(value)
+    return (path if path.is_absolute() else source_cwd / path).is_file()
+
+
+def resolve_session_dir_environment(
+    environ: Mapping[str, str],
+    source_cwd: Path,
+) -> tuple[dict[str, str], str | None]:
+    """Anchor OMP's environment-provided session directory before cwd relocation."""
+    environment = dict(environ)
+    value = environment.get("PI_CODING_AGENT_SESSION_DIR")
+    absolute = _absolute_session_dir(value or "", source_cwd)
+    if absolute is None:
+        return environment, None
+    environment["PI_CODING_AGENT_SESSION_DIR"] = absolute
+    return environment, absolute
+
+
 def _absolute_session_dir(value: str, source_cwd: Path) -> str | None:
     if not value:
         return None
@@ -381,12 +429,6 @@ def _absolute_session_dir(value: str, source_cwd: Path) -> str | None:
 
 def _flag_name(argument: str) -> str:
     return argument.partition("=")[0] if argument.startswith("--") else argument
-
-
-def _option_value(argument: str, following: str | None, *, consumes_next: bool) -> str | None:
-    if argument.startswith("--") and "=" in argument:
-        return argument.partition("=")[2] or None
-    return following if consumes_next else None
 
 
 def _validate_session_dir(argument: str, following: str | None) -> None:

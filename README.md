@@ -21,9 +21,9 @@ Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-w
 bomp [OMP arguments...]
 ```
 
-A fresh interactive `bomp` launched from a repository's canonical checkout starts OMP in a temporary detached worktree. Basecamp copies the checkout's staged, unstaged, and nonignored untracked state without changing the source branch, index, or files. A nested `--cwd` starts at the corresponding directory inside the scratch. Existing-session, management, headless, non-interactive, and linked-worktree launches remain direct. `bomp --direct` also requests direct launch explicitly.
+A fresh interactive `bomp` launched from a repository's canonical checkout starts OMP in a temporary detached worktree. Basecamp copies the checkout's staged, unstaged, and nonignored untracked state without changing the source branch, index, or files. A nested `--cwd` starts at the corresponding directory inside the scratch. Explicit and settings-driven session resumes, management, headless, non-interactive, and linked-worktree launches remain direct. `bomp --direct` also requests direct launch explicitly.
 
-The temporary scratch is supervised only for that invocation. On exit, Basecamp removes it when it still matches the launch snapshot; a branch-attached scratch, detached commit, changed content, or unverifiable Git state is retained. Run OMP's native `/wt <branch>` to move the session and its changes into a durable branch-backed worktree. OMP's transcript cwd remains the only session/worktree affinity record.
+The temporary scratch is supervised only for that invocation. On exit, Basecamp removes it when it still matches the launch snapshot or native `/wt` has reset it clean to the pinned commit; a branch-attached scratch, detached commit, changed content, or unverifiable Git state is retained. Run OMP's native `/wt <branch>` to move the session and its changes into a durable branch-backed worktree. OMP's transcript cwd remains the only session/worktree affinity record.
 
 `bomp --detached` retains the older force-discard mode:
 

@@ -20,6 +20,16 @@ _ENVIRONMENT_KEYS = (
     "BASECAMP_OMP_WORKSPACE_FILE",
 )
 
+_GIT_LOCATION_KEYS = (
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_COMMON_DIR",
+    "GIT_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_NAMESPACE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_WORK_TREE",
+)
+
 
 def workspace_child_environment(
     base: Mapping[str, str],
@@ -27,9 +37,10 @@ def workspace_child_environment(
     protected_root: Path | None = None,
     scratch_root: Path | None = None,
     inherited_wip: bool | None = None,
+    clear_git_locations: bool = False,
 ) -> dict[str, str]:
     """Create a child environment without inherited workspace metadata."""
-    environment = dict(base)
+    environment = clear_git_location_environment(base) if clear_git_locations else dict(base)
     for key in _ENVIRONMENT_KEYS:
         environment.pop(key, None)
     if protected_root is not None:
@@ -38,6 +49,14 @@ def workspace_child_environment(
         environment[SCRATCH_ROOT_ENV] = str(scratch_root.resolve())
     if inherited_wip is not None:
         environment[INHERITED_WIP_ENV] = "1" if inherited_wip else "0"
+    return environment
+
+
+def clear_git_location_environment(base: Mapping[str, str]) -> dict[str, str]:
+    """Remove inherited variables that redirect Git away from an owned workspace."""
+    environment = dict(base)
+    for key in _GIT_LOCATION_KEYS:
+        environment.pop(key, None)
     return environment
 
 

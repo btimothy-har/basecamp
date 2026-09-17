@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from basecamp.core.exceptions import LauncherError
+from basecamp.omp import snapshot as snapshot_module
 from basecamp.omp.snapshot import capture_snapshot, delete_snapshot_ref, matches_snapshot, restore_snapshot
 
 
@@ -72,6 +73,8 @@ def _dirty_fixture(root: Path) -> bytes:
     (root / "untracked.txt").write_text("untracked\n")
     (root / "intent.txt").write_text("intent\n")
     _git(root, "add", "-N", "intent.txt")
+    (root / "ignored-intent.txt").write_text("ignored intent\n")
+    _git(root, "add", "-N", "-f", "ignored-intent.txt")
     return _git(root, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout
 
 
@@ -106,6 +109,7 @@ def test_snapshot_restores_content_staging_modes_and_intent_without_source_mutat
     assert os.readlink(target / "link") == "added.txt"
     assert os.access(target / "executable.sh", os.X_OK)
     assert (target / "ignored-tracked.txt").read_text() == "changed despite ignore\n"
+    assert (target / "ignored-intent.txt").read_text() == "ignored intent\n"
     visible_intent = _git(target, "diff", "--cached", "--ita-visible-in-index", "HEAD", "--", "intent.txt").stdout
     invisible_intent = _git(target, "diff", "--cached", "--ita-invisible-in-index", "HEAD", "--", "intent.txt").stdout
     assert visible_intent
@@ -129,6 +133,47 @@ def test_delete_snapshot_ref_releases_private_recovery_objects(tmp_path: Path) -
     assert _git(source, "rev-parse", "--verify", snapshot.snapshot_ref, check=False).returncode != 0
 
 
+def test_delete_snapshot_ref_reports_failure_without_raising(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = _init_repo(tmp_path / "source")
+    snapshot = capture_snapshot(source, tmp_path / "snapshot", "b" * 32)
+
+    def fail(*_args: object, **_kwargs: object) -> bytes:
+        message = "ref cleanup failed"
+        raise LauncherError(message)
+
+    monkeypatch.setattr(snapshot_module, "_run_git", fail)
+
+    assert delete_snapshot_ref(snapshot, source) == "ref cleanup failed"
+
+
+def test_snapshot_commit_ignores_user_signing_configuration(tmp_path: Path) -> None:
+    source = _init_repo(tmp_path / "source")
+    _git(source, "config", "commit.gpgsign", "true")
+    _git(source, "config", "gpg.program", "false")
+
+    snapshot = capture_snapshot(source, tmp_path / "snapshot", "c" * 32)
+    assert _git(source, "rev-parse", "--verify", snapshot.snapshot_ref).returncode == 0
+
+
+def test_snapshot_ignores_inherited_git_location_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = _init_repo(tmp_path / "source")
+    redirected_index = tmp_path / "redirected-index"
+    redirected_index.write_text("not a Git index")
+    monkeypatch.setenv("GIT_INDEX_FILE", str(redirected_index))
+
+    snapshot = capture_snapshot(source, tmp_path / "snapshot", "d" * 32)
+
+    monkeypatch.delenv("GIT_INDEX_FILE")
+    assert matches_snapshot(snapshot, source)
+    assert redirected_index.read_text() == "not a Git index"
+
+
 @pytest.mark.parametrize(
     "mutate",
     [
@@ -136,6 +181,7 @@ def test_delete_snapshot_ref_releases_private_recovery_objects(tmp_path: Path) -
         lambda root: (root / "new.txt").write_text("new untracked\n"),
         lambda root: _git(root, "add", "tracked.txt"),
         lambda root: _git(root, "reset", "intent.txt"),
+        lambda root: (root / "ignored-intent.txt").write_text("later ignored intent\n"),
     ],
 )
 def test_snapshot_comparison_detects_new_work(

@@ -67,6 +67,8 @@ def test_automatic_launch_transfers_wip_uses_real_nested_cwd_and_cleans(
 ) -> None:
     source = tmp_path / "source"
     nested = _init_dirty_repo(source)
+    additional = nested / "additional"
+    additional.mkdir()
     extension = _extension(tmp_path / "omp-package")
     worktrees = tmp_path / "worktrees"
     sessions = tmp_path / "sessions"
@@ -95,10 +97,19 @@ def test_automatic_launch_transfers_wip_uses_real_nested_cwd_and_cleans(
     environment = {
         **os.environ,
         "OMP_WORKTREE_DIR": str(worktrees),
+        "GIT_INDEX_FILE": str(tmp_path / "redirected-index"),
     }
 
     status = launcher._run_automatic_launch(
-        ["--cwd", str(nested), "--session-dir", str(sessions), "prompt"],
+        [
+            "--cwd",
+            str(nested),
+            "--add-dir",
+            "additional",
+            "--session-dir",
+            str(sessions),
+            "prompt",
+        ],
         cwd=tmp_path,
         projects={},
         package=extension,
@@ -115,7 +126,9 @@ def test_automatic_launch_transfers_wip_uses_real_nested_cwd_and_cleans(
     assert "--cwd" not in observed["argv"]
     assert observed["environment"]["BASECAMP_PROTECTED_ROOT"] == str(source.resolve())
     assert observed["environment"]["BASECAMP_OMP_INHERITED_WIP"] == "1"
+    assert "GIT_INDEX_FILE" not in observed["environment"]
     assert observed["argv"][-3:] == ["--session-dir", str(sessions), "prompt"]
+    assert str(additional.resolve()) in observed["argv"]
     assert _git(source, "status", "--porcelain=v1", "-z", "--untracked-files=all").stdout == source_status
     assert source_index.read_bytes() == source_index_bytes
     stderr = capsys.readouterr().err
@@ -160,3 +173,26 @@ def test_automatic_launch_retains_execution_changes_and_releases_snapshot(
     assert not (source / "agent-change.txt").exists()
     assert _git(source, "for-each-ref", "--format=%(refname)", "refs/basecamp/omp/snapshots").stdout == b""
     assert f"retaining temporary worktree {scratch}" in capsys.readouterr().err
+
+
+def test_automatic_launch_rejects_environment_session_directory_inside_source(
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source"
+    nested = _init_dirty_repo(source)
+    extension = _extension(tmp_path / "omp-package")
+    fake_omp = _fake_omp(tmp_path / "omp")
+
+    with pytest.raises(launcher.LauncherError, match="session directory must be disjoint"):
+        launcher._run_automatic_launch(
+            ["--cwd", str(nested), "prompt"],
+            cwd=tmp_path,
+            projects={},
+            package=extension,
+            omp_executable=str(fake_omp),
+            environ={
+                **os.environ,
+                "OMP_WORKTREE_DIR": str(tmp_path / "worktrees"),
+                "PI_CODING_AGENT_SESSION_DIR": "sessions",
+            },
+        )

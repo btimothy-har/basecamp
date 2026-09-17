@@ -5,7 +5,11 @@ from __future__ import annotations
 import pytest
 
 from basecamp.core.exceptions import LauncherError
-from basecamp.omp.launch_arguments import inspect_launch_arguments
+from basecamp.omp.launch_arguments import (
+    inspect_launch_arguments,
+    resolve_relocated_path_arguments,
+    resolve_session_dir_environment,
+)
 
 
 def test_basecamp_flags_are_not_consumed_as_omp_values() -> None:
@@ -28,27 +32,22 @@ def test_basecamp_flags_after_separator_remain_prompt_content() -> None:
 
 
 @pytest.mark.parametrize(
-    ("args", "source", "value"),
+    "args",
     [
-        (["--continue"], "continue", None),
-        (["-c"], "continue", None),
-        (["--resume", "session-id"], "resume", "session-id"),
-        (["--resume=session-id"], "resume", "session-id"),
-        (["-r", "session-id"], "resume", "session-id"),
-        (["--fork", "session-file"], "fork", "session-file"),
-        (["--session=session-file"], "session", "session-file"),
+        ["--continue"],
+        ["-c"],
+        ["--resume", "session-id"],
+        ["--resume=session-id"],
+        ["-r", "session-id"],
+        ["--fork", "session-file"],
+        ["--session=session-file"],
     ],
 )
-def test_session_sources_are_classified_for_direct_or_managed_resume(
-    args: list[str],
-    source: str,
-    value: str | None,
-) -> None:
+def test_session_sources_use_native_direct_launch(args: list[str]) -> None:
     inspected = inspect_launch_arguments(args)
 
     assert inspected.disposition == "direct"
-    assert inspected.session_source == source
-    assert inspected.session_value == value
+    assert inspected.omp_args == tuple(args)
 
 
 def test_plan_mode_keeps_fresh_scratch_placement_until_native_worktree_handoff() -> None:
@@ -58,7 +57,19 @@ def test_plan_mode_keeps_fresh_scratch_placement_until_native_worktree_handoff()
     assert inspected.omp_args == ("--plan", "reviewer", "prompt")
 
 
-@pytest.mark.parametrize("args", [["--plan-yolo"], ["--plan-yolo-into", "implementation"]])
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["--plan-yolo"],
+        ["--plan-yolo-into", "implementation"],
+        ["--print"],
+        ["-p"],
+        ["--help"],
+        ["-h"],
+        ["--version"],
+        ["-v"],
+    ],
+)
 def test_plan_transition_launch_flags_remain_native_direct(args: list[str]) -> None:
     inspected = inspect_launch_arguments(args)
 
@@ -73,10 +84,59 @@ def test_profile_and_session_directory_survive_basecamp_token_removal() -> None:
 
     assert inspected.disposition == "direct"
     assert inspected.profile == "review"
-    assert inspected.session_dir == "relative/sessions"
     assert inspected.omp_args == (
         "--profile",
         "review",
         "--session-dir=relative/sessions",
         "prompt",
+    )
+
+
+def test_environment_session_directory_is_anchored_before_relocation(tmp_path) -> None:
+    environment, resolved = resolve_session_dir_environment(
+        {"PI_CODING_AGENT_SESSION_DIR": "sessions"},
+        tmp_path / "source" / "nested",
+    )
+
+    expected = str((tmp_path / "source" / "nested" / "sessions").resolve())
+    assert resolved == expected
+    assert environment["PI_CODING_AGENT_SESSION_DIR"] == expected
+
+
+def test_relocated_path_arguments_remain_anchored_to_source_cwd(tmp_path) -> None:
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "prompt.md").write_text("system")
+
+    resolved = resolve_relocated_path_arguments(
+        [
+            "--add-dir",
+            "shared",
+            "--extension=plugins/ext.ts",
+            "--system-prompt",
+            "prompt.md",
+            "--append-system-prompt",
+            "literal prompt",
+            "@notes.md",
+            "--custom-target",
+            "@extension-owned",
+            "--",
+            "@literal-message",
+        ],
+        source,
+    )
+
+    assert resolved == (
+        "--add-dir",
+        str(source / "shared"),
+        f"--extension={source / 'plugins' / 'ext.ts'}",
+        "--system-prompt",
+        str(source / "prompt.md"),
+        "--append-system-prompt",
+        "literal prompt",
+        f"@{source / 'notes.md'}",
+        "--custom-target",
+        "@extension-owned",
+        "--",
+        "@literal-message",
     )

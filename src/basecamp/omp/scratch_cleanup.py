@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from basecamp.omp.detached_run import CleanupFailure, remove_workspace
-from basecamp.omp.snapshot import WorkspaceSnapshot, matches_snapshot
+from basecamp.omp.snapshot import WorkspaceSnapshot, matches_disposable_state
 
 _COMMAND_TIMEOUT_SECONDS = 60
 
@@ -34,7 +34,7 @@ def cleanup_automatic_workspace(
         return ScratchCleanupResult(retained_reason=branch_error)
     if branch is not None:
         return ScratchCleanupResult(retained_reason=f"it is attached to branch {branch}")
-    if not matches_snapshot(snapshot, workspace_path):
+    if not matches_disposable_state(snapshot, workspace_path):
         return ScratchCleanupResult(retained_reason="it contains changes, commits, or unverifiable Git state")
 
     failure = remove_workspace(source_root, workspace_path)

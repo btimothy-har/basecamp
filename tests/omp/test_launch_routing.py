@@ -58,6 +58,7 @@ def test_fresh_canonical_tty_launch_uses_automatic_scratch(
     captured: dict[str, object] = {}
     monkeypatch.setattr(launcher.shutil, "which", lambda _name: "/tools/omp")
     monkeypatch.setattr(launcher.sys, "stdin", _Stdin(is_tty=True))
+    monkeypatch.setattr(launcher, "_native_auto_resume_state", lambda *_args, **_kwargs: False)
 
     def run_detached(args: tuple[str, ...], **kwargs: object) -> int:
         captured["args"] = args
@@ -77,6 +78,69 @@ def test_fresh_canonical_tty_launch_uses_automatic_scratch(
     assert status == 23
     assert captured["args"] == ("--cwd", str(nested), "prompt")
     assert captured["implicit"] is True
+    assert captured["cwd"] == tmp_path
+
+
+def test_flagless_native_auto_resume_stays_in_the_recorded_session_flow(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    repository = _init_repo(tmp_path / "source")
+    extension = _extension(tmp_path / "omp")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(launcher.shutil, "which", lambda _name: "/tools/omp")
+    monkeypatch.setattr(launcher.sys, "stdin", _Stdin(is_tty=True))
+    monkeypatch.setattr(launcher, "_native_auto_resume_state", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        launcher,
+        "_run_detached_launch",
+        lambda *_args, **_kwargs: pytest.fail("auto-resume must not create a scratch"),
+    )
+    monkeypatch.setattr(
+        launcher.os,
+        "execvpe",
+        lambda file, args, environment: captured.update(file=file, args=args, environment=environment),
+    )
+
+    launcher.run_launch(
+        [],
+        cwd=repository,
+        projects={},
+        extension_dir=extension,
+        environ={"HOME": str(tmp_path)},
+    )
+
+    assert captured["args"] == ["omp", "--extension", str(extension.resolve())]
+    assert captured["environment"]["BASECAMP_PROTECTED_ROOT"] == str(repository.resolve())
+
+
+def test_native_auto_resume_query_uses_the_active_profile_and_source_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    captured: dict[str, object] = {}
+
+    def run(arguments: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        captured.update(arguments=arguments, **kwargs)
+        return subprocess.CompletedProcess(arguments, 0, '{"value": true}\n', "")
+
+    monkeypatch.setattr(launcher.subprocess, "run", run)
+
+    assert launcher._native_auto_resume_state(
+        "/tools/omp",
+        cwd=tmp_path,
+        profile="review",
+        environ={"HOME": str(tmp_path)},
+    )
+    assert captured["arguments"] == [
+        "/tools/omp",
+        "--profile",
+        "review",
+        "config",
+        "get",
+        "autoResume",
+        "--json",
+    ]
     assert captured["cwd"] == tmp_path
 
 

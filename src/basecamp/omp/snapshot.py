@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from basecamp.core.exceptions import LauncherError
+from basecamp.omp.workspace_environment import clear_git_location_environment
 
 _COMMAND_TIMEOUT_SECONDS = 60
 _WORKSPACE_ID = re.compile(r"[0-9a-f]{32}")
@@ -63,15 +64,13 @@ def capture_snapshot(
     source_root: Path,
     snapshot_dir: Path,
     workspace_id: str,
-    *,
-    allow_existing: bool = False,
 ) -> WorkspaceSnapshot:
     """Capture source index and content without mutating its index, branch, or files."""
     source = source_root.resolve()
     if not _WORKSPACE_ID.fullmatch(workspace_id):
         message = f"Invalid workspace id for scratch snapshot: {workspace_id}"
         raise LauncherError(message)
-    _prepare_snapshot_directory(snapshot_dir, allow_existing=allow_existing)
+    _prepare_snapshot_directory(snapshot_dir)
     final_index = snapshot_dir / "index"
     snapshot_ref = f"refs/basecamp/omp/snapshots/{workspace_id}"
 
@@ -144,12 +143,42 @@ def restore_snapshot(snapshot: WorkspaceSnapshot, target_root: Path) -> None:
 
 def matches_snapshot(snapshot: WorkspaceSnapshot, target_root: Path) -> bool:
     """Return whether a checkout still has the complete captured semantic state."""
+    state = _capture_comparison_state(target_root)
+    return state is not None and _matches_snapshot_state(snapshot, state)
+
+
+def matches_disposable_state(snapshot: WorkspaceSnapshot, target_root: Path) -> bool:
+    """Accept the captured state or a plain reset to the same pinned HEAD."""
     target = target_root.resolve()
     try:
         with tempfile.TemporaryDirectory(prefix="bomp-compare-") as directory:
-            state = _capture_state(target, Path(directory) / "index", preflight=True)
+            private_dir = Path(directory)
+            state = _capture_state(target, private_dir / "index", preflight=True)
+            if _matches_snapshot_state(snapshot, state):
+                return True
+            if state.head != snapshot.head or state.has_uncommitted_work:
+                return False
+            clean_index = private_dir / "clean-index"
+            environment = _index_environment(clean_index)
+            _run_git(target, "read-tree", state.head, environ=environment)
+            visible = _cached_diff(target, state.head, environment, visible=True)
+            invisible = _cached_diff(target, state.head, environment, visible=False)
+            clean_signature = _index_signature(target, environment, visible, invisible)
+            return state.index_signature == clean_signature
     except (LauncherError, OSError, subprocess.SubprocessError):
         return False
+
+
+def _capture_comparison_state(target_root: Path) -> _WorktreeState | None:
+    target = target_root.resolve()
+    try:
+        with tempfile.TemporaryDirectory(prefix="bomp-compare-") as directory:
+            return _capture_state(target, Path(directory) / "index", preflight=True)
+    except (LauncherError, OSError, subprocess.SubprocessError):
+        return None
+
+
+def _matches_snapshot_state(snapshot: WorkspaceSnapshot, state: _WorktreeState) -> bool:
     return (
         state.head == snapshot.head
         and state.index_tree == snapshot.index_tree
@@ -158,9 +187,13 @@ def matches_snapshot(snapshot: WorkspaceSnapshot, target_root: Path) -> bool:
     )
 
 
-def delete_snapshot_ref(snapshot: WorkspaceSnapshot, source_root: Path) -> None:
-    """Release private recovery objects after the supervised launch settles."""
-    _run_git(source_root.resolve(), "update-ref", "-d", snapshot.snapshot_ref)
+def delete_snapshot_ref(snapshot: WorkspaceSnapshot, source_root: Path) -> str | None:
+    """Release private recovery objects without disrupting launch cleanup."""
+    try:
+        _run_git(source_root.resolve(), "update-ref", "-d", snapshot.snapshot_ref)
+    except LauncherError as exc:
+        return str(exc)
+    return None
 
 
 def _capture_state(root: Path, index_path: Path, *, preflight: bool) -> _WorktreeState:
@@ -172,17 +205,32 @@ def _capture_state(root: Path, index_path: Path, *, preflight: bool) -> _Worktre
     index_tree = _run_git(root, "write-tree", environ=index_environment).decode().strip()
     visible_diff = _cached_diff(root, head, index_environment, visible=True)
     invisible_diff = _cached_diff(root, head, index_environment, visible=False)
+    intent_to_add_paths = _intent_to_add_paths(root, head, index_environment)
     signature = _index_signature(root, index_environment, visible_diff, invisible_diff)
 
     content_index = index_path.with_name(f"{index_path.name}.content")
     try:
-        _run_git(root, "read-tree", index_tree, environ=_index_environment(content_index))
-        _run_git(root, "add", "-A", environ=_index_environment(content_index))
+        content_environment = _index_environment(content_index)
+        _run_git(root, "read-tree", index_tree, environ=content_environment)
+        _run_git(root, "add", "-A", environ=content_environment)
+        materialized_intent_paths = b"\0".join(
+            raw_path for raw_path in intent_to_add_paths if os.path.lexists(root / os.fsdecode(raw_path))
+        )
+        if materialized_intent_paths:
+            _run_git(
+                root,
+                "add",
+                "-f",
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
+                environ=content_environment,
+                input_bytes=materialized_intent_paths + b"\0",
+            )
         content_tree = (
             _run_git(
                 root,
                 "write-tree",
-                environ=_index_environment(content_index),
+                environ=content_environment,
             )
             .decode()
             .strip()
@@ -302,6 +350,25 @@ def _cached_diff(root: Path, head: str, environment: Mapping[str, str], *, visib
     )
 
 
+def _intent_to_add_paths(root: Path, head: str, environment: Mapping[str, str]) -> frozenset[bytes]:
+    def names(*, visible: bool) -> frozenset[bytes]:
+        intent_flag = "--ita-visible-in-index" if visible else "--ita-invisible-in-index"
+        payload = _run_git(
+            root,
+            "diff",
+            "--cached",
+            "--name-only",
+            "-z",
+            intent_flag,
+            head,
+            "--",
+            environ=environment,
+        )
+        return frozenset(path for path in payload.split(b"\0") if path)
+
+    return names(visible=True) - names(visible=False)
+
+
 def _index_signature(
     root: Path,
     environment: Mapping[str, str],
@@ -326,7 +393,7 @@ def _same_state(left: _WorktreeState, right: _WorktreeState) -> bool:
 
 
 def _commit_tree(root: Path, tree: str, *, parents: Sequence[str], message: str) -> str:
-    arguments = ["commit-tree", tree]
+    arguments = ["-c", "commit.gpgsign=false", "commit-tree", tree]
     for parent in parents:
         arguments.extend(("-p", parent))
     identity = {
@@ -362,7 +429,7 @@ def _run_git(
     input_bytes: bytes | None = None,
     check: bool = True,
 ) -> bytes:
-    environment = os.environ.copy()
+    environment = clear_git_location_environment(os.environ)
     environment["GIT_OPTIONAL_LOCKS"] = "0"
     if environ is not None:
         environment.update(environ)
@@ -386,15 +453,9 @@ def _run_git(
     return result.stdout if result.returncode == 0 else b""
 
 
-def _prepare_snapshot_directory(path: Path, *, allow_existing: bool) -> None:
+def _prepare_snapshot_directory(path: Path) -> None:
     try:
-        if allow_existing and path.is_dir():
-            unexpected = sorted(entry.name for entry in path.iterdir())
-            if unexpected:
-                message = f"Scratch snapshot directory {path} is not empty: {', '.join(unexpected)}"
-                raise LauncherError(message)
-        else:
-            path.mkdir(parents=True, mode=0o700, exist_ok=False)
+        path.mkdir(parents=True, mode=0o700, exist_ok=False)
         os.chmod(path, 0o700)
     except OSError as exc:
         message = f"Could not create scratch snapshot directory {path}: {exc}"

@@ -19,7 +19,7 @@ def _git(root: Path, *args: str, check: bool = True) -> subprocess.CompletedProc
     )
 
 
-def _workspace(tmp_path: Path) -> tuple[Path, Path, WorkspaceSnapshot]:
+def _workspace(tmp_path: Path, *, dirty: bool = False) -> tuple[Path, Path, WorkspaceSnapshot]:
     source = tmp_path / "source"
     source.mkdir()
     _git(source, "init", "-q")
@@ -35,6 +35,11 @@ def _workspace(tmp_path: Path) -> tuple[Path, Path, WorkspaceSnapshot]:
         "-qm",
         "initial",
     )
+    if dirty:
+        (source / "tracked.txt").write_text("staged\n")
+        _git(source, "add", "tracked.txt")
+        (source / "tracked.txt").write_text("staged and unstaged\n")
+        (source / "untracked.txt").write_text("untracked\n")
     snapshot = capture_snapshot(source, tmp_path / "snapshot", "a" * 32)
     workspace = tmp_path / "workspace"
     _git(source, "worktree", "add", "--detach", "--quiet", str(workspace), snapshot.head)
@@ -44,6 +49,18 @@ def _workspace(tmp_path: Path) -> tuple[Path, Path, WorkspaceSnapshot]:
 
 def test_cleanup_removes_unchanged_detached_scratch(tmp_path: Path) -> None:
     source, workspace, snapshot = _workspace(tmp_path)
+
+    result = scratch_cleanup.cleanup_automatic_workspace(source, workspace, snapshot)
+
+    assert result.retained_reason is None
+    assert result.failure is None
+    assert not workspace.exists()
+
+
+def test_cleanup_removes_scratch_cleaned_after_native_handoff(tmp_path: Path) -> None:
+    source, workspace, snapshot = _workspace(tmp_path, dirty=True)
+    _git(workspace, "reset", "--hard", "HEAD")
+    _git(workspace, "clean", "-fd")
 
     result = scratch_cleanup.cleanup_automatic_workspace(source, workspace, snapshot)
 

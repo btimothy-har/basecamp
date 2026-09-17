@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 import shutil
+import subprocess
 import sys
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -30,7 +32,9 @@ from basecamp.omp.detached_run import (
 from basecamp.omp.launch_arguments import (
     LaunchArguments,
     inspect_launch_arguments,
+    resolve_relocated_path_arguments,
     resolve_session_dir_argument,
+    resolve_session_dir_environment,
 )
 from basecamp.omp.launch_plan import (
     build_launch,
@@ -85,15 +89,23 @@ def run_launch(
         active_cwd,
         arguments.omp_args,
     ):
-        return _run_detached_launch(
-            arguments.omp_args,
-            cwd=active_cwd,
-            projects=configured_projects,
-            package=package,
-            omp_executable=omp_executable,
+        source_cwd = effective_cwd(active_cwd, arguments.omp_args)
+        auto_resume = _native_auto_resume_state(
+            omp_executable,
+            cwd=source_cwd,
+            profile=arguments.profile,
             environ=child_environment,
-            implicit=True,
         )
+        if auto_resume is False:
+            return _run_detached_launch(
+                arguments.omp_args,
+                cwd=active_cwd,
+                projects=configured_projects,
+                package=package,
+                omp_executable=omp_executable,
+                environ=child_environment,
+                implicit=True,
+            )
 
     plan = build_launch(active_cwd, arguments.omp_args, configured_projects, package)
     _print_warnings(plan.warnings)
@@ -168,15 +180,16 @@ def _run_discard_launch(
     environ: Mapping[str, str],
 ) -> int:
     """Explicit --detached: force-discard semantics, protected root only, no records."""
+    managed_environment = workspace_child_environment(environ, clear_git_locations=True)
     detached = plan_detached_launch(
         cwd,
         args,
         omp_executable=omp_executable,
-        environ=environ,
+        environ=managed_environment,
         allow_dirty=False,
     )
     protected = canonical_checkout(detached.source.root) or detached.source.root
-    child_environment = workspace_child_environment(environ, protected_root=protected)
+    child_environment = workspace_child_environment(managed_environment, protected_root=protected)
     status: int | None = None
     with defer_termination_signals() as termination:
         workspace = create_workspace(detached, omp_executable=omp_executable, environ=child_environment)
@@ -218,19 +231,27 @@ def _run_automatic_launch(
     environ: Mapping[str, str],
 ) -> int:
     """Supervise a canonical scratch containing a coherent copy of source WIP."""
-    managed_args, session_dir_value = resolve_session_dir_argument(args, effective_cwd(cwd, args))
+    source_cwd = effective_cwd(cwd, args)
+    managed_args, argument_session_dir = resolve_session_dir_argument(args, source_cwd)
+    managed_args = resolve_relocated_path_arguments(managed_args, source_cwd)
+    managed_environment, environment_session_dir = resolve_session_dir_environment(
+        dict(environ),
+        source_cwd,
+    )
+    managed_environment = workspace_child_environment(managed_environment, clear_git_locations=True)
     detached = plan_detached_launch(
         cwd,
         managed_args,
         omp_executable=omp_executable,
-        environ=environ,
+        environ=managed_environment,
         allow_dirty=True,
     )
+    session_dir_value = argument_session_dir or environment_session_dir
     session_dir = Path(session_dir_value) if session_dir_value is not None else None
     workspace_id = secrets.token_hex(16)
     status: int | None = None
     with tempfile.TemporaryDirectory(prefix=f"bomp-{workspace_id}-snapshot-") as raw_snapshot_dir:
-        snapshot_dir = Path(raw_snapshot_dir)
+        snapshot_dir = Path(raw_snapshot_dir) / "state"
         require_safe_snapshot_paths(
             snapshot_dir=snapshot_dir,
             session_dir=session_dir,
@@ -246,7 +267,6 @@ def _run_automatic_launch(
                     detached.source.root,
                     snapshot_dir,
                     workspace_id,
-                    allow_existing=True,
                 )
                 detached = replace(detached, source=replace(detached.source, head=snapshot.head))
                 workspace_path = reserve_workspace_path(detached, workspace_id)
@@ -257,7 +277,7 @@ def _run_automatic_launch(
                     canonical_root=detached.source.root,
                 )
                 child_environment = workspace_child_environment(
-                    environ,
+                    managed_environment,
                     protected_root=detached.source.root,
                     scratch_root=workspace_path,
                     inherited_wip=snapshot.has_uncommitted_work,
@@ -314,10 +334,9 @@ def _run_automatic_launch(
                 if failure is not None and workspace_path is not None:
                     report_cleanup_failure(failure, workspace_path=workspace_path, stream=sys.stderr)
                 if snapshot is not None:
-                    try:
-                        delete_snapshot_ref(snapshot, detached.source.root)
-                    except LauncherError as exc:
-                        print(f"bomp: warning: could not release scratch snapshot: {exc}", file=sys.stderr)
+                    release_error = delete_snapshot_ref(snapshot, detached.source.root)
+                    if release_error is not None:
+                        print(f"bomp: warning: could not release scratch snapshot: {release_error}", file=sys.stderr)
             if termination.status is not None:
                 return termination.status
     if status is None:
@@ -338,6 +357,40 @@ def _uses_automatic_scratch(cwd: Path, args: Sequence[str]) -> bool:
         return False
     canonical = canonical_checkout(source_cwd)
     return canonical is not None and Path(root_text).resolve() == canonical.resolve()
+
+
+def _native_auto_resume_state(
+    omp_executable: str,
+    *,
+    cwd: Path,
+    profile: str | None,
+    environ: Mapping[str, str],
+) -> bool | None:
+    """Read OMP's authoritative startup-resume setting without parsing its config."""
+    arguments = [omp_executable]
+    if profile is not None:
+        arguments.extend(("--profile", profile))
+    arguments.extend(("config", "get", "autoResume", "--json"))
+    try:
+        result = subprocess.run(
+            arguments,
+            cwd=cwd,
+            env=dict(environ),
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            start_new_session=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if result.returncode != 0:
+        return None
+    try:
+        value = json.loads(result.stdout).get("value")
+    except (AttributeError, json.JSONDecodeError):
+        return None
+    return value if isinstance(value, bool) else None
 
 
 def _print_warnings(warnings: Sequence[str]) -> None:

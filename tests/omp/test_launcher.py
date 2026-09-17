@@ -398,7 +398,7 @@ def test_run_launch_supervises_and_cleans_detached_session(
         cwd=tmp_path,
         projects={},
         extension_dir=extension,
-        environ={"HOME": str(tmp_path)},
+        environ={"HOME": str(tmp_path), "GIT_DIR": str(tmp_path / "redirected-git-dir")},
     )
 
     assert status == 37
@@ -406,6 +406,7 @@ def test_run_launch_supervises_and_cleans_detached_session(
     assert captured["args"] == ("--mode=rpc", "unchanged prompt")
     assert captured["argv"] == ["omp", "--extension", str(extension), "--mode=rpc", "unchanged prompt"]
     assert captured["cleanup"] == (source, workspace_path)
+    assert "GIT_DIR" not in captured["environ"]
     assert "use /wt <branch> before exit to retain code" in capsys.readouterr().err
 
 
