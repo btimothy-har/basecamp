@@ -186,6 +186,30 @@ afterEach(() => {
 });
 
 describe("Basecamp /review", () => {
+	test("installs autocomplete for each TUI after an in-process restart", () => {
+		const h = createHarness();
+		const startSession = h.hooks.session_start?.[0];
+		if (!startSession) throw new Error("review command did not register its session-start handler");
+
+		let firstInstalls = 0;
+		let restartedInstalls = 0;
+		const firstContext = {
+			mode: "tui",
+			ui: { addAutocompleteProvider: () => firstInstalls++ },
+		} as unknown as ExtensionContext;
+		const restartedContext = {
+			mode: "tui",
+			ui: { addAutocompleteProvider: () => restartedInstalls++ },
+		} as unknown as ExtensionContext;
+
+		startSession({}, firstContext);
+		startSession({}, firstContext);
+		startSession({}, restartedContext);
+
+		expect(firstInstalls).toBe(1);
+		expect(restartedInstalls).toBe(1);
+	});
+
 	test("uses each invocation's linked worktree and a committed merge-base scope", async () => {
 		const fixture = createGitFixture();
 		const h = createHarness();

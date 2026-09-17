@@ -107,11 +107,11 @@ async function selectInteractiveScope(
 }
 
 export default function registerReviewCommand(pi: ExtensionAPI): void {
-	let autocompleteInstalled = false;
+	const autocompleteUis = new WeakSet<object>();
 	pi.on("session_start", (_event, ctx) => {
-		if (autocompleteInstalled || ctx.mode !== "tui") return;
+		if (ctx.mode !== "tui" || autocompleteUis.has(ctx.ui)) return;
 		ctx.ui.addAutocompleteProvider((current) => createReviewAutocompleteProvider(current, REVIEW_DESCRIPTION));
-		autocompleteInstalled = true;
+		autocompleteUis.add(ctx.ui);
 	});
 
 	pi.registerCommand("review", {
