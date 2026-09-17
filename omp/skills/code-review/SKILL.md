@@ -37,8 +37,9 @@ After every reviewer completes:
 
 1. Validate each proposed finding against the selected changes and relevant code; discard false positives and anything not introduced by the scope.
 2. Deduplicate findings that describe the same root cause while preserving independently actionable defects.
-3. Normalize finding paths to repository-relative paths and form one overall correctness judgment.
-4. Call `review_findings` exactly once with the reviewed scope and final findings, including an empty findings array when none remain.
-5. Read the returned review artifact before continuing and incorporate any submitted feedback.
+3. For each surviving finding, normalize its path to repository-relative form, keep its body to evidence and impact, and write a concise recommendation for what the user should do.
+4. Form one overall correctness judgment, explain why it applies, and recommend the next action even when no findings remain.
+5. Call `review_findings` exactly once with the reviewed scope and final findings, including an empty findings array when none remain.
+6. Read the returned review artifact before continuing and incorporate any submitted feedback.
 
 This workflow is review-only. Do not edit code, create commits, or publish changes unless the user makes a separate explicit request after the review.

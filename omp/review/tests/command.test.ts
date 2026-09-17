@@ -20,7 +20,7 @@ function git(cwd: string, ...args: string[]): string {
 
 function commit(cwd: string, message: string): string {
 	git(cwd, "add", "-A");
-	git(cwd, "commit", "-m", message);
+	git(cwd, "-c", "commit.gpgSign=false", "commit", "-m", message);
 	return git(cwd, "rev-parse", "HEAD").trim();
 }
 
@@ -42,6 +42,7 @@ function createGitFixture(): GitFixture {
 	git(root, "init", "-b", "main");
 	git(root, "config", "user.name", "Basecamp Test");
 	git(root, "config", "user.email", "basecamp@example.test");
+	git(root, "config", "commit.gpgsign", "false");
 	writeFileSync(join(root, "shared.txt"), "BASE\n");
 	const baseRevision = commit(root, "base");
 	git(root, "branch", "feature", baseRevision);

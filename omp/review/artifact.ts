@@ -4,7 +4,7 @@ import type {
 	PreparedReview,
 	PriorityCounts,
 	ReviewArtifactFinding,
-	ReviewArtifactV1,
+	ReviewArtifactV2,
 	ReviewFindingInput,
 	ReviewFindingsInput,
 } from "./schema.ts";
@@ -31,6 +31,7 @@ export function prepareReview(input: ReviewFindingsInput): PreparedReview {
 		scope: input.scope,
 		overall_correctness: input.overall_correctness,
 		explanation: input.explanation,
+		recommendation: input.recommendation,
 		confidence: input.confidence,
 		findings,
 	};
@@ -44,7 +45,7 @@ export function reviewPriorityCounts(findings: readonly ReviewFindingInput[]): P
 }
 
 /**
- * Build the canonical schema_version 1 artifact from a prepared review, the
+ * Build the canonical schema_version 2 artifact from a prepared review, the
  * navigator's feedback status, and navigator comments keyed by finding id.
  * Comments for unknown ids are ignored; findings without a comment get null.
  */
@@ -52,16 +53,17 @@ export function buildReviewArtifact(
 	prepared: PreparedReview,
 	status: FeedbackStatus,
 	comments: Readonly<Record<string, string>> = {},
-): ReviewArtifactV1 {
+): ReviewArtifactV2 {
 	const findings: ReviewArtifactFinding[] = prepared.findings.map((finding) => ({
 		...finding,
 		feedback: { comment: comments[finding.id] ?? null },
 	}));
 	return {
-		schema_version: 1,
+		schema_version: 2,
 		scope: prepared.scope,
 		overall_correctness: prepared.overall_correctness,
 		explanation: prepared.explanation,
+		recommendation: prepared.recommendation,
 		confidence: prepared.confidence,
 		feedback_status: status,
 		findings,

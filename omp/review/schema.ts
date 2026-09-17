@@ -17,6 +17,7 @@ export type FeedbackStatus = "submitted" | "cancelled" | "unavailable" | "not_re
 export interface ReviewFindingInput {
 	title: string;
 	body: string;
+	recommendation: string;
 	priority: ReviewPriority;
 	confidence: number;
 	file_path: string;
@@ -29,6 +30,7 @@ export interface ReviewFindingsInput {
 	scope: string;
 	overall_correctness: OverallCorrectness;
 	explanation: string;
+	recommendation: string;
 	confidence: number;
 	findings: ReviewFindingInput[];
 }
@@ -43,6 +45,7 @@ export interface PreparedReview {
 	scope: string;
 	overall_correctness: OverallCorrectness;
 	explanation: string;
+	recommendation: string;
 	confidence: number;
 	findings: IdentifiedReviewFinding[];
 }
@@ -61,11 +64,12 @@ export interface ReviewArtifactFinding extends IdentifiedReviewFinding {
  * Canonical persisted review artifact. Carries no timestamps or other
  * run-specific data so the artifact is reproducible from its inputs.
  */
-export interface ReviewArtifactV1 {
-	schema_version: 1;
+export interface ReviewArtifactV2 {
+	schema_version: 2;
 	scope: string;
 	overall_correctness: OverallCorrectness;
 	explanation: string;
+	recommendation: string;
 	confidence: number;
 	feedback_status: FeedbackStatus;
 	findings: ReviewArtifactFinding[];
@@ -89,7 +93,12 @@ type ArkType = ExtensionAPI["arktype"];
 export function createReviewFindingsParameters(type: ArkType) {
 	const finding = type({
 		title: type("string > 0").describe("Concise issue title, ideally at most 80 characters."),
-		body: type("string > 0").describe("Detailed explanation of the issue, why it matters, and how to fix it."),
+		body: type("string > 0").describe(
+			"Detailed evidence identifying the issue and explaining its impact. Do not include remediation; put the recommended action in recommendation.",
+		),
+		recommendation: type("string > 0").describe(
+			"The primary agent's concise recommended action for resolving this finding.",
+		),
 		priority: type("0 | 1 | 2 | 3").describe(
 			"OMP-native priority: 0 blocks release or operations, 1 is high and should be fixed next cycle, 2 is medium and should be fixed eventually, 3 is informational and nice to have.",
 		),
@@ -108,7 +117,10 @@ export function createReviewFindingsParameters(type: ArkType) {
 		overall_correctness: type("'correct' | 'incorrect'").describe(
 			"Whether the reviewed change is correct overall: 'correct' or 'incorrect'.",
 		),
-		explanation: type("string > 0").describe("One or two sentences explaining the overall correctness verdict."),
+		explanation: type("string > 0").describe("One or two sentences explaining why the overall verdict applies."),
+		recommendation: type("string > 0").describe(
+			"What the user should do next with the reviewed change. Provide actionable guidance even when there are no findings.",
+		),
 		confidence: type("0 <= number <= 1").describe("Confidence in the overall correctness verdict, from 0 to 1."),
 		findings: finding
 			.array()
