@@ -22,14 +22,12 @@ export type ReviewScope =
 			instructions: string;
 	  };
 
-const REVIEW_PROCEDURE = `### Procedure
+const REVIEW_PROCEDURE = `### Review protocol
 
-1. Inspect the selected scope before dispatch. For a committed scope, the supplied repository and exact revisions are authoritative. Do not substitute current HEAD, working-tree or index changes, or \`read_diff\`. For a custom scope, resolve the submitted instructions using available tools; preserve an explicitly requested branch refinement instead of widening it to a generic workspace review.
-2. Use Git and tool output to identify the relevant changed files and material areas. Do not discard files through a hardcoded extension list. Identify generated or binary coverage that cannot be reviewed meaningfully instead of silently claiming it was reviewed.
-3. Use the \`task\` tool with \`agent: "reviewer"\` and a \`tasks\` array. Use one reviewer for a small coherent scope and independent reviewers in parallel when the material areas warrant it. Give every reviewer the exact scope, repository, and user instructions.
-4. Reviewers return findings and verdicts through their native structured yield and never call \`review_findings\`. Follow the separately supplied presentation instructions for primary validation and consolidation.
-5. If inspection finds no relevant changes, explain that result without dispatching meaningless reviewer tasks. Do not switch modes or silently widen the scope.
-6. This workflow is review-only. Do not edit code, create commits, or publish changes. Implementing fixes requires an explicit user request.`;
+1. Inspect only the scope above. For a committed scope, the repository and revisions are authoritative: exclude working-tree and index changes, and do not substitute current HEAD or \`read_diff\`. For a custom scope, follow the submitted instructions without widening them.
+2. If the scope has no reviewable changes, report that and stop. Otherwise dispatch with \`task\` using \`agent: "reviewer"\`, passing the exact scope and user instructions. Split work only when the changed areas are independent.
+3. Validate and present the reviewer results using the separately supplied chair instructions.
+4. Review only. Do not edit code, create commits, or publish changes.`;
 
 function fencedText(text: string): string {
 	const longestRun = Math.max(0, ...Array.from(text.matchAll(/`+/g), (match) => match[0].length));
