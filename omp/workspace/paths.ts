@@ -6,9 +6,11 @@
  */
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type LocalProtocolOptions, resolveLocalUrlToPath } from "@oh-my-pi/pi-coding-agent/internal-urls";
 import { parseXdUrl } from "@oh-my-pi/pi-coding-agent/internal-urls/xd-protocol";
 import {
 	isInternalUrlPath,
+	normalizeLocalScheme,
 	parseSearchPath,
 	peelWriteUrlSelector,
 	resolveToCwd,
@@ -32,6 +34,10 @@ export function normalizeRoot(root: string): string {
  * resolution honest for paths a mutation is about to create.
  */
 export function realpathNearest(target: string): string {
+	return resolveNearest(path.resolve(target), new Set<string>());
+}
+
+function resolveNearest(target: string, seenLinks: Set<string>): string {
 	const missing: string[] = [];
 	let current = target;
 	for (;;) {
@@ -39,6 +45,17 @@ export function realpathNearest(target: string): string {
 			const real = fs.realpathSync(current);
 			return missing.length === 0 ? real : path.join(real, ...missing.reverse());
 		} catch {
+			try {
+				if (fs.lstatSync(current).isSymbolicLink()) {
+					if (seenLinks.has(current)) return target;
+					seenLinks.add(current);
+					const link = fs.readlinkSync(current);
+					const destination = path.resolve(path.dirname(current), link);
+					return resolveNearest(path.join(destination, ...missing.reverse()), seenLinks);
+				}
+			} catch {
+				// Continue toward the nearest existing ancestor.
+			}
 			const parent = path.dirname(current);
 			if (parent === current) return target;
 			missing.push(path.basename(current));
@@ -57,11 +74,25 @@ export function sameOrWithin(root: string, target: string): boolean {
 /**
  * Resolve a tool-supplied path against the live cwd (`~`, `..`, stray-`:`
  * prefix, Windows drive aliases all handled by the native helper) and resolve
- * symlinks. Returns null for non-filesystem targets (internal URLs, opaque
- * devices) that their native handlers own.
+ * symlinks. `local://` resolves through the calling session's artifact mapping;
+ * other internal URLs and opaque devices remain owned by their native handlers.
  */
-export function resolveFilesystemTarget(rawPath: string, cwd: string): string | null {
-	if (rawPath.length === 0 || isInternalUrlPath(rawPath)) return null;
+export function resolveFilesystemTarget(
+	rawPath: string,
+	cwd: string,
+	localProtocolOptions?: LocalProtocolOptions,
+): string | null {
+	if (rawPath.length === 0) return null;
+	const normalized = normalizeLocalScheme(rawPath);
+	if (normalized.startsWith("local:")) {
+		if (!localProtocolOptions) return null;
+		try {
+			return realpathNearest(resolveLocalUrlToPath(normalized, localProtocolOptions));
+		} catch {
+			return null;
+		}
+	}
+	if (isInternalUrlPath(rawPath)) return null;
 	let resolved: string;
 	try {
 		resolved = resolveToCwd(rawPath, cwd);
@@ -77,8 +108,8 @@ export function resolveFilesystemTarget(rawPath: string, cwd: string): string | 
  * headers exactly like the write tool does, then:
  * - `xd://<device>` is the outer transport for a mounted tool; the inner
  *   device emits its own `tool_call`, so the write itself has no target.
- * - `local://` and other internal URLs resolve outside the checkout or to
- *   non-filesystem handlers.
+ * - `local://` resolves through the calling session's filesystem mapping;
+ *   other internal URLs remain owned by their native handlers.
  * - `archive.ext:member` and `db.sqlite:table` selectors mutate their
  *   container file, so every candidate container is a target alongside the
  *   literal path.
@@ -97,7 +128,9 @@ export function collectWriteTargets(rawPath: string): string[] {
 
 /** Filesystem paths for a plain file target with archive/sqlite container splitting. */
 export function collectContainerTargets(rawPath: string): string[] {
-	if (rawPath.length === 0 || isInternalUrlPath(rawPath)) return [];
+	if (rawPath.length === 0) return [];
+	if (normalizeLocalScheme(rawPath).startsWith("local:")) return [rawPath];
+	if (isInternalUrlPath(rawPath)) return [];
 	const targets = new Set<string>([rawPath]);
 	for (const candidate of parseArchivePathCandidates(rawPath)) {
 		if (candidate.archivePath !== rawPath) targets.add(candidate.archivePath);

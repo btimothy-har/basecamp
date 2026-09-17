@@ -7,6 +7,7 @@
  * accidental-write boundary, not a sandbox.
  */
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult } from "@oh-my-pi/pi-coding-agent";
+import { expandDelimitedPathEntries } from "@oh-my-pi/pi-coding-agent/tools/path-utils";
 import { type EditInspection, editInspect } from "@oh-my-pi/pi-natives";
 import type { WorkspaceEnvironment } from "./environment.ts";
 import {
@@ -123,12 +124,12 @@ export function guardToolCall(
 	event: ToolCallEvent,
 	ctx: ExtensionContext,
 	deps: WorkspaceGuardDeps,
-): ToolCallEventResult | undefined {
+): Promise<ToolCallEventResult | undefined> | ToolCallEventResult | undefined {
 	const roots = protectedRoots(ctx, deps);
 	if (roots.length === 0) return undefined;
 	const input = event.input as GuardInput;
 	const hitsCanonical = (rawPath: string): boolean => {
-		const resolved = resolveFilesystemTarget(rawPath, ctx.cwd);
+		const resolved = resolveFilesystemTarget(rawPath, ctx.cwd, ctx.localProtocolOptions);
 		return resolved !== null && roots.some((root) => sameOrWithin(root, resolved));
 	};
 	let blocked = false;
@@ -142,13 +143,15 @@ export function guardToolCall(
 			blocked = collectEditTargets(input).some(hitsCanonical);
 			break;
 		case "ast_edit":
-			blocked = collectAstScopes(input).some((scope) => {
-				const resolved = resolveScopePrefix(scope, ctx.cwd);
-				// Directory/glob scopes block both ways: a scope inside canonical
-				// rewrites canonical files; an ancestor scope reaches into it.
-				return resolved !== null && roots.some((root) => sameOrWithin(root, resolved) || sameOrWithin(resolved, root));
+			return expandDelimitedPathEntries(collectAstScopes(input), ctx.cwd).then((scopes) => {
+				const reachesCanonical = scopes.some((scope) => {
+					const resolved = resolveScopePrefix(scope, ctx.cwd);
+					return (
+						resolved !== null && roots.some((root) => sameOrWithin(root, resolved) || sameOrWithin(resolved, root))
+					);
+				});
+				return reachesCanonical ? { block: true, reason: CANONICAL_BLOCK_REASON } : undefined;
 			});
-			break;
 		case "lsp":
 			blocked = collectLspTargets(input).some(hitsCanonical);
 			break;

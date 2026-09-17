@@ -8,6 +8,7 @@ import type {
 	BeforeAgentStartEventResult,
 	ExtensionAPI,
 	ExtensionContext,
+	ExtensionMode,
 } from "@oh-my-pi/pi-coding-agent";
 import type { WorkspaceEnvironment } from "../environment.ts";
 import registerWorkspaceGuidance from "../guidance.ts";
@@ -48,9 +49,13 @@ function createHandler(env: WorkspaceEnvironment): GuidanceHandler {
 	return handler;
 }
 
-function invoke(handler: GuidanceHandler, cwd: string): BeforeAgentStartEventResult | undefined {
+function invoke(
+	handler: GuidanceHandler,
+	cwd: string,
+	mode: ExtensionMode = "tui",
+): BeforeAgentStartEventResult | undefined {
 	const event = { type: "before_agent_start", prompt: "work", systemPrompt: ["base prompt"] } as BeforeAgentStartEvent;
-	return handler(event, { cwd, mode: "tui" } as unknown as ExtensionContext);
+	return handler(event, { cwd, mode } as unknown as ExtensionContext);
 }
 
 const noEnv: WorkspaceEnvironment = { protectedRoot: null, scratchRoot: null, inheritedWip: null };
@@ -73,6 +78,15 @@ describe("workspace guidance", () => {
 			expect(result?.systemPrompt?.[1]).toContain("ask the user to run `/wt <branch>`");
 			expect(result?.systemPrompt?.[1]).toContain("Approval does not change workspaces");
 		}
+	});
+
+	test("gives non-interactive agents an actionable primary-session handoff", () => {
+		const root = gitFixture();
+		const result = invoke(createHandler(noEnv), root, "print");
+		const guidance = result?.systemPrompt?.[1];
+
+		expect(guidance).toContain("primary session must run `/wt <branch>`");
+		expect(guidance).not.toContain("ask the user");
 	});
 
 	test("identifies an inherited-WIP automatic scratch without persistent state", () => {

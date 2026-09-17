@@ -50,8 +50,14 @@ function createHarness(env: WorkspaceEnvironment, repos = new RepositoryCache())
 	return { handler };
 }
 
-function contextFor(cwd: string): ExtensionContext {
-	return { cwd, mode: "tui" } as unknown as ExtensionContext;
+function contextFor(cwd: string, artifactsDir?: string): ExtensionContext {
+	return {
+		cwd,
+		mode: "tui",
+		localProtocolOptions: artifactsDir
+			? { getArtifactsDir: () => artifactsDir, getSessionId: () => "test" }
+			: undefined,
+	} as unknown as ExtensionContext;
 }
 
 function call(toolName: string, input: Record<string, unknown>): ToolCallEvent {
@@ -85,6 +91,23 @@ describe("workspace guard", () => {
 		symlinkSync(root, path.join(scratch, "link"));
 		const { handler } = createHarness({ protectedRoot: root, scratchRoot: null, inheritedWip: null });
 		const result = handler(call("write", { path: "link/pwned.txt", content: "x" }), contextFor(scratch));
+		expect(result?.block).toBe(true);
+	});
+
+	test("blocks through a dangling symlink whose target is canonical", () => {
+		const root = gitFixture();
+		const scratch = temporaryDirectory();
+		symlinkSync(path.join(root, "missing"), path.join(scratch, "dangling"));
+		const { handler } = createHarness({ protectedRoot: root, scratchRoot: null, inheritedWip: null });
+		const result = handler(call("write", { path: "dangling/new.txt", content: "x" }), contextFor(scratch));
+		expect(result?.block).toBe(true);
+	});
+
+	test("blocks local URL writes backed by the canonical checkout", () => {
+		const root = gitFixture();
+		const scratch = temporaryDirectory();
+		const { handler } = createHarness({ protectedRoot: root, scratchRoot: null, inheritedWip: null });
+		const result = handler(call("write", { path: "local://notes.md", content: "x" }), contextFor(scratch, root));
 		expect(result?.block).toBe(true);
 	});
 
@@ -124,17 +147,21 @@ describe("workspace guard", () => {
 		expect(handler(call("edit", { path: "outside.txt", old_string: "a", new_string: "b" }), ctx)).toBeUndefined();
 	});
 
-	test("blocks ast_edit scopes within or containing the canonical root", () => {
+	test("blocks ast_edit scopes within, containing, or delimited with the canonical root", async () => {
 		const root = gitFixture();
+		const outside = temporaryDirectory();
 		const { handler } = createHarness(noEnv);
 		const ctx = contextFor(root);
-		expect(handler(call("ast_edit", { ops: [], paths: ["src/**/*.ts"] }), ctx)?.block).toBe(true);
-		expect(handler(call("ast_edit", { ops: [], paths: ["."] }), ctx)?.block).toBe(true);
-		expect(handler(call("ast_edit", { ops: [], paths: [path.dirname(root)] }), ctx)?.block).toBe(true);
+		expect((await handler(call("ast_edit", { ops: [], paths: ["src/**/*.ts"] }), ctx))?.block).toBe(true);
+		expect((await handler(call("ast_edit", { ops: [], paths: ["."] }), ctx))?.block).toBe(true);
+		expect((await handler(call("ast_edit", { ops: [], paths: [path.dirname(root)] }), ctx))?.block).toBe(true);
 		expect(
-			handler(call("ast_edit", { ops: [], paths: [path.join(tmpdir(), "elsewhere/**/*.ts")] }), ctx),
+			await handler(call("ast_edit", { ops: [], paths: [`${outside}/safe.ts;${root}/src`] }), contextFor(outside)),
+		).toEqual({ block: true, reason: CANONICAL_BLOCK_REASON });
+		expect(
+			await handler(call("ast_edit", { ops: [], paths: [path.join(tmpdir(), "elsewhere/**/*.ts")] }), ctx),
 		).toBeUndefined();
-		expect(handler(call("ast_edit", { ops: [], paths: ["local://draft.ts"] }), ctx)).toBeUndefined();
+		expect(await handler(call("ast_edit", { ops: [], paths: ["local://draft.ts"] }), ctx)).toBeUndefined();
 	});
 
 	test("blocks applying LSP refactors into canonical but not previews or reads", () => {

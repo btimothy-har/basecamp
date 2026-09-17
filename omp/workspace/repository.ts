@@ -53,13 +53,19 @@ export class RepositoryCache {
 			cached = { cwd, repo, repoRoot: info.repoRoot, gitDir: info.gitDir };
 			this.#cached = cached;
 		}
-		const head = cached.repo.headSync();
+		let branch: string | null = null;
+		try {
+			const head = cached.repo.headSync();
+			branch = typeof head.branch === "string" && head.branch.length > 0 ? head.branch : null;
+		} catch {
+			// An unborn repository still has a canonical checkout worth protecting.
+		}
 		const primaryRoot = cached.repo.primaryRoot();
 		this.#primaryRoots.add(primaryRoot);
 		return {
 			root: cached.repo.info().repoRoot,
 			primaryRoot,
-			branch: typeof head.branch === "string" && head.branch.length > 0 ? head.branch : null,
+			branch,
 		};
 	}
 

@@ -85,6 +85,17 @@ describe("workspace startup warning", () => {
 		expect(branchHarness.notices).toHaveLength(1);
 	});
 
+	test("warns in a newly initialized canonical checkout without a commit", () => {
+		const root = temporaryDirectory();
+		git(root, ["init", "-q"]);
+		const harness = createHarness();
+
+		harness.start(realpathSync(root));
+
+		expect(harness.notices).toHaveLength(1);
+		expect(harness.notices[0]?.message).toContain(realpathSync(root));
+	});
+
 	test("does not warn for linked worktrees, non-Git cwd, or non-TUI modes", () => {
 		const root = gitFixture();
 		const linked = path.join(temporaryDirectory(), "linked");
