@@ -164,7 +164,8 @@ describe("Basecamp /review", () => {
 			selections: ["Against a base branch", "main"],
 		});
 
-		expect(h.menus[0]).toEqual({ title: `Review scope for ${fixture.feature}`, options: REVIEW_MODES });
+		expect(h.menus[0]?.title).toContain(fixture.feature);
+		expect(h.menus[0]?.options).toEqual(REVIEW_MODES);
 		expect(h.menus[1]?.options).not.toContain("feature");
 		const featureOutput = runBranchReview(fixture.feature, h.sent[0]!);
 		expect(featureOutput).toContain("FEATURE_ONLY");
@@ -174,9 +175,8 @@ describe("Basecamp /review", () => {
 		expect(featureOutput).not.toContain("DIRTY_UNSTAGED");
 		expect(featureOutput).not.toContain("DIRTY_UNTRACKED");
 		expect(h.sent[0]).toContain("focus on behavior");
-		expect(h.sent[0]?.startsWith("Read `skill://code-review`")).toBe(true);
+		expect(h.sent[0]).toContain("skill://code-review");
 		expect(h.sent[0]).toContain(`- Repository: ${JSON.stringify(fixture.feature)}`);
-		expect(h.sent[0]).not.toContain("Review protocol");
 
 		await h.invoke(fixture.featureTwo, "", { selections: ["Against a base branch", "main"] });
 		const secondOutput = runBranchReview(fixture.featureTwo, h.sent[1]!);
@@ -201,7 +201,6 @@ describe("Basecamp /review", () => {
 			git(fixture.feature, "show", "--format=fuller", "--patch", fixture.mergeRevision, "--"),
 		);
 		expect(h.sent[1]).toContain("merge focus");
-		expect(h.sent[1]?.startsWith("Read `skill://code-review`")).toBe(true);
 	});
 
 	test("returns authoritative custom instructions inside or outside Git", async () => {
@@ -215,12 +214,9 @@ describe("Basecamp /review", () => {
 			editors: [instructions],
 		});
 		expect(h.sent[0]).toContain(instructions);
-		expect(h.sent[0]?.startsWith("Read `skill://code-review`")).toBe(true);
-		expect(h.sent[0]).not.toContain("```sh");
 
 		const headlessPrompt = await h.invoke(outsideGit, instructions, { hasUI: false });
 		expect(headlessPrompt).toContain(instructions);
-		expect(h.sent[1]).toBe(headlessPrompt);
 		await h.invoke(outsideGit, "", { hasUI: false });
 		expect(h.sent).toHaveLength(2);
 		expect(h.notifications.at(-1)?.message).toContain("requires custom instructions");

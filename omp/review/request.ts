@@ -20,7 +20,8 @@ export type ReviewScope =
 			instructions: string;
 	  };
 
-const REVIEW_TRIGGER = "Read `skill://code-review`, then conduct a review using this context:";
+const REVIEW_TRIGGER =
+	"Conduct a code review using the context below, following the guidance in `skill://code-review`:";
 
 function fencedText(text: string): string {
 	const longestRun = Math.max(0, ...Array.from(text.matchAll(/`+/g), (match) => match[0].length));
