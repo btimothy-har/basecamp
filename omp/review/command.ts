@@ -23,16 +23,10 @@ async function selectBranchScope(
 	}
 
 	const headLabel = currentBranch ?? "HEAD";
-	const baseBranch = await ctx.ui.select(
-		`Select base branch for ${headLabel} in ${repositoryRoot}`,
-		baseBranches,
-	);
+	const baseBranch = await ctx.ui.select(`Select base branch for ${headLabel} in ${repositoryRoot}`, baseBranches);
 	if (!baseBranch) return;
 
-	const [headRevision, baseRevision] = await Promise.all([
-		repo.headSha(),
-		repo.resolveRef(`${baseBranch}^{commit}`),
-	]);
+	const [headRevision, baseRevision] = await Promise.all([repo.headSha(), repo.resolveRef(`${baseBranch}^{commit}`)]);
 	if (!headRevision) throw new Error("HEAD did not resolve to a commit");
 	if (!baseRevision) throw new Error(`Base branch ${baseBranch} did not resolve to a commit`);
 
@@ -91,12 +85,9 @@ async function selectInteractiveScope(
 	if (!mode) return;
 
 	if (mode === "Custom instructions") {
-		const instructions = await ctx.ui.editor(
-			"Custom review instructions",
-			initialInstructions,
-			undefined,
-			{ promptStyle: true },
-		);
+		const instructions = await ctx.ui.editor("Custom review instructions", initialInstructions, undefined, {
+			promptStyle: true,
+		});
 		if (instructions === undefined || instructions.trim() === "") return;
 		return { kind: "custom", cwd, instructions };
 	}
