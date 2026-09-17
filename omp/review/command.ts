@@ -1,17 +1,15 @@
-import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
+import type { CustomCommand, CustomCommandAPI, HookCommandContext } from "@oh-my-pi/pi-coding-agent";
 import { requireGit } from "@oh-my-pi/pi-natives/vcs";
 import { buildReviewRequest, type ReviewScope } from "./request.ts";
 
 const REVIEW_MODES = ["Against a base branch", "Specific commit", "Custom instructions"] as const;
 
-
-function warn(ctx: ExtensionCommandContext, message: string): void {
+function warn(ctx: HookCommandContext, message: string): void {
 	ctx.ui.notify(message, "warning");
 }
 
-
 async function selectBranchScope(
-	ctx: ExtensionCommandContext,
+	ctx: HookCommandContext,
 	cwd: string,
 	instructions: string | undefined,
 ): Promise<ReviewScope | undefined> {
@@ -53,7 +51,7 @@ async function selectBranchScope(
 }
 
 async function selectCommitScope(
-	ctx: ExtensionCommandContext,
+	ctx: HookCommandContext,
 	cwd: string,
 	instructions: string | undefined,
 ): Promise<ReviewScope | undefined> {
@@ -85,7 +83,7 @@ async function selectCommitScope(
 }
 
 async function selectInteractiveScope(
-	ctx: ExtensionCommandContext,
+	ctx: HookCommandContext,
 	cwd: string,
 	initialInstructions: string,
 ): Promise<ReviewScope | undefined> {
@@ -114,10 +112,11 @@ async function selectInteractiveScope(
 	}
 }
 
-export default function registerReviewCommand(pi: ExtensionAPI): void {
-	pi.registerCommand("review", {
+export default function createReviewCommand(_api: CustomCommandAPI): CustomCommand {
+	return {
+		name: "review",
 		description: "Review a branch, commit, or custom scope (Basecamp)",
-		handler: async (args, ctx) => {
+		execute: async (args, ctx) => {
 			const cwd = ctx.cwd;
 			const sessionId = ctx.sessionManager.getSessionId();
 			if (!ctx.isIdle()) {
@@ -125,7 +124,7 @@ export default function registerReviewCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const initialInstructions = args.trim();
+			const initialInstructions = args.join(" ").trim();
 			let scope: ReviewScope | undefined;
 			if (ctx.hasUI) {
 				scope = await selectInteractiveScope(ctx, cwd, initialInstructions);
@@ -141,7 +140,7 @@ export default function registerReviewCommand(pi: ExtensionAPI): void {
 				warn(ctx, "/review stopped because the active session or workspace changed.");
 				return;
 			}
-			pi.sendUserMessage(buildReviewRequest(scope));
+			return buildReviewRequest(scope);
 		},
-	});
+	};
 }

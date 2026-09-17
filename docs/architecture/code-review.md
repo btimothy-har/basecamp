@@ -1,18 +1,18 @@
 # Code Review Flows
 
-Basecamp has separate review integrations for legacy Pi and OMP. Pi owns an independent review workflow behind `/code-review`; Basecamp owns OMP's `/review` command, native reviewer orchestration, and final presentation, feedback, and artifact capture.
+Basecamp has separate review integrations for legacy Pi and OMP. Pi owns an independent review workflow behind `/code-review`; Basecamp owns OMP's `/review` command, skill-guided orchestration, and final presentation, feedback, and artifact capture.
 
 ## OMP review workflow
 
-Basecamp's OMP extension registers `/review` with three scopes: a committed comparison against a selected base branch, one specific commit, or custom instructions. Branch comparisons resolve the live invocation worktree, pin the merge base and current head to full revisions, and exclude the current branch from the base picker. Commit reviews pin the selected commit and use `git show`. Custom reviews preserve the submitted instructions for model-resolved inspection. There is intentionally no uncommitted mode: the committed scopes prohibit widening to index or working-tree changes.
+Basecamp's OMP package overrides the bundled `/review` through a package-discovered custom TypeScript command with three scopes: a committed comparison against a selected base branch, one specific commit, or custom instructions. Branch comparisons resolve the live invocation worktree, pin the merge base and current head to full revisions, and exclude the current branch from the base picker. Commit reviews pin the selected commit. Custom reviews preserve the submitted instructions for model-resolved inspection. There is intentionally no uncommitted mode.
 
-Each Basecamp-generated review prompt starts with `## Code Review Request` and carries the authoritative repository, revisions, and inspection command when the scope is committed. A `context` extension hook recognizes the latest active request at the model boundary and inserts a hidden final-chair contract. This covers idle, headless, and queued review prompts without resending the command or reviving instructions from a historical review. The primary inspects the scope, dispatches OMP's native `reviewer` agents when there are reviewable changes, validates their structured findings against the code, discards false positives, semantically deduplicates shared root causes, calls `review_findings` exactly once, and reads the returned artifact before continuing. Reviewer subagents never call the presentation tool.
+The command returns a thin prompt containing the authoritative scope and directing the primary to read `skill://code-review`; returning it keeps the generated review inside OMP's awaited prompt lifecycle in both interactive and headless modes. The skill owns scope fidelity, risk-based native reviewer selection, synthesis, and the single `review_findings` presentation call. OMP's native `reviewer` agent remains authoritative for finding method, evidence, priorities, and structured output. Committed scopes exclude index and working-tree changes; an empty scope stops without meaningless reviewer dispatch.
 
 ### OMP flow
 
-1. Basecamp `/review` captures the live invocation directory, resolves the selected scope, and builds the review request.
-2. The primary inspects that scope and dispatches OMP's native `reviewer` tasks, or reports an empty comparison without dispatching or widening the scope.
-3. The primary validates and consolidates the results into the strict native-shaped `review_findings` input, normalizing source locations to repository-relative paths and including an empty findings array when none remain.
+1. Basecamp `/review` captures the live invocation directory, resolves the selected scope, and returns the skill trigger with its context.
+2. The primary reads the review skill, inspects the exact scope, and chooses independent reviewer coverage proportionate to its material risks.
+3. OMP's native `reviewer` tasks return structured results; the primary validates and consolidates them into the strict native-shaped `review_findings` input.
 4. In TUI mode, `review_findings` opens a `ui.custom` navigator. Headless modes skip interaction but still record the review with feedback marked unavailable.
 5. The tool deterministically sorts findings, assigns artifact-local IDs, nests each submitted comment with its finding, and writes versioned JSON through OMP storage primitives.
 6. In persistent sessions, the model-visible tool result is only `Read artifact://<id> before continuing.` In `--no-session` mode, where OMP cannot resolve its in-memory artifact IDs through `artifact://`, the tool writes the same JSON to the content-addressed blob store and returns its readable path.
@@ -29,9 +29,10 @@ Persistent-session artifacts survive resume and rewind, move with the session, c
 
 ### OMP layout
 
-- `omp/review/command.ts`: Basecamp-owned `/review` scope UI and live-worktree Git resolution.
-- `omp/review/request.ts`: authoritative review prompt construction and pinned committed-scope commands.
-- `omp/review/instructions.ts`: active-request recognition and model-context chair contract.
+- `omp/commands/review/index.ts`: package-discovered override for OMP's bundled `/review`.
+- `omp/review/command.ts`: prompt-returning scope UI and live-worktree Git resolution.
+- `omp/review/request.ts`: thin skill trigger and authoritative scope context.
+- `omp/skills/code-review/SKILL.md`: OMP review-chair orchestration, synthesis, and presentation guidance.
 - `omp/review/schema.ts`: strict native-shaped tool input and versioned artifact types.
 - `omp/review/artifact.ts`: deterministic ordering, IDs, counts, and artifact construction.
 - `omp/review/tool.ts`: `review_findings`, artifact save, and passive transcript renderer.

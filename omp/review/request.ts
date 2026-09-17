@@ -1,5 +1,3 @@
-import { $ } from "bun";
-
 export type ReviewScope =
 	| {
 			kind: "branch";
@@ -22,12 +20,7 @@ export type ReviewScope =
 			instructions: string;
 	  };
 
-const REVIEW_PROCEDURE = `### Review protocol
-
-1. Inspect only the scope above. For a committed scope, the repository and revisions are authoritative: exclude working-tree and index changes, and do not substitute current HEAD or \`read_diff\`. For a custom scope, follow the submitted instructions without widening them.
-2. If the scope has no reviewable changes, report that and stop. Otherwise dispatch with \`task\` using \`agent: "reviewer"\`, passing the exact scope and user instructions. Split work only when the changed areas are independent.
-3. Validate and present the reviewer results using the separately supplied chair instructions.
-4. Review only. Do not edit code, create commits, or publish changes.`;
+const REVIEW_TRIGGER = "Read `skill://code-review`, then conduct a review using this context:";
 
 function fencedText(text: string): string {
 	const longestRun = Math.max(0, ...Array.from(text.matchAll(/`+/g), (match) => match[0].length));
@@ -35,82 +28,38 @@ function fencedText(text: string): string {
 	return `${fence}text\n${text}\n${fence}`;
 }
 
-function userInstructions(instructions: string | undefined): string {
+function additionalInstructions(instructions: string | undefined): string {
 	if (!instructions) return "";
-	return `\n\n### User instructions\n\n${fencedText(instructions)}`;
-}
-
-function committedInspectionGuidance(command: string): string {
-	return `### Inspect the committed scope
-
-Run this exact comparison first:
-
-\`\`\`sh
-${command}
-\`\`\`
-
-For file-restricted inspection, add the assigned repository-relative paths after \`--\`. Read committed source context with \`git show <revision>:<path>\` rather than potentially dirty working-tree files.`;
+	return `\n\nAdditional instructions:\n\n${fencedText(instructions)}`;
 }
 
 export function buildReviewRequest(scope: ReviewScope): string {
 	if (scope.kind === "custom") {
-		return `## Code Review Request
+		return `${REVIEW_TRIGGER}
 
-### Scope
+- Scope: custom
+- Invocation directory: ${JSON.stringify(scope.cwd)}
 
-- Mode: custom instructions
-- Invocation cwd: ${JSON.stringify(scope.cwd)}
+Review request:
 
-### Submitted instructions
-
-${fencedText(scope.instructions)}
-
-${REVIEW_PROCEDURE}`;
+${fencedText(scope.instructions)}`;
 	}
 
 	if (scope.kind === "branch") {
-		const command = [
-			"git -C",
-			$.escape(scope.repositoryRoot),
-			"diff",
-			$.escape(scope.baseRevision),
-			$.escape(scope.headRevision),
-			"--",
-		].join(" ");
-		return `## Code Review Request
+		return `${REVIEW_TRIGGER}
 
-### Scope
-
-- Mode: branch comparison
+- Scope: committed branch comparison
 - Repository: ${JSON.stringify(scope.repositoryRoot)}
 - Selected base: ${JSON.stringify(scope.baseBranch)}
+- Comparison base (merge base): ${scope.baseRevision}
 - Head: ${JSON.stringify(scope.headLabel)}
-- Base revision (merge base): ${scope.baseRevision}
-- Head revision: ${scope.headRevision}${userInstructions(scope.instructions)}
-
-${committedInspectionGuidance(command)}
-
-${REVIEW_PROCEDURE}`;
+- Head revision: ${scope.headRevision}
+- Uncommitted changes: excluded${additionalInstructions(scope.instructions)}`;
 	}
 
-	const command = [
-		"git -C",
-		$.escape(scope.repositoryRoot),
-		"show",
-		"--format=fuller",
-		"--patch",
-		$.escape(scope.commitRevision),
-		"--",
-	].join(" ");
-	return `## Code Review Request
+	return `${REVIEW_TRIGGER}
 
-### Scope
-
-- Mode: specific commit
+- Scope: specific commit
 - Repository: ${JSON.stringify(scope.repositoryRoot)}
-- Commit revision: ${scope.commitRevision}${userInstructions(scope.instructions)}
-
-${committedInspectionGuidance(command)}
-
-${REVIEW_PROCEDURE}`;
+- Commit: ${scope.commitRevision}${additionalInstructions(scope.instructions)}`;
 }

@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, setDefaultTimeout, test } from "bun:test";
-import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
-import registerReviewCommand from "../command.ts";
+import type { CustomCommandAPI, HookCommandContext } from "@oh-my-pi/pi-coding-agent";
+import createReviewCommand from "../command.ts";
 
 const REVIEW_MODES = ["Against a base branch", "Specific commit", "Custom instructions"];
 const tempRoots: string[] = [];
@@ -88,22 +88,9 @@ interface InvokeOptions {
 }
 
 function createHarness() {
-	let handler: ((args: string, ctx: ExtensionCommandContext) => Promise<void>) | undefined;
 	const sent: string[] = [];
 	const notifications: Array<{ message: string; level: string | undefined }> = [];
 	const menus: Array<{ title: string; options: string[] }> = [];
-	const api = {
-		registerCommand(name: string, definition: { handler: typeof handler }): void {
-			if (name !== "review") throw new Error(`unexpected command: ${name}`);
-			handler = definition.handler;
-		},
-		sendUserMessage(content: string): void {
-			sent.push(content);
-		},
-	} as unknown as ExtensionAPI;
-	registerReviewCommand(api);
-	if (!handler) throw new Error("/review was not registered");
-	const registeredHandler = handler;
 
 	return {
 		sent,
@@ -135,20 +122,34 @@ function createHarness() {
 					getCwd: () => liveCwd,
 					getSessionId: () => liveSessionId,
 				},
-			} as unknown as ExtensionCommandContext;
-			await registeredHandler(args, ctx);
+			} as unknown as HookCommandContext;
+			const command = createReviewCommand({ cwd } as CustomCommandAPI);
+			const prompt = await command.execute(args === "" ? [] : [args], ctx);
+			if (prompt) sent.push(prompt);
+			return prompt;
 		},
 	};
 }
 
-function inspectionCommand(request: string): string {
-	const command = request.match(/```sh\n([^\n]+)\n```/)?.[1];
-	if (!command) throw new Error(`request has no inspection command:\n${request}`);
-	return command;
+function promptValue(request: string, label: string): string {
+	const prefix = `- ${label}: `;
+	const line = request.split("\n").find((candidate) => candidate.startsWith(prefix));
+	if (!line) throw new Error(`request has no ${label} value:\n${request}`);
+	return line.slice(prefix.length);
 }
 
-function runInspection(cwd: string, request: string): string {
-	return execFileSync("/bin/sh", ["-c", inspectionCommand(request)], { cwd, encoding: "utf8" });
+function runBranchReview(cwd: string, request: string): string {
+	return git(
+		cwd,
+		"diff",
+		promptValue(request, "Comparison base (merge base)"),
+		promptValue(request, "Head revision"),
+		"--",
+	);
+}
+
+function runCommitReview(cwd: string, request: string): string {
+	return git(cwd, "show", "--format=fuller", "--patch", promptValue(request, "Commit"), "--");
 }
 
 afterEach(() => {
@@ -165,7 +166,7 @@ describe("Basecamp /review", () => {
 
 		expect(h.menus[0]).toEqual({ title: `Review scope for ${fixture.feature}`, options: REVIEW_MODES });
 		expect(h.menus[1]?.options).not.toContain("feature");
-		const featureOutput = runInspection(fixture.parent, h.sent[0]!);
+		const featureOutput = runBranchReview(fixture.feature, h.sent[0]!);
 		expect(featureOutput).toContain("FEATURE_ONLY");
 		expect(featureOutput).toContain("SIDE_ONLY");
 		expect(featureOutput).not.toContain("MAIN_ONLY");
@@ -173,10 +174,12 @@ describe("Basecamp /review", () => {
 		expect(featureOutput).not.toContain("DIRTY_UNSTAGED");
 		expect(featureOutput).not.toContain("DIRTY_UNTRACKED");
 		expect(h.sent[0]).toContain("focus on behavior");
-		expect(existsSync(join(fixture.parent, "ESCAPED"))).toBe(false);
+		expect(h.sent[0]?.startsWith("Read `skill://code-review`")).toBe(true);
+		expect(h.sent[0]).toContain(`- Repository: ${JSON.stringify(fixture.feature)}`);
+		expect(h.sent[0]).not.toContain("Review protocol");
 
 		await h.invoke(fixture.featureTwo, "", { selections: ["Against a base branch", "main"] });
-		const secondOutput = runInspection(fixture.parent, h.sent[1]!);
+		const secondOutput = runBranchReview(fixture.featureTwo, h.sent[1]!);
 		expect(secondOutput).toContain("SECOND_ONLY");
 		expect(secondOutput).not.toContain("FEATURE_ONLY");
 	});
@@ -190,17 +193,18 @@ describe("Basecamp /review", () => {
 		if (!rootEntry || !mergeEntry) throw new Error("fixture commits missing from picker range");
 
 		await h.invoke(fixture.feature, "", { selections: ["Specific commit", rootEntry] });
-		expect(runInspection(fixture.parent, h.sent[0]!)).toBe(
+		expect(runCommitReview(fixture.feature, h.sent[0]!)).toBe(
 			git(fixture.feature, "show", "--format=fuller", "--patch", fixture.baseRevision, "--"),
 		);
 		await h.invoke(fixture.feature, "merge focus", { selections: ["Specific commit", mergeEntry] });
-		expect(runInspection(fixture.parent, h.sent[1]!)).toBe(
+		expect(runCommitReview(fixture.feature, h.sent[1]!)).toBe(
 			git(fixture.feature, "show", "--format=fuller", "--patch", fixture.mergeRevision, "--"),
 		);
 		expect(h.sent[1]).toContain("merge focus");
+		expect(h.sent[1]?.startsWith("Read `skill://code-review`")).toBe(true);
 	});
 
-	test("delivers authoritative custom instructions inside or outside Git", async () => {
+	test("returns authoritative custom instructions inside or outside Git", async () => {
 		const fixture = createGitFixture();
 		const outsideGit = join(fixture.parent, "outside Git");
 		mkdirSync(outsideGit);
@@ -211,10 +215,12 @@ describe("Basecamp /review", () => {
 			editors: [instructions],
 		});
 		expect(h.sent[0]).toContain(instructions);
+		expect(h.sent[0]?.startsWith("Read `skill://code-review`")).toBe(true);
 		expect(h.sent[0]).not.toContain("```sh");
 
-		await h.invoke(outsideGit, instructions, { hasUI: false });
-		expect(h.sent[1]).toContain(instructions);
+		const headlessPrompt = await h.invoke(outsideGit, instructions, { hasUI: false });
+		expect(headlessPrompt).toContain(instructions);
+		expect(h.sent[1]).toBe(headlessPrompt);
 		await h.invoke(outsideGit, "", { hasUI: false });
 		expect(h.sent).toHaveLength(2);
 		expect(h.notifications.at(-1)?.message).toContain("requires custom instructions");
