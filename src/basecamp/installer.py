@@ -9,16 +9,18 @@ extras are gone by design.
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Final
+from typing import Any, Final
 
 from rich.panel import Panel
 
 from basecamp.core.console import console
 from basecamp.core.exceptions import LauncherError
+from basecamp.core.files import atomic_write_json
 from basecamp.core.settings import settings
 
 REPO_DIR: Final = Path(__file__).resolve().parents[2]
@@ -28,6 +30,8 @@ OMP_USER_RULES: Final = (
     "commit-checkpoints.md",
     "code-comments.md",
 )
+WORKSPACE_REGISTRATION: Final = "basecamp-workspace"
+WORKSPACE_EXTENSION_ENTRY: Final = Path("omp") / "workspace" / "extension.ts"
 
 # Pre-consolidation Pi package registrations to clean up — each was its own
 # `pi install` target before the single-extension layout.
@@ -224,6 +228,62 @@ def _install_omp_user_rules(omp: str, repo_dir: Path) -> None:
     console.print(f"  Linked {len(sources)} Basecamp rule(s) into {rules_dir}.")
 
 
+def _register_omp_workspace_extension(omp: str, repo_dir: Path) -> None:
+    """Register the workspace extension for ambient discovery by plain ``omp``.
+
+    Ownership rules mirror the user-rule links: the managed manifest is created
+    or atomically retargeted only when it is absent or exactly matches a
+    Basecamp-managed manifest for the current or previously recorded checkout.
+    """
+    entry = (repo_dir / WORKSPACE_EXTENSION_ENTRY).resolve()
+    if not entry.is_file():
+        console.print(f"\n[red]Basecamp workspace extension is missing:[/red] {entry}")
+        raise SystemExit(1)
+
+    registration_dir = _resolve_omp_agent_dir(omp) / "extensions" / WORKSPACE_REGISTRATION
+    manifest_path = registration_dir / "package.json"
+    desired: dict[str, Any] = {
+        "name": WORKSPACE_REGISTRATION,
+        "private": True,
+        "omp": {"extensions": [str(entry)]},
+    }
+
+    managed = [desired]
+    previous_root = settings.install_dir
+    if isinstance(previous_root, str) and previous_root:
+        previous_entry = (Path(previous_root).expanduser() / WORKSPACE_EXTENSION_ENTRY).resolve()
+        managed.append({**desired, "omp": {"extensions": [str(previous_entry)]}})
+
+    def refuse(target: Path) -> None:
+        console.print(f"\n[red]Refusing to replace user-managed OMP extension registration:[/red] {target}")
+        raise SystemExit(1)
+
+    if registration_dir.is_symlink() or (registration_dir.exists() and not registration_dir.is_dir()):
+        refuse(registration_dir)
+    if registration_dir.exists():
+        foreign = [child for child in registration_dir.iterdir() if child.name != manifest_path.name]
+        if foreign:
+            refuse(registration_dir)
+    else:
+        registration_dir.mkdir(parents=True)
+
+    if manifest_path.is_symlink():
+        refuse(manifest_path)
+    if manifest_path.exists():
+        try:
+            existing = json.loads(manifest_path.read_text())
+        except (OSError, ValueError):
+            refuse(manifest_path)
+        if existing == desired:
+            console.print(f"  Workspace extension already registered in {registration_dir}.")
+            return
+        if existing not in managed:
+            refuse(manifest_path)
+
+    atomic_write_json(manifest_path, desired)
+    console.print(f"  Registered [bold]{WORKSPACE_REGISTRATION}[/bold] extension in {registration_dir}.")
+
+
 def run_interactive_install(repo_dir: Path | None = None) -> None:
     """Install Basecamp and its runtime prerequisites from one source checkout."""
     source_root = resolve_install_root(repo_dir)
@@ -250,6 +310,11 @@ def run_interactive_install(repo_dir: Path | None = None) -> None:
     console.print("[bold]OMP user rules[/bold]")
     console.print()
     _install_omp_user_rules(omp, source_root)
+
+    console.print()
+    console.print("[bold]OMP workspace extension[/bold]")
+    console.print()
+    _register_omp_workspace_extension(omp, source_root)
 
     console.print()
     console.print("[bold]Pi extension[/bold]")

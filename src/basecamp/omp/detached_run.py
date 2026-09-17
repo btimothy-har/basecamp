@@ -20,6 +20,7 @@ from basecamp.omp.detached_plan import DetachedPlan
 
 _COMMAND_TIMEOUT_SECONDS = 60
 _NAME_CHARACTERS = re.compile(r"[^A-Za-z0-9._-]+")
+_WORKSPACE_ID = re.compile(r"[0-9a-f]{32}")
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ def create_workspace(
     *,
     omp_executable: str,
     environ: Mapping[str, str],
+    workspace_path: Path | None = None,
 ) -> DetachedWorkspace:
     """Create the planned detached checkout through OMP's public CLI."""
     try:
@@ -63,11 +65,13 @@ def create_workspace(
         message = f"Could not create OMP worktree base {plan.worktree_base}: {exc}"
         raise LauncherError(message) from exc
 
-    workspace_path = _reserve_workspace_path(plan)
+    selected_path = workspace_path or _reserve_workspace_path(plan)
+    if workspace_path is not None:
+        _validate_reserved_workspace_path(plan, selected_path)
     command = [omp_executable]
     if plan.arguments.profile is not None:
         command.extend(("--profile", plan.arguments.profile))
-    command.extend(("worktree", "add", "--detach", "--quiet", str(workspace_path), "HEAD"))
+    command.extend(("worktree", "add", "--detach", "--quiet", str(selected_path), plan.source.head))
     try:
         result = _run_captured(
             command,
@@ -76,27 +80,27 @@ def create_workspace(
             isolate_from_terminal=True,
         )
     except (OSError, subprocess.SubprocessError) as exc:
-        failure = _cleanup_failed_creation(plan.source.root, workspace_path)
+        failure = cleanup_failed_creation(plan.source.root, selected_path)
         suffix = _cleanup_suffix(failure)
         message = f"Could not create detached OMP worktree: {exc}{suffix}"
         raise LauncherError(message) from exc
     if result.returncode != 0:
-        failure = _cleanup_failed_creation(plan.source.root, workspace_path)
+        failure = cleanup_failed_creation(plan.source.root, selected_path)
         detail = result.stderr.strip() or f"exit status {_shell_status(result.returncode)}"
         suffix = _cleanup_suffix(failure)
         message = f"Could not create detached OMP worktree: {detail}{suffix}"
         raise LauncherError(message)
 
-    launch_cwd = workspace_path / plan.source.relative_cwd
+    launch_cwd = selected_path / plan.source.relative_cwd
     try:
         launch_cwd.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        failure = remove_workspace(plan.source.root, workspace_path)
+        failure = remove_workspace(plan.source.root, selected_path)
         suffix = _cleanup_suffix(failure)
         message = f"Could not prepare detached launch directory {launch_cwd}: {exc}{suffix}"
         raise LauncherError(message) from exc
     warnings = tuple(line for line in result.stderr.splitlines() if line)
-    return DetachedWorkspace(path=workspace_path, launch_cwd=launch_cwd, warnings=warnings)
+    return DetachedWorkspace(path=selected_path, launch_cwd=launch_cwd, warnings=warnings)
 
 
 def supervise_omp(
@@ -168,6 +172,55 @@ def report_cleanup_failure(
     print(f"bomp: warning: recover with: {failure.recovery_command}", file=stream)
 
 
+def reserve_workspace_path(plan: DetachedPlan, workspace_id: str) -> Path:
+    """Exclusively reserve the exact scratch path for an automatic workspace."""
+    if not _WORKSPACE_ID.fullmatch(workspace_id):
+        message = f"Invalid workspace id for scratch reservation: {workspace_id}"
+        raise LauncherError(message)
+    repository = _NAME_CHARACTERS.sub("-", plan.source.root.name).strip("-._") or "repository"
+    target = plan.worktree_base / f"bomp-{repository}-{plan.source.head[:7]}-{workspace_id}"
+    source_root = plan.source.root.resolve()
+    resolved = target.resolve() if not target.exists() else target
+    if resolved == source_root or resolved.is_relative_to(source_root):
+        message = f"Scratch worktree target must be outside the canonical checkout {source_root}: {target}"
+        raise LauncherError(message)
+    _reject_registered_worktree(plan.source.root, target)
+    try:
+        plan.worktree_base.mkdir(parents=True, exist_ok=True)
+        target.mkdir()
+    except FileExistsError as exc:
+        message = f"Refusing to adopt existing scratch path: {target}"
+        raise LauncherError(message) from exc
+    except OSError as exc:
+        message = f"Could not reserve scratch path {target}: {exc}"
+        raise LauncherError(message) from exc
+    return target
+
+
+def _reject_registered_worktree(source_root: Path, target: Path) -> None:
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(source_root), "worktree", "list", "--porcelain"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=_COMMAND_TIMEOUT_SECONDS,
+            start_new_session=True,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        message = f"Could not inspect Git worktrees at {source_root}: {exc}"
+        raise LauncherError(message) from exc
+    if result.returncode != 0:
+        detail = result.stderr.strip() or f"exit status {result.returncode}"
+        message = f"Could not inspect Git worktrees at {source_root}: {detail}"
+        raise LauncherError(message)
+    resolved = target.resolve()
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree ") and Path(line.removeprefix("worktree ")).resolve() == resolved:
+            message = f"Refusing to adopt registered worktree: {target}"
+            raise LauncherError(message)
+
+
 def _reserve_workspace_path(plan: DetachedPlan) -> Path:
     repository = _NAME_CHARACTERS.sub("-", plan.source.root.name).strip("-._") or "repository"
     prefix = f"bomp-{repository}-{plan.source.head[:7]}-"
@@ -178,7 +231,19 @@ def _reserve_workspace_path(plan: DetachedPlan) -> Path:
         raise LauncherError(message) from exc
 
 
-def _cleanup_failed_creation(source_root: Path, workspace_path: Path) -> CleanupFailure | None:
+def _validate_reserved_workspace_path(plan: DetachedPlan, workspace_path: Path) -> None:
+    _reject_registered_worktree(plan.source.root, workspace_path)
+    try:
+        entries = tuple(workspace_path.iterdir())
+    except OSError as exc:
+        message = f"Could not inspect reserved detached worktree {workspace_path}: {exc}"
+        raise LauncherError(message) from exc
+    if entries:
+        message = f"Reserved detached worktree path is not empty: {workspace_path}"
+        raise LauncherError(message)
+
+
+def cleanup_failed_creation(source_root: Path, workspace_path: Path) -> CleanupFailure | None:
     failure = remove_workspace(source_root, workspace_path)
     if failure is None or not workspace_path.exists():
         return None
