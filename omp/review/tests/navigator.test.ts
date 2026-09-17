@@ -20,6 +20,7 @@ function finding(overrides: Partial<IdentifiedReviewFinding> = {}): IdentifiedRe
 		id: "finding-1",
 		title: "Finding title",
 		body: "Finding body",
+		recommendation: "Apply the focused fix.",
 		priority: 2,
 		confidence: 0.8,
 		file_path: "src/app.ts",
@@ -36,6 +37,7 @@ function review(findings: IdentifiedReviewFinding[] = twoFindings): PreparedRevi
 		scope: "main...HEAD",
 		overall_correctness: findings.length === 0 ? "correct" : "incorrect",
 		explanation: findings.length === 0 ? "No validated findings." : "Validated findings remain.",
+		recommendation: findings.length === 0 ? "Merge after CI passes." : "Fix the validated findings before merging.",
 		confidence: 0.9,
 		findings,
 	};
@@ -106,6 +108,45 @@ describe("navigateReviewFindings", () => {
 		expect(listView).toContain("1 commented");
 		expect(listView).toContain("Finding title");
 		expect(listView).toContain("[commented]");
+	});
+
+	test("keeps the overall recommendation visible in a short terminal", async () => {
+		let listView = "";
+		const ui = harness([
+			(send, render, _paste, resize) => {
+				resize?.(14);
+				listView = render();
+				send("s");
+			},
+		]);
+
+		await navigateReviewFindings(ui, review());
+
+		expect(listView.split("\n").length).toBeLessThanOrEqual(14);
+		expect(listView).toContain("Overall recommendation");
+		expect(listView).toContain("Fix the validated findings before merging.");
+		expect(listView).toContain("Finding title");
+	});
+
+	test("clips long review guidance while keeping findings visible after resize", async () => {
+		let listView = "";
+		const guidance = Array.from({ length: 120 }, (_unused, index) => `recommendation-${index}`).join(" ");
+		const ui = harness([
+			(send, render, _paste, resize) => {
+				resize?.(20);
+				listView = render();
+				send("s");
+				resize?.(40);
+			},
+		]);
+
+		await navigateReviewFindings(ui, { ...review(), explanation: guidance, recommendation: guidance });
+
+		expect(listView.split("\n").length).toBeLessThanOrEqual(20);
+		expect(listView).toContain("Overall recommendation");
+		expect(listView).toContain("Finding title");
+		expect(listView).toContain("…");
+		expect(listView).not.toContain("more line");
 	});
 
 	test("does not open the comment box on Enter from the card", async () => {
@@ -206,12 +247,15 @@ describe("navigateReviewFindings", () => {
 		const body = Array.from({ length: 60 }, (_unused, index) => `evidence line ${index}`).join("\n");
 		let topView = "";
 		let lowerView = "";
+		let bottomView = "";
 		const ui = harness([
 			(send) => send(SPACE),
 			(send, render) => {
 				topView = render();
 				send(PAGE_DOWN);
 				lowerView = render();
+				send(PAGE_DOWN);
+				bottomView = render();
 				send(ESC);
 			},
 			(send) => send("s"),
@@ -222,6 +266,8 @@ describe("navigateReviewFindings", () => {
 		expect(topView).toContain("evidence line 0");
 		expect(lowerView).toContain("evidence line 30");
 		expect(lowerView).not.toContain("evidence line 0");
+		expect(bottomView).toContain("Recommendation");
+		expect(bottomView).toContain("Apply the focused fix.");
 	});
 
 	test("places the comment box under the label even when a finding quotes it", async () => {

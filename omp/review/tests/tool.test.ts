@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { type as arktype } from "@oh-my-pi/omptype";
 import type { ExtensionAPI, ExtensionContext, Theme, ToolDefinition } from "@oh-my-pi/pi-coding-agent";
-import type { ReviewArtifactV1, ReviewFindingsInput } from "../schema.ts";
+import type { ReviewArtifactV2, ReviewFindingsInput } from "../schema.ts";
 import registerReviewTool, { type ReviewToolDetails } from "../tool.ts";
 import { DOWN, ENTER, ESC, navigatorHarness, SPACE, type } from "./support/navigator-driver.ts";
 
@@ -15,11 +15,17 @@ interface SavedBlob {
 	extension: string | undefined;
 }
 
+const theme = {
+	fg: (_color: string, text: string) => text,
+	bold: (text: string) => text,
+} as unknown as Theme;
+
 function reviewInput(findings: ReviewFindingsInput["findings"] = []): ReviewFindingsInput {
 	return {
 		scope: "main...HEAD",
 		overall_correctness: findings.length === 0 ? "correct" : "incorrect",
 		explanation: findings.length === 0 ? "No validated findings." : "Validated findings remain.",
+		recommendation: findings.length === 0 ? "Merge after CI passes." : "Fix the validated findings before merging.",
 		confidence: 0.9,
 		findings,
 	};
@@ -29,6 +35,7 @@ function finding(overrides: Partial<ReviewFindingsInput["findings"][number]> = {
 	return {
 		title: "Finding title",
 		body: "Finding body",
+		recommendation: "Apply the focused fix.",
 		priority: 2 as const,
 		confidence: 0.8,
 		file_path: "src/app.ts",
@@ -83,10 +90,10 @@ function toolHarness(
 	};
 }
 
-function savedReview(saved: SavedArtifact[]): ReviewArtifactV1 {
+function savedReview(saved: SavedArtifact[]): ReviewArtifactV2 {
 	const artifact = saved[0];
 	if (!artifact) throw new Error("review artifact was not saved");
-	return JSON.parse(artifact.content) as ReviewArtifactV1;
+	return JSON.parse(artifact.content) as ReviewArtifactV2;
 }
 
 describe("review_findings", () => {
@@ -104,6 +111,8 @@ describe("review_findings", () => {
 		expect(harness.saved[0]?.toolType).toBe("code-review");
 		expect(savedReview(harness.saved).feedback_status).toBe("submitted");
 		expect(savedReview(harness.saved).findings[0]?.feedback.comment).toBe("fix before merge");
+		expect(savedReview(harness.saved).recommendation).toBe("Fix the validated findings before merging.");
+		expect(savedReview(harness.saved).findings[0]?.recommendation).toBe("Apply the focused fix.");
 		expect(result.details).toMatchObject({
 			commentedCount: 1,
 			reviewRef: "artifact://42",
@@ -163,7 +172,7 @@ describe("review_findings", () => {
 		expect(result.content).toEqual([{ type: "text", text: 'Read "/tmp/blobs/review.json" before continuing.' }]);
 		expect(result.details).toMatchObject({ reviewRef: "/tmp/blobs/review.json", storage: "blob" });
 		expect(harness.blobs[0]?.extension).toBe("json");
-		expect(JSON.parse(harness.blobs[0]!.data.toString()) as ReviewArtifactV1).toMatchObject({
+		expect(JSON.parse(harness.blobs[0]!.data.toString()) as ReviewArtifactV2).toMatchObject({
 			findings: [{ file_path: "omp/review/tool.ts" }],
 		});
 		expect(harness.saved).toHaveLength(0);
@@ -177,15 +186,21 @@ describe("review_findings", () => {
 
 		expect(savedReview(harness.saved).feedback_status).toBe("not_required");
 		expect(result.details).toMatchObject({ findingCount: 0, feedbackStatus: "not_required" });
+		const rendered = harness.definition.renderResult?.(
+			result as { content: typeof result.content; details: ReviewToolDetails },
+			{ expanded: false, isPartial: false },
+			theme,
+		);
+		const output = rendered?.render(100).join("\n");
+		expect(output).toContain("Review complete");
+		expect(output).toContain("90% confidence");
+		expect(output).toContain("No validated findings.");
+		expect(output).toContain("Merge after CI passes.");
 	});
 
 	test("replays a passive result from persisted details", async () => {
 		const harness = toolHarness({} as ExtensionContext["ui"], "print");
 		const result = await harness.execute(reviewInput([finding({ priority: 1 })]));
-		const theme = {
-			fg: (_color: string, text: string) => text,
-			bold: (text: string) => text,
-		} as unknown as Theme;
 
 		const rendered = harness.definition.renderResult?.(
 			result as { content: typeof result.content; details: ReviewToolDetails },
@@ -195,6 +210,22 @@ describe("review_findings", () => {
 
 		expect(rendered?.render(100).join("\n")).toContain("Interactive review unavailable");
 		expect(rendered?.render(100).join("\n")).toContain("P0 0   P1 1   P2 0   P3 0");
+		expect(rendered?.render(100).join("\n")).toContain("90% confidence");
+		expect(rendered?.render(100).join("\n")).toContain("Validated findings remain.");
+		expect(rendered?.render(100).join("\n")).toContain("Fix the validated findings before merging.");
 		expect(rendered?.render(100).join("\n")).toContain("artifact://42");
+		const legacyDetails = { ...(result.details as ReviewToolDetails) };
+		delete legacyDetails.explanation;
+		delete legacyDetails.overallConfidence;
+		delete legacyDetails.recommendation;
+		const replayed = harness.definition.renderResult?.(
+			{ content: result.content, details: legacyDetails },
+			{ expanded: false, isPartial: false },
+			theme,
+		);
+		const replayedOutput = replayed?.render(100).join("\n");
+		expect(replayedOutput).not.toContain("NaN");
+		expect(replayedOutput).not.toContain("undefined");
+		expect(replayedOutput).toContain("artifact://42");
 	});
 });

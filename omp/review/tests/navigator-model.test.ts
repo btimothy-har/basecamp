@@ -7,6 +7,7 @@ function finding(overrides: Partial<IdentifiedReviewFinding> = {}): IdentifiedRe
 		id: "finding-1",
 		title: "Finding title",
 		body: "Finding body",
+		recommendation: "Apply the focused fix.",
 		priority: 2,
 		confidence: 0.8,
 		file_path: "src/app.ts",

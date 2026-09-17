@@ -19,6 +19,7 @@ function finding(overrides: Partial<IdentifiedReviewFinding> = {}): IdentifiedRe
 		id: "finding-1",
 		title: "Finding title",
 		body: "Finding body",
+		recommendation: "Apply the focused fix.",
 		priority: 2,
 		confidence: 0.8,
 		file_path: "src/app.ts",
@@ -33,6 +34,7 @@ function review(findings: IdentifiedReviewFinding[]): PreparedReview {
 		scope: "main...HEAD",
 		overall_correctness: "incorrect",
 		explanation: "Validated findings remain.",
+		recommendation: "Fix the validated findings before merging.",
 		confidence: 0.9,
 		findings,
 	};
@@ -66,13 +68,8 @@ describe("renderFindingCard", () => {
 		expect(lines).toContain("src/app.ts:10-12");
 		expect(lines).toContain("Finding title");
 		expect(lines).toContain("Finding body");
-	});
-
-	test("omits legacy dimensions, remediation, and author response sections", () => {
-		const lines = renderFindingCard(finding(), 0, 1, theme).join("\n");
-		expect(lines).not.toContain("Fix:");
-		expect(lines).not.toContain("Author response");
-		expect(lines).not.toContain("[general]");
+		expect(lines).toContain("Recommendation");
+		expect(lines).toContain("Apply the focused fix.");
 	});
 });
 
@@ -120,8 +117,13 @@ describe("renderHeader", () => {
 		const findings = [finding({ priority: 0 }), finding({ id: "finding-2", priority: 2 })];
 		const header = renderHeader(review(findings), 1, theme);
 		expect(header).toContain("main...HEAD");
-		expect(header).toContain("Incorrect  ·  2 findings  ·  1 commented");
+		expect(header).toContain("Incorrect  ·  90% confidence  ·  2 findings  ·  1 commented");
 		expect(header).toContain("P0 1   P1 0   P2 1   P3 0");
+		expect(header).toContain("90% confidence");
+		expect(header).toContain("Overall recommendation");
+		expect(header).toContain("Fix the validated findings before merging.");
+		expect(header).toContain("Why");
+		expect(header).toContain("Validated findings remain.");
 	});
 });
 

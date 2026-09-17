@@ -12,14 +12,17 @@ import {
 } from "./schema.ts";
 
 const TOOL_DESCRIPTION =
-	"Present one final code review after all native OMP reviewer tasks finish. The primary agent must validate and semantically deduplicate every finding before calling this tool exactly once. Pass OMP-native priorities and source locations, with an empty findings array when no valid findings remain. This tool collects user feedback and returns a readable artifact URI or blob path; read it before continuing. Reviewer subagents must not call this tool.";
+	"Present one final code review after all native OMP reviewer tasks finish. The primary agent must validate and semantically deduplicate every finding before calling this tool exactly once. Explain the overall verdict, recommend what the user should do next, and give every surviving finding its own recommendation. Pass an empty findings array when no valid findings remain. This tool collects user feedback and returns a readable artifact URI or blob path; read it before continuing. Reviewer subagents must not call this tool.";
 
 export interface ReviewToolDetails {
 	commentedCount: number;
 	counts: PriorityCounts;
 	feedbackStatus: FeedbackStatus;
+	explanation?: string;
 	findingCount: number;
 	overallCorrectness: OverallCorrectness;
+	overallConfidence?: number;
+	recommendation?: string;
 	reviewRef: string;
 	scope: string;
 	storage: "artifact" | "blob";
@@ -43,17 +46,25 @@ function renderReviewResult(details: ReviewToolDetails, theme: Theme): string {
 	}
 	const verdictColor = details.overallCorrectness === "correct" ? "success" : "error";
 	const verdict = details.overallCorrectness === "correct" ? "Correct" : "Incorrect";
+	const confidence =
+		typeof details.overallConfidence === "number" && Number.isFinite(details.overallConfidence)
+			? ` · ${Math.round(details.overallConfidence * 100)}% confidence`
+			: "";
 	const findings = `${details.findingCount} finding${details.findingCount === 1 ? "" : "s"}`;
 	const comments = `${details.commentedCount} comment${details.commentedCount === 1 ? "" : "s"}`;
 	const counts = details.counts;
 	const location = `${theme.fg("muted", "Full review and feedback:")} ${details.reviewRef}`;
-	return [
+	const lines = [
 		theme.fg("toolTitle", theme.bold(title)),
-		`${theme.fg(verdictColor, verdict)} · ${findings} · ${comments}`,
+		`${theme.fg(verdictColor, verdict)}${confidence} · ${findings} · ${comments}`,
 		`P0 ${counts[0]}   P1 ${counts[1]}   P2 ${counts[2]}   P3 ${counts[3]}`,
-		"",
-		location,
-	].join("\n");
+	];
+	if (details.explanation) lines.push("", theme.fg("accent", theme.bold("Explanation")), details.explanation);
+	if (details.recommendation) {
+		lines.push("", theme.fg("accent", theme.bold("Overall recommendation")), details.recommendation);
+	}
+	lines.push("", location);
+	return lines.join("\n");
 }
 
 export default function registerReviewTool(pi: ExtensionAPI): void {
@@ -106,9 +117,12 @@ export default function registerReviewTool(pi: ExtensionAPI): void {
 			const details: ReviewToolDetails = {
 				commentedCount: artifact.findings.filter((finding) => finding.feedback.comment !== null).length,
 				counts: reviewPriorityCounts(artifact.findings),
+				explanation: artifact.explanation,
 				feedbackStatus,
 				findingCount: artifact.findings.length,
 				overallCorrectness: artifact.overall_correctness,
+				overallConfidence: artifact.confidence,
+				recommendation: artifact.recommendation,
 				reviewRef,
 				scope: artifact.scope,
 				storage,
