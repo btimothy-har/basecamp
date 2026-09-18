@@ -1,4 +1,4 @@
-"""Ephemeral launcher metadata and placement safety for OMP scratches."""
+"""Managed child environments and placement safety for OMP scratches."""
 
 from __future__ import annotations
 
@@ -6,19 +6,6 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from basecamp.core.exceptions import LauncherError
-
-PROTECTED_ROOT_ENV = "BASECAMP_PROTECTED_ROOT"
-SCRATCH_ROOT_ENV = "BASECAMP_OMP_SCRATCH_ROOT"
-INHERITED_WIP_ENV = "BASECAMP_OMP_INHERITED_WIP"
-
-_ENVIRONMENT_KEYS = (
-    PROTECTED_ROOT_ENV,
-    SCRATCH_ROOT_ENV,
-    INHERITED_WIP_ENV,
-    "BASECAMP_OMP_STATE_DIR",
-    "BASECAMP_OMP_SCOPE",
-    "BASECAMP_OMP_WORKSPACE_FILE",
-)
 
 _GIT_LOCATION_KEYS = (
     "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -29,27 +16,6 @@ _GIT_LOCATION_KEYS = (
     "GIT_OBJECT_DIRECTORY",
     "GIT_WORK_TREE",
 )
-
-
-def workspace_child_environment(
-    base: Mapping[str, str],
-    *,
-    protected_root: Path | None = None,
-    scratch_root: Path | None = None,
-    inherited_wip: bool | None = None,
-    clear_git_locations: bool = False,
-) -> dict[str, str]:
-    """Create a child environment without inherited workspace metadata."""
-    environment = clear_git_location_environment(base) if clear_git_locations else dict(base)
-    for key in _ENVIRONMENT_KEYS:
-        environment.pop(key, None)
-    if protected_root is not None:
-        environment[PROTECTED_ROOT_ENV] = str(protected_root.resolve())
-    if scratch_root is not None:
-        environment[SCRATCH_ROOT_ENV] = str(scratch_root.resolve())
-    if inherited_wip is not None:
-        environment[INHERITED_WIP_ENV] = "1" if inherited_wip else "0"
-    return environment
 
 
 def clear_git_location_environment(base: Mapping[str, str]) -> dict[str, str]:

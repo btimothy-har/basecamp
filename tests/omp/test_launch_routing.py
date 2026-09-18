@@ -111,7 +111,6 @@ def test_flagless_native_auto_resume_stays_in_the_recorded_session_flow(
     )
 
     assert captured["args"] == ["omp", "--extension", str(extension.resolve())]
-    assert captured["environment"]["BASECAMP_PROTECTED_ROOT"] == str(repository.resolve())
 
 
 def test_native_auto_resume_query_uses_the_active_profile_and_source_cwd(
@@ -197,9 +196,3 @@ def test_direct_flag_changes_placement_without_reaching_omp(
     ]
     environment = captured["environment"]
     assert environment["HOME"] == str(tmp_path)
-    assert environment["BASECAMP_PROTECTED_ROOT"] == str(repository.resolve())
-    assert "BASECAMP_OMP_STATE_DIR" not in environment
-    assert "BASECAMP_OMP_SCOPE" not in environment
-    assert "BASECAMP_OMP_WORKSPACE_FILE" not in environment
-    assert "BASECAMP_OMP_SCRATCH_ROOT" not in environment
-    assert "BASECAMP_OMP_INHERITED_WIP" not in environment

@@ -118,14 +118,12 @@ def test_automatic_launch_transfers_wip_uses_real_nested_cwd_and_cleans(
     )
 
     assert status == 17
-    scratch = Path(observed["environment"]["BASECAMP_OMP_SCRATCH_ROOT"])
+    scratch = Path(str(observed["root"]))
     assert observed["cwd"] == scratch / "nested"
     assert observed["root"] == scratch
     assert observed["content"] == "staged and unstaged\n"
     assert observed["status"] == source_status
     assert "--cwd" not in observed["argv"]
-    assert observed["environment"]["BASECAMP_PROTECTED_ROOT"] == str(source.resolve())
-    assert observed["environment"]["BASECAMP_OMP_INHERITED_WIP"] == "1"
     assert "GIT_INDEX_FILE" not in observed["environment"]
     assert observed["argv"][-3:] == ["--session-dir", str(sessions), "prompt"]
     assert str(additional.resolve()) in observed["argv"]
@@ -150,7 +148,8 @@ def test_automatic_launch_retains_execution_changes_and_releases_snapshot(
     observed: dict[str, Path] = {}
 
     def supervise(_argv: list[str], *, cwd: Path, environ: dict[str, str]) -> int:
-        scratch = Path(environ["BASECAMP_OMP_SCRATCH_ROOT"])
+        del environ
+        scratch = Path(_git(cwd, "rev-parse", "--show-toplevel").stdout.decode().strip())
         observed["scratch"] = scratch
         (scratch / "agent-change.txt").write_text("retain me\n")
         assert cwd == scratch / "nested"

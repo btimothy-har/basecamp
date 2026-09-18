@@ -30,7 +30,6 @@ from basecamp.omp.detached_run import (
     supervise_omp,
 )
 from basecamp.omp.launch_arguments import (
-    LaunchArguments,
     inspect_launch_arguments,
     resolve_relocated_path_arguments,
     resolve_session_dir_argument,
@@ -46,9 +45,9 @@ from basecamp.omp.launch_plan import (
 from basecamp.omp.scratch_cleanup import cleanup_automatic_workspace
 from basecamp.omp.snapshot import capture_snapshot, delete_snapshot_ref, matches_snapshot, restore_snapshot
 from basecamp.omp.workspace_environment import (
+    clear_git_location_environment,
     require_safe_snapshot_paths,
     require_safe_workspace_path,
-    workspace_child_environment,
 )
 
 
@@ -109,36 +108,12 @@ def run_launch(
 
     plan = build_launch(active_cwd, arguments.omp_args, configured_projects, package)
     _print_warnings(plan.warnings)
-    child_environment = _direct_child_environment(
-        child_environment,
-        arguments,
-        cwd=active_cwd,
-    )
     try:
         os.execvpe("omp", plan.argv, child_environment)
     except OSError as exc:
         message = f"Could not start OMP: {exc}"
         raise LauncherError(message) from exc
     return None
-
-
-def _direct_child_environment(
-    base: Mapping[str, str],
-    arguments: LaunchArguments,
-    *,
-    cwd: Path,
-) -> dict[str, str]:
-    environment = workspace_child_environment(base)
-    try:
-        interactive = sys.stdin.isatty()
-    except OSError:
-        interactive = False
-    if not interactive:
-        return environment
-    canonical = canonical_checkout(effective_cwd(cwd, arguments.omp_args))
-    if canonical is None:
-        return environment
-    return workspace_child_environment(environment, protected_root=canonical)
 
 
 def _run_detached_launch(
@@ -179,8 +154,8 @@ def _run_discard_launch(
     omp_executable: str,
     environ: Mapping[str, str],
 ) -> int:
-    """Explicit --detached: force-discard semantics, protected root only, no records."""
-    managed_environment = workspace_child_environment(environ, clear_git_locations=True)
+    """Explicit --detached: force-discard semantics with no persistent records."""
+    managed_environment = clear_git_location_environment(environ)
     detached = plan_detached_launch(
         cwd,
         args,
@@ -188,11 +163,9 @@ def _run_discard_launch(
         environ=managed_environment,
         allow_dirty=False,
     )
-    protected = canonical_checkout(detached.source.root) or detached.source.root
-    child_environment = workspace_child_environment(managed_environment, protected_root=protected)
     status: int | None = None
     with defer_termination_signals() as termination:
-        workspace = create_workspace(detached, omp_executable=omp_executable, environ=child_environment)
+        workspace = create_workspace(detached, omp_executable=omp_executable, environ=managed_environment)
         try:
             if termination.status is None:
                 print(
@@ -208,7 +181,7 @@ def _run_discard_launch(
                 )
                 _print_warnings(launch.warnings)
             if termination.status is None:
-                status = supervise_omp(launch.argv, cwd=workspace.launch_cwd, environ=child_environment)
+                status = supervise_omp(launch.argv, cwd=workspace.launch_cwd, environ=managed_environment)
         finally:
             failure = remove_workspace(detached.source.root, workspace.path)
             if failure is not None:
@@ -238,7 +211,7 @@ def _run_automatic_launch(
         dict(environ),
         source_cwd,
     )
-    managed_environment = workspace_child_environment(managed_environment, clear_git_locations=True)
+    managed_environment = clear_git_location_environment(managed_environment)
     detached = plan_detached_launch(
         cwd,
         managed_args,
@@ -276,17 +249,11 @@ def _run_automatic_launch(
                     session_dir=session_dir,
                     canonical_root=detached.source.root,
                 )
-                child_environment = workspace_child_environment(
-                    managed_environment,
-                    protected_root=detached.source.root,
-                    scratch_root=workspace_path,
-                    inherited_wip=snapshot.has_uncommitted_work,
-                )
                 if termination.status is None:
                     workspace = create_workspace(
                         detached,
                         omp_executable=omp_executable,
-                        environ=child_environment,
+                        environ=managed_environment,
                         workspace_path=workspace_path,
                     )
                     restore_snapshot(snapshot, workspace.path)
@@ -317,7 +284,7 @@ def _run_automatic_launch(
                     status = supervise_omp(
                         launch.argv,
                         cwd=workspace.launch_cwd,
-                        environ=child_environment,
+                        environ=managed_environment,
                     )
             finally:
                 retained_reason = None

@@ -10,9 +10,7 @@ import type {
 	ExtensionContext,
 	ExtensionMode,
 } from "@oh-my-pi/pi-coding-agent";
-import type { WorkspaceEnvironment } from "../environment.ts";
 import registerWorkspaceGuidance from "../guidance.ts";
-import { RepositoryCache } from "../repository.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -37,14 +35,14 @@ function gitFixture(): string {
 
 type GuidanceHandler = (event: BeforeAgentStartEvent, ctx: ExtensionContext) => BeforeAgentStartEventResult | undefined;
 
-function createHandler(env: WorkspaceEnvironment): GuidanceHandler {
+function createHandler(): GuidanceHandler {
 	let handler: GuidanceHandler | undefined;
 	const api = {
 		on(event: string, registered: unknown): void {
 			if (event === "before_agent_start") handler = registered as GuidanceHandler;
 		},
 	};
-	registerWorkspaceGuidance(api as unknown as ExtensionAPI, { env, repos: new RepositoryCache() });
+	registerWorkspaceGuidance(api as unknown as ExtensionAPI);
 	if (!handler) throw new Error("before_agent_start handler not registered");
 	return handler;
 }
@@ -58,74 +56,43 @@ function invoke(
 	return handler(event, { cwd, mode } as unknown as ExtensionContext);
 }
 
-const noEnv: WorkspaceEnvironment = { protectedRoot: null, scratchRoot: null, inheritedWip: null };
-
 afterEach(() => {
 	for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
 });
 
 describe("workspace guidance", () => {
-	test("marks the canonical checkout read-only on every prompt", () => {
+	test("injects one static reminder across canonical, detached, and branch worktrees", () => {
 		const root = gitFixture();
-		const handler = createHandler(noEnv);
+		const detached = path.join(temporaryDirectory(), "detached");
+		const branch = path.join(temporaryDirectory(), "branch");
+		git(root, ["worktree", "add", "--detach", "-q", detached, "HEAD"]);
+		git(root, ["worktree", "add", "-b", "durable", "-q", branch, "HEAD"]);
+		const handler = createHandler();
 
-		const first = invoke(handler, root);
-		const second = invoke(handler, root);
+		const guidance = [root, realpathSync(detached), realpathSync(branch)].map(
+			(cwd) => invoke(handler, cwd)?.systemPrompt?.[1],
+		);
 
-		for (const result of [first, second]) {
+		expect(new Set(guidance).size).toBe(1);
+		expect(guidance[0]).toContain("canonical checkout is for inspection and planning");
+		expect(guidance[0]).toContain("detached worktree is writable but temporary");
+		expect(guidance[0]).toContain("ask the user to run `/wt <branch>`");
+		expect(guidance[0]).toContain("branch-backed worktree is durable");
+		expect(guidance[0]).not.toContain("Basecamp");
+	});
+
+	test("repeats the policy each turn and preserves the incoming system prompt", () => {
+		const root = gitFixture();
+		const handler = createHandler();
+
+		for (const mode of ["tui", "print"] as const) {
+			const result = invoke(handler, root, mode);
 			expect(result?.systemPrompt?.[0]).toBe("base prompt");
-			expect(result?.systemPrompt?.[1]).toContain("canonical checkout");
-			expect(result?.systemPrompt?.[1]).toContain("ask the user to run `/wt <branch>`");
-			expect(result?.systemPrompt?.[1]).toContain("Approval does not change workspaces");
+			expect(result?.systemPrompt?.[1]).toContain("report the required handoff to the primary session");
 		}
 	});
 
-	test("gives non-interactive agents an actionable primary-session handoff", () => {
-		const root = gitFixture();
-		const result = invoke(createHandler(noEnv), root, "print");
-		const guidance = result?.systemPrompt?.[1];
-
-		expect(guidance).toContain("primary session must run `/wt <branch>`");
-		expect(guidance).not.toContain("ask the user");
-	});
-
-	test("identifies an inherited-WIP automatic scratch without persistent state", () => {
-		const root = gitFixture();
-		const scratch = path.join(temporaryDirectory(), "scratch");
-		git(root, ["worktree", "add", "--detach", "-q", scratch, "HEAD"]);
-		const realScratch = realpathSync(scratch);
-		const handler = createHandler({ protectedRoot: root, scratchRoot: realScratch, inheritedWip: true });
-
-		const result = invoke(handler, realScratch);
-
-		expect(result?.systemPrompt?.[1]).toContain("temporary Basecamp scratch worktree");
-		expect(result?.systemPrompt?.[1]).toContain("uncommitted work copied from the canonical checkout");
-		expect(result?.systemPrompt?.[1]).toContain("carries the session and changes into a branch-backed worktree");
-	});
-
-	test("permits implementation in a branch-backed worktree", () => {
-		const root = gitFixture();
-		const worktree = path.join(temporaryDirectory(), "durable");
-		git(root, ["worktree", "add", "-b", "durable", "-q", worktree, "HEAD"]);
-
-		const result = invoke(createHandler(noEnv), realpathSync(worktree));
-
-		expect(result?.systemPrompt?.[1]).toContain("durable branch worktree");
-		expect(result?.systemPrompt?.[1]).toContain("branch durable");
-		expect(result?.systemPrompt?.[1]).toContain("implementation may proceed");
-	});
-
-	test("recomputes guidance from live cwd after a session switch", () => {
-		const root = gitFixture();
-		const worktree = path.join(temporaryDirectory(), "durable");
-		git(root, ["worktree", "add", "-b", "switched", "-q", worktree, "HEAD"]);
-		const handler = createHandler(noEnv);
-
-		expect(invoke(handler, root)?.systemPrompt?.[1]).toContain("canonical checkout");
-		expect(invoke(handler, realpathSync(worktree))?.systemPrompt?.[1]).toContain("durable branch worktree");
-	});
-
 	test("adds nothing outside Git", () => {
-		expect(invoke(createHandler(noEnv), temporaryDirectory())).toBeUndefined();
+		expect(invoke(createHandler(), temporaryDirectory())).toBeUndefined();
 	});
 });

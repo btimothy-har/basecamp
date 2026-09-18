@@ -4,7 +4,6 @@ import { mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { ExtensionAPI, ExtensionContext, ExtensionMode } from "@oh-my-pi/pi-coding-agent";
-import { RepositoryCache } from "../repository.ts";
 import registerStartupWarning from "../startup.ts";
 
 const temporaryDirectories: string[] = [];
@@ -53,7 +52,7 @@ function createHarness(): Harness {
 			handlers.set(event, (ctx: ExtensionContext) => handler(undefined, ctx));
 		},
 	};
-	registerStartupWarning(api as unknown as ExtensionAPI, new RepositoryCache());
+	registerStartupWarning(api as unknown as ExtensionAPI);
 	const contextFor = (cwd: string, mode: ExtensionMode): ExtensionContext =>
 		({
 			cwd,
@@ -75,6 +74,8 @@ describe("workspace startup warning", () => {
 		expect(harness.notices).toHaveLength(1);
 		expect(harness.notices[0]?.type).toBe("warning");
 		expect(harness.notices[0]?.message).toContain(root);
+		expect(harness.notices[0]?.message).not.toContain("Basecamp");
+		expect(harness.notices[0]?.message).not.toContain("blocked");
 		harness.start(root); // same canonical entry does not repeat
 		expect(harness.notices).toHaveLength(1);
 
