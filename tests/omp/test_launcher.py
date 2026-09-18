@@ -11,8 +11,10 @@ import pytest
 from basecamp.core.exceptions import LauncherError
 from basecamp.core.models import ProjectConfig
 from basecamp.omp import launcher
-from basecamp.omp.detached_plan import DetachedArguments, DetachedPlan, GitSource
+from basecamp.omp.detached_plan import DetachedPlan, GitSource
 from basecamp.omp.detached_run import CleanupFailure, DetachedWorkspace
+from basecamp.omp.launch_arguments import DetachedArguments
+from basecamp.omp.launch_plan import LaunchPlan
 
 
 def _init_repo(path: Path) -> None:
@@ -291,11 +293,11 @@ def test_run_launch_warns_then_replaces_process(
     monkeypatch.setattr(launcher.shutil, "which", lambda _command: "/bin/omp")
     captured: dict[str, object] = {}
 
-    def fake_execvp(file: str, args: list[str]) -> None:
+    def fake_execvpe(file: str, args: list[str], _environment: dict[str, str]) -> None:
         captured["file"] = file
         captured["args"] = args
 
-    monkeypatch.setattr(launcher.os, "execvp", fake_execvp)
+    monkeypatch.setattr(launcher.os, "execvpe", fake_execvpe)
 
     launcher.run_launch(
         ["--help"],
@@ -338,8 +340,8 @@ def test_run_launch_wraps_exec_failure(
     monkeypatch.setattr(launcher.shutil, "which", lambda _command: "/bin/omp")
     monkeypatch.setattr(
         launcher.os,
-        "execvp",
-        lambda _file, _args: (_ for _ in ()).throw(OSError("exec failed")),
+        "execvpe",
+        lambda _file, _args, _environment: (_ for _ in ()).throw(OSError("exec failed")),
     )
 
     with pytest.raises(LauncherError, match="Could not start OMP: exec failed"):
@@ -374,9 +376,9 @@ def test_run_launch_supervises_and_cleans_detached_session(
         args: list[str] | tuple[str, ...],
         projects: dict[str, ProjectConfig],
         package: Path,
-    ) -> launcher.LaunchPlan:
+    ) -> LaunchPlan:
         captured.update(cwd=cwd, args=args, projects=projects, package=package)
-        return launcher.LaunchPlan(argv=["omp", "--extension", str(package), *args], project_name=None, warnings=())
+        return LaunchPlan(argv=["omp", "--extension", str(package), *args], project_name=None, warnings=())
 
     def fake_supervise(argv: list[str], **kwargs: object) -> int:
         captured["argv"] = argv
@@ -396,7 +398,7 @@ def test_run_launch_supervises_and_cleans_detached_session(
         cwd=tmp_path,
         projects={},
         extension_dir=extension,
-        environ={"HOME": str(tmp_path)},
+        environ={"HOME": str(tmp_path), "GIT_DIR": str(tmp_path / "redirected-git-dir")},
     )
 
     assert status == 37
@@ -404,6 +406,7 @@ def test_run_launch_supervises_and_cleans_detached_session(
     assert captured["args"] == ("--mode=rpc", "unchanged prompt")
     assert captured["argv"] == ["omp", "--extension", str(extension), "--mode=rpc", "unchanged prompt"]
     assert captured["cleanup"] == (source, workspace_path)
+    assert "GIT_DIR" not in captured["environ"]
     assert "use /wt <branch> before exit to retain code" in capsys.readouterr().err
 
 
@@ -427,7 +430,7 @@ def test_run_launch_reports_cleanup_failure_without_overriding_child_status(
     monkeypatch.setattr(
         launcher,
         "build_launch",
-        lambda *_args, **_kwargs: launcher.LaunchPlan(argv=["omp"], project_name=None, warnings=()),
+        lambda *_args, **_kwargs: LaunchPlan(argv=["omp"], project_name=None, warnings=()),
     )
     monkeypatch.setattr(launcher, "supervise_omp", lambda *_args, **_kwargs: 19)
     monkeypatch.setattr(

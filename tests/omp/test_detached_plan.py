@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from basecamp.core.exceptions import LauncherError
-from basecamp.omp import detached_plan
+from basecamp.omp import detached_plan, launch_arguments
 
 
 def _init_repo(path: Path) -> str:
@@ -46,24 +46,26 @@ def _init_repo(path: Path) -> str:
 @pytest.mark.parametrize(
     ("args", "expected"),
     [
-        (["--detached"], True),
-        (["--model", "test", "--detached"], True),
-        (["--plan", "--detached"], False),
-        (["--plan", "--profile", "review", "--detached"], False),
-        (["--plan", "--profile", "review", "prompt", "--detached"], True),
-        (["--unknown-boolean", "--detached"], True),
-        (["--append-system-prompt", "--detached"], False),
-        (["--unknown-string", "--detached"], True),
-        (["--", "--detached"], False),
-        (["prompt", "--", "--detached"], False),
-        (["--detached=value"], False),
+        (["--detached"], "discard"),
+        (["--model", "test", "--detached"], "discard"),
+        (["--plan", "--detached"], "discard"),
+        (["--plan", "--profile", "review", "--detached"], "discard"),
+        (["--plan", "--profile", "review", "prompt", "--detached"], "discard"),
+        (["--append-system-prompt", "--detached"], "discard"),
+        (["--direct"], "direct"),
+        (["--resume", "session-id"], "direct"),
+        (["--mode", "rpc"], "direct"),
+        (["config"], "direct"),
+        (["--", "--detached"], "auto"),
+        (["prompt", "--", "--detached"], "auto"),
+        (["--detached=value"], "auto"),
     ],
 )
-def test_is_detached_requested_respects_omp_token_boundaries(
+def test_inspect_launch_arguments_respects_omp_token_boundaries(
     args: list[str],
     expected: object,
 ) -> None:
-    assert detached_plan.is_detached_requested(args) == expected
+    assert launch_arguments.inspect_launch_arguments(args).disposition == expected
 
 
 def test_parse_detached_arguments_consumes_only_launcher_tokens(tmp_path: Path) -> None:
@@ -80,7 +82,7 @@ def test_parse_detached_arguments_consumes_only_launcher_tokens(tmp_path: Path) 
         "--detached",
     ]
 
-    result = detached_plan.parse_detached_arguments(tmp_path, args, home=tmp_path / "home")
+    result = launch_arguments.parse_detached_arguments(tmp_path, args, home=tmp_path / "home")
 
     assert result.source_cwd == nested.resolve()
     assert result.omp_args == (
@@ -94,7 +96,7 @@ def test_parse_detached_arguments_consumes_only_launcher_tokens(tmp_path: Path) 
 
 def test_parse_detached_arguments_uses_last_cwd_and_preserves_separator(tmp_path: Path) -> None:
     second = tmp_path / "second"
-    result = detached_plan.parse_detached_arguments(
+    result = launch_arguments.parse_detached_arguments(
         tmp_path,
         ["--detached", "--cwd=first", "--cwd", str(second), "--", "--cwd=literal", "--detached"],
         home=tmp_path / "home",
@@ -105,7 +107,7 @@ def test_parse_detached_arguments_uses_last_cwd_and_preserves_separator(tmp_path
 
 
 def test_parse_detached_arguments_uses_bootstrapped_profile(tmp_path: Path) -> None:
-    result = detached_plan.parse_detached_arguments(
+    result = launch_arguments.parse_detached_arguments(
         tmp_path,
         ["--detached", "--plan", "--profile", "review"],
         home=tmp_path / "home",
@@ -118,7 +120,7 @@ def test_parse_detached_arguments_uses_bootstrapped_profile(tmp_path: Path) -> N
 
 def test_parse_detached_arguments_rejects_alias_management_action(tmp_path: Path) -> None:
     with pytest.raises(LauncherError, match="--alias management action"):
-        detached_plan.parse_detached_arguments(
+        launch_arguments.parse_detached_arguments(
             tmp_path,
             ["--detached", "--alias", "review"],
             home=tmp_path / "home",
@@ -126,7 +128,7 @@ def test_parse_detached_arguments_rejects_alias_management_action(tmp_path: Path
 
 
 def test_parse_detached_arguments_honors_flag_looking_cwd_value(tmp_path: Path) -> None:
-    result = detached_plan.parse_detached_arguments(
+    result = launch_arguments.parse_detached_arguments(
         tmp_path,
         ["--detached", "--cwd", "--profile", "work"],
         home=tmp_path / "home",
@@ -138,7 +140,7 @@ def test_parse_detached_arguments_honors_flag_looking_cwd_value(tmp_path: Path) 
 
 
 def test_parse_detached_arguments_ignores_swallowed_session_flag(tmp_path: Path) -> None:
-    result = detached_plan.parse_detached_arguments(
+    result = launch_arguments.parse_detached_arguments(
         tmp_path,
         ["--detached", "--system-prompt", "--resume", "prompt"],
         home=tmp_path / "home",
@@ -150,7 +152,7 @@ def test_parse_detached_arguments_ignores_swallowed_session_flag(tmp_path: Path)
 def test_parse_detached_arguments_preserves_absolute_session_directory(tmp_path: Path) -> None:
     session_dir = tmp_path / "sessions"
 
-    result = detached_plan.parse_detached_arguments(
+    result = launch_arguments.parse_detached_arguments(
         tmp_path,
         ["--detached", "--session-dir", str(session_dir)],
         home=tmp_path / "home",
@@ -162,7 +164,7 @@ def test_parse_detached_arguments_preserves_absolute_session_directory(tmp_path:
 @pytest.mark.parametrize("args", [["--session-dir", "relative"], ["--session-dir=relative"], ["--session-dir"]])
 def test_parse_detached_arguments_rejects_relative_session_directory(tmp_path: Path, args: list[str]) -> None:
     with pytest.raises(LauncherError, match="requires --session-dir to use an absolute path"):
-        detached_plan.parse_detached_arguments(tmp_path, ["--detached", *args], home=tmp_path / "home")
+        launch_arguments.parse_detached_arguments(tmp_path, ["--detached", *args], home=tmp_path / "home")
 
 
 @pytest.mark.parametrize(
@@ -184,7 +186,7 @@ def test_parse_detached_arguments_rejects_existing_session_sources(
     args: list[str],
 ) -> None:
     with pytest.raises(LauncherError, match="Detached mode starts a new session"):
-        detached_plan.parse_detached_arguments(tmp_path, args, home=tmp_path / "home")
+        launch_arguments.parse_detached_arguments(tmp_path, args, home=tmp_path / "home")
 
 
 @pytest.mark.parametrize("command", ["config", "worktree", "wt", "update", "models", "help"])
@@ -193,7 +195,7 @@ def test_parse_detached_arguments_rejects_management_commands(
     command: str,
 ) -> None:
     with pytest.raises(LauncherError, match="only starts OMP sessions"):
-        detached_plan.parse_detached_arguments(
+        launch_arguments.parse_detached_arguments(
             tmp_path,
             ["--model", "test", "--detached", command],
             home=tmp_path / "home",
@@ -201,12 +203,12 @@ def test_parse_detached_arguments_rejects_management_commands(
 
 
 def test_parse_detached_arguments_allows_explicit_launch_and_literal_management_word(tmp_path: Path) -> None:
-    launched = detached_plan.parse_detached_arguments(
+    launched = launch_arguments.parse_detached_arguments(
         tmp_path,
         ["--detached", "launch", "config"],
         home=tmp_path / "home",
     )
-    literal = detached_plan.parse_detached_arguments(
+    literal = launch_arguments.parse_detached_arguments(
         tmp_path,
         ["--detached", "--", "config"],
         home=tmp_path / "home",
@@ -219,7 +221,7 @@ def test_parse_detached_arguments_allows_explicit_launch_and_literal_management_
 @pytest.mark.parametrize("args", [["--detached", "--cwd"], ["--detached", "--profile"], ["--detached", "--profile="]])
 def test_parse_detached_arguments_rejects_missing_values(tmp_path: Path, args: list[str]) -> None:
     with pytest.raises(LauncherError, match="requires"):
-        detached_plan.parse_detached_arguments(tmp_path, args, home=tmp_path / "home")
+        launch_arguments.parse_detached_arguments(tmp_path, args, home=tmp_path / "home")
 
 
 def test_resolve_git_source_preserves_nested_directory(tmp_path: Path) -> None:

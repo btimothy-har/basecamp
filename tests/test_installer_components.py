@@ -299,6 +299,11 @@ def test_install_records_source_only_after_every_component_succeeds(mocker, tmp_
         "_install_omp_user_rules",
         side_effect=lambda omp, root: events.append(("rules", omp, root)),
     )
+    mocker.patch.object(
+        installer,
+        "_register_omp_workspace_extension",
+        side_effect=lambda omp, root: events.append(("workspace", omp, root)),
+    )
     mocker.patch.object(installer, "_install_pi_extension", side_effect=lambda root: events.append(("pi", root)))
     fake_settings = MagicMock()
     fake_settings.set_install_metadata.side_effect = lambda **values: events.append(("metadata", values))
@@ -317,6 +322,7 @@ def test_install_records_source_only_after_every_component_succeeds(mocker, tmp_
     assert events == [
         "omp",
         ("rules", "/usr/bin/omp", checkout.resolve()),
+        ("workspace", "/usr/bin/omp", checkout.resolve()),
         ("pi", checkout.resolve()),
         ("metadata", {"install_dir": str(checkout.resolve())}),
     ]
@@ -338,11 +344,29 @@ def test_install_does_not_record_metadata_after_omp_failure(mocker, tmp_path: Pa
     fake_settings.set_install_metadata.assert_not_called()
 
 
+def test_install_does_not_record_metadata_after_workspace_registration_failure(mocker, tmp_path: Path) -> None:
+    checkout = _make_checkout(tmp_path / "checkout")
+    mocker.patch.object(installer.subprocess, "run", return_value=_completed())
+    mocker.patch.object(installer, "_ensure_omp", return_value="/usr/bin/omp")
+    mocker.patch.object(installer, "_install_omp_user_rules")
+    mocker.patch.object(installer, "_register_omp_workspace_extension", side_effect=SystemExit(1))
+    pi_install = mocker.patch.object(installer, "_install_pi_extension")
+    fake_settings = MagicMock()
+    mocker.patch.object(installer, "settings", fake_settings)
+
+    with pytest.raises(SystemExit):
+        installer.run_interactive_install(repo_dir=checkout)
+
+    pi_install.assert_not_called()
+    fake_settings.set_install_metadata.assert_not_called()
+
+
 def test_install_does_not_record_metadata_after_pi_failure(mocker, tmp_path: Path) -> None:
     checkout = _make_checkout(tmp_path / "checkout")
     mocker.patch.object(installer.subprocess, "run", return_value=_completed())
     mocker.patch.object(installer, "_ensure_omp", return_value="/usr/bin/omp")
     mocker.patch.object(installer, "_install_omp_user_rules")
+    mocker.patch.object(installer, "_register_omp_workspace_extension")
     mocker.patch.object(installer, "_install_pi_extension", side_effect=SystemExit(1))
     fake_settings = MagicMock()
     mocker.patch.object(installer, "settings", fake_settings)

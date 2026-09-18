@@ -12,7 +12,8 @@ import pytest
 
 from basecamp.core.exceptions import LauncherError
 from basecamp.omp import detached_run
-from basecamp.omp.detached_plan import DetachedArguments, DetachedPlan, GitSource
+from basecamp.omp.detached_plan import DetachedPlan, GitSource
+from basecamp.omp.launch_arguments import DetachedArguments
 
 
 def _plan(tmp_path: Path, *, profile: str | None = None, relative_cwd: str = ".") -> DetachedPlan:
@@ -71,7 +72,7 @@ def test_create_workspace_invokes_public_omp_command(
         "--detach",
         "--quiet",
         str(workspace.path),
-        "HEAD",
+        plan.source.head,
     ]
     assert captured["cwd"] == plan.source.root
     assert captured["environ"] == environment

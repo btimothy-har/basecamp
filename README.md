@@ -21,21 +21,21 @@ Requires [uv](https://docs.astral.sh/uv/) and [pi](https://github.com/earendil-w
 bomp [OMP arguments...]
 ```
 
-Without `--detached`, `bomp` preserves every user-supplied OMP argument, including `--cwd`, and directly execs OMP. It explicitly loads Basecamp's bundled `omp/` plugin; when launched from a configured Basecamp project's repository, a subdirectory, or a linked worktree, it first prepends configured additional directories that currently exist as native OMP `--add-dir=<absolute-path>` flags.
+A fresh interactive `bomp` launched from a repository's canonical checkout starts OMP in a temporary detached worktree. Basecamp copies the checkout's staged, unstaged, and nonignored untracked state without changing the source branch, index, or files. A nested `--cwd` starts at the corresponding directory inside the scratch. Explicit and settings-driven session resumes, management, headless, non-interactive, and linked-worktree launches remain direct. `bomp --direct` also requests direct launch explicitly.
 
-For a disposable session from the source checkout's current commit:
+The temporary scratch is supervised only for that invocation. On exit, Basecamp removes it when it still matches the launch snapshot or native `/wt` has reset it clean to the pinned commit; a branch-attached scratch, detached commit, changed content, or unverifiable Git state is retained. Run OMP's native `/wt <branch>` to move the session and its changes into a durable branch-backed worktree. OMP's transcript cwd remains the only session/worktree affinity record.
+
+`bomp --detached` retains the older force-discard mode:
 
 ```bash
 bomp --detached [OMP arguments...]
 ```
 
-Detached mode requires a clean Git checkout and creates a new detached-HEAD worktree at source `HEAD` under OMP's worktree base. A source `--cwd` may select a nested directory; only in detached mode does `bomp` consume it and start OMP at the corresponding path in the new worktree.
+Explicit detached mode requires a clean checkout and force-removes its initial detached worktree on final exit, including changes and detached commits left there. Use `/wt <branch>` before exit to retain work. Any failed removal prints the exact targeted `git -C '<source-root>' worktree remove --force '<initial-worktree>'` recovery command; never substitute the broad `omp worktree clear --all`.
 
-When OMP finally exits, `bomp` force-removes the initial checkout, discarding staged, unstaged, untracked, and ignored files plus detached commits. To retain code, run OMP's native `/wt <branch>` before exit; it switches to a branch worktree and moves the live transcript. Chat history otherwise remains ordinary durable OMP history. After cleanup, an ordinary `bomp --resume <id>` lets OMP interactively re-root a transcript whose recorded working directory was removed.
+The shared installer also registers Basecamp's standalone workspace reminder extension in the active directory reported by `omp config path`, so plain `omp` receives it too. An interactive canonical checkout warns once. Every Git-backed turn receives the same policy: use the canonical checkout for inspection and planning, treat a detached worktree as writable but temporary, and use `/wt <branch>` before exit to carry the session and changes into a durable branch-backed worktree. The reminder is advisory; OMP tools retain their native behavior.
 
-If cleanup fails, `bomp` prints the exact targeted `git -C '<source-root>' worktree remove --force '<initial-worktree>'` recovery command. Use that command; do not run the broad `omp worktree clear --all` command.
-
-The current Basecamp OMP surface is the PATH-based `bomp` launcher, the OMP-native file-length reminder and review presentation in the source-checkout-backed `omp/` extension package, and Basecamp's user-level ownership, commit-checkpoint, and code-comment rules. `basecamp install` links those rule sources into the directory reported by plain `omp config path`; because OMP owns path resolution, `OMP_PROFILE=work basecamp install` naturally targets that environment-selected profile without Basecamp modeling profiles itself. OMP remains responsible for rule discovery and prompt placement. OMP retains its default prompt and context discovery: `bomp` does not apply Basecamp's Pi prompt replacement, carry over configured `context` or `working_style`, or otherwise replace OMP's prompt.
+The remaining Basecamp OMP surface is the PATH-based launcher, the source-checkout-backed `omp/` extension package, and Basecamp's user-level ownership, commit-checkpoint, and code-comment rules. `basecamp install` targets the active native agent directory, including an environment-selected profile, without maintaining a parallel profile or session registry. OMP keeps its default prompt, context discovery, transcript storage, and native session lifecycle; `bomp` does not apply Basecamp's Pi prompt replacement or carry over configured `context` or `working_style`.
 
 ## What basecamp does
 
