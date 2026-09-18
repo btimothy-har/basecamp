@@ -74,10 +74,11 @@ describe("workspace guidance", () => {
 		);
 
 		expect(new Set(guidance).size).toBe(1);
-		expect(guidance[0]).toContain("canonical checkout is for inspection and planning");
-		expect(guidance[0]).toContain("detached worktree is writable but temporary");
-		expect(guidance[0]).toContain("ask the user to run `/wt <branch>`");
-		expect(guidance[0]).toContain("branch-backed worktree is durable");
+		expect(guidance[0]).toContain("primary worktree must never be modified");
+		expect(guidance[0]).toContain("detached HEAD may be used for throwaway edits");
+		expect(guidance[0]).toContain("Durable modifications must be made in a branch-backed worktree");
+		expect(guidance[0]).toContain("Use Git tools to inspect the current checkout");
+		expect(guidance[0]).toContain("ask the user to create a durable worktree with `/wt <branch>`");
 		expect(guidance[0]).not.toContain("Basecamp");
 	});
 
@@ -88,7 +89,7 @@ describe("workspace guidance", () => {
 		for (const mode of ["tui", "print"] as const) {
 			const result = invoke(handler, root, mode);
 			expect(result?.systemPrompt?.[0]).toBe("base prompt");
-			expect(result?.systemPrompt?.[1]).toContain("report the required handoff to the primary session");
+			expect(result?.systemPrompt).toHaveLength(2);
 		}
 	});
 

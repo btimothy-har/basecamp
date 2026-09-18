@@ -4,15 +4,15 @@ import type {
 	ExtensionAPI,
 	ExtensionContext,
 } from "@oh-my-pi/pi-coding-agent";
-import { vcsGitDiscover } from "@oh-my-pi/pi-natives";
+import { vcsGitRepoInfo } from "@oh-my-pi/pi-natives";
 
 export const WORKSPACE_GUIDANCE = `<workspace-policy>
-The canonical checkout is for inspection and planning only. A detached worktree is writable but temporary, and implementation may proceed there. If its changes should survive the session, ask the user to run \`/wt <branch>\` before exit so OMP carries the session and changes into a branch-backed worktree. A branch-backed worktree is durable. Approval does not switch workspaces. Do not create or switch branches to bypass the user handoff. Treat pre-existing changes as user work. If you cannot interact with the user, report the required handoff to the primary session.
+The primary worktree must never be modified. A detached HEAD may be used for throwaway edits. Durable modifications must be made in a branch-backed worktree. Use Git tools to inspect the current checkout. If durable modifications are needed from any other checkout, ask the user to create a durable worktree with \`/wt <branch>\` and wait for them to do so. Do not create or switch branches yourself to bypass this handoff. Treat pre-existing changes as user work.
 </workspace-policy>`;
 
 function isGitWorkspace(cwd: string): boolean {
 	try {
-		return vcsGitDiscover(cwd) !== null;
+		return vcsGitRepoInfo(cwd) !== null;
 	} catch {
 		return false;
 	}
