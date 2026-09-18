@@ -219,7 +219,17 @@ def test_snapshot_rejects_unrecoverable_checkout_shapes(tmp_path: Path, feature:
         (source / "tracked.txt").write_text("main\n")
         _git(source, "add", "tracked.txt")
         _commit(source, "main")
-        _git(source, "merge", "other", check=False)
+        merge = _git(
+            source,
+            "-c",
+            "user.name=Test",
+            "-c",
+            "user.email=test@example.com",
+            "merge",
+            "other",
+            check=False,
+        )
+        assert merge.returncode == 1
     elif feature == "sparse":
         _git(source, "config", "core.sparseCheckout", "true")
     elif feature == "skip-worktree":
